@@ -1,0 +1,10 @@
+.DS_Store
+Icon?
+.netlify/
+.wrangler/
+.claude/
+node_modules/
+dist/
+_deploy/
+deploy/
+*.log

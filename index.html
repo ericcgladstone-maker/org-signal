@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OrgSignal — Organizational Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+<!-- Hidden file inputs — outside all panels so click events fire cleanly -->
+<input type="file" id="slack-file-input" accept=".zip"
+  style="position:fixed;top:-999px;left:-999px;opacity:0;pointer-events:none;">
+<input type="file" id="hr-file-input" accept=".csv,.tsv,.xlsx,.xls,.txt"
+  style="position:fixed;top:-999px;left:-999px;opacity:0;pointer-events:none;">
+
+<!-- ── UPLOAD SCREEN ── -->
+<div id="upload-screen">
+  <div class="grid-bg"></div>
+  <div class="upload-hero">
+    <div class="eyebrow">Organizational Intelligence</div>
+    <h1>OrgSignal</h1>
+    <p class="sub">Your Slack data already contains a complete record of how your organization actually coordinates. This surfaces it.</p>
+  </div>
+  <div class="upload-card">
+    <h2>Load your data</h2>
+
+    <!-- Mode toggle -->
+    <div style="display:flex;gap:0.4rem;margin-bottom:1.1rem;">
+      <button id="mode-upload-btn" class="gen-mode-btn active" onclick="setUploadMode('upload')">Upload your data</button>
+      <button id="mode-gen-btn" class="gen-mode-btn" onclick="setUploadMode('generate')">Try synthetic data</button>
+    </div>
+
+    <!-- Upload mode -->
+    <div id="upload-mode-content">
+      <div class="drop-zone" id="slack-drop">
+        <div class="drop-icon">⬡</div>
+        <div>
+          <span class="drop-label" id="slack-drop-label">Slack export (.zip)</span>
+          <span class="drop-sub">Drag and drop or click to browse</span>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="hr-drop" style="margin-top:0.5rem;">
+        <div class="drop-icon">◈</div>
+        <div>
+          <span class="drop-label" id="hr-drop-label">HR / people data — optional</span>
+          <span class="drop-sub">CSV, TSV, or Excel. Any format — Claude will normalize it.</span>
+        </div>
+      </div>
+
+      <div class="api-key-field">
+        <label>Claude API key</label>
+        <input type="password" id="api-key-input" placeholder="sk-ant-..." autocomplete="off">
+      </div>
+
+      <button class="btn-analyze" id="analyze-btn" disabled onclick="startAnalysis()">Analyze organization</button>
+      <div class="upload-note">All processing runs in your browser. No data leaves your machine except for Claude API calls.</div>
+    </div>
+
+    <!-- Generate mode -->
+    <div id="generate-mode-content" style="display:none;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.55rem;margin-bottom:0.75rem;">
+        <div class="gen-field">
+          <label class="gen-label">Org size</label>
+          <select id="gen-size" class="gen-select">
+            <option value="small">Small — ~25 people</option>
+            <option value="medium" selected>Medium — ~45 people</option>
+            <option value="large">Large — ~80 people</option>
+          </select>
+        </div>
+        <div class="gen-field">
+          <label class="gen-label">Communication density</label>
+          <select id="gen-density" class="gen-select">
+            <option value="sparse">Sparse</option>
+            <option value="moderate" selected>Moderate</option>
+            <option value="dense">Dense</option>
+          </select>
+        </div>
+        <div class="gen-field" style="grid-column:1/-1;">
+          <label class="gen-label">Network structure</label>
+          <select id="gen-structure" class="gen-select">
+            <option value="random" selected>Random — realistic mixed structure</option>
+            <option value="distributed">Distributed — influence spread across org</option>
+            <option value="bridge-dependent">Bridge-dependent — one or two people hold it together</option>
+            <option value="siloed">Siloed — departments not talking to each other</option>
+            <option value="consolidating">Consolidating — power concentrating around a few nodes</option>
+            <option value="declining">Declining — communication dropping, disengagement spreading</option>
+          </select>
+        </div>
+        <div class="gen-field">
+          <label class="gen-label">Departure signals</label>
+          <select id="gen-flight" class="gen-select">
+            <option value="none">None</option>
+            <option value="mild" selected>Mild — 1 person</option>
+            <option value="pronounced">Pronounced — several</option>
+          </select>
+        </div>
+        <div class="gen-field">
+          <label class="gen-label">Sentiment divergence</label>
+          <select id="gen-sentiment" class="gen-select">
+            <option value="low">Low</option>
+            <option value="moderate" selected>Moderate</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="gen-status" style="font-size:0.7rem;color:var(--text-dim);font-family:'DM Mono',monospace;margin-bottom:0.5rem;min-height:1.1rem;"></div>
+
+      <div class="api-key-field">
+        <label>Claude API key</label>
+        <input type="password" id="api-key-input-gen" placeholder="sk-ant-..." autocomplete="off" oninput="checkReadyGen()">
+      </div>
+
+      <button class="btn-analyze" id="gen-analyze-btn" disabled onclick="runGenerator()">Generate and analyze</button>
+      <div class="upload-note">Synthetic data is generated in your browser. No real employee data is used.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PROCESSING SCREEN ── -->
+<div id="processing-screen">
+  <div class="processing-inner">
+    <h2>Analyzing</h2>
+    <div class="proc-sub" id="proc-org-name">Processing your organization</div>
+    <div id="proc-steps"></div>
+    <div class="proc-bar-wrap"><div class="proc-bar" id="proc-bar"></div></div>
+    <div class="proc-count" id="proc-count"></div>
+  </div>
+</div>
+
+<!-- ── MAIN APP ── -->
+<div id="app">
+  <header class="app-header">
+    <div class="app-logo">OrgSignal <span>Organizational Communication Intelligence</span></div>
+    <div class="header-actions">
+      <button class="btn btn-secondary" onclick="openGraphModal()">Network map</button>
+      <button class="btn btn-ghost" onclick="showDownloads()">Downloads ↓</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <!-- LEFT: briefing + roster -->
+    <div class="left-panel" id="left-panel">
+
+      <!-- Org summary -->
+      <div class="org-summary" id="org-summary">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+          <div>
+            <div style="font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--text);display:inline;">Organizational Briefing</div>
+            <div class="org-meta" style="margin-top:0.3rem;margin-bottom:0;" id="org-meta-stats"></div>
+          </div>
+        </div>
+
+        <!-- Findings -->
+        <div class="section-label" style="margin-bottom:0.6rem;">Findings</div>
+        <div id="findings-container"></div>
+
+        <!-- Org synthesis from Claude -->
+        <div id="org-synthesis-wrap" style="margin-top:1rem;display:none;">
+          <div class="section-label" style="margin-bottom:0.5rem;">Organizational synthesis</div>
+          <div class="org-synthesis">
+            <div class="org-synthesis-text" id="org-synthesis-text"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Person roster -->
+      <div class="roster-header">
+        <div class="section-label">People</div>
+        <div class="roster-controls">
+          <select id="roster-dept-filter"><option value="">All departments</option></select>
+          <select id="roster-sort">
+            <option value="influence">Sort: influence</option>
+            <option value="name">Sort: name</option>
+            <option value="connections">Sort: connections</option>
+            <option value="reciprocity">Sort: reciprocity</option>
+            <option value="risk">Sort: risk flags first</option>
+          </select>
+        </div>
+      </div>
+      <div class="roster-grid" id="roster-grid"></div>
+
+      <!-- Downloads section -->
+      <div class="downloads-section" id="downloads-section" style="display:none;">
+        <div class="section-label">Downloads</div>
+        <div class="downloads-grid">
+          <div class="download-btn" onclick="downloadEmployeeReport()">
+            <div class="dl-icon">📄</div>
+            <div><div class="dl-label">Employee Report</div><div class="dl-sub">Full per-person analysis · DOCX</div></div>
+          </div>
+          <div class="download-btn" onclick="downloadOrgReport()">
+            <div class="dl-icon">🏢</div>
+            <div><div class="dl-label">Organizational Report</div><div class="dl-sub">Network synthesis · DOCX</div></div>
+          </div>
+          <div class="download-btn" onclick="downloadMasterCSV()">
+            <div class="dl-icon">📊</div>
+            <div><div class="dl-label">Master Data File</div><div class="dl-sub">All metrics, all people · CSV</div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: analyst chat -->
+    <div class="right-panel">
+      <div class="chat-header">
+        <div class="chat-header-top">
+          <div>
+            <div class="chat-title">Analyst</div>
+            <div class="chat-subtitle">Claude · organizational intelligence</div>
+          </div>
+          <div class="chat-status" id="chat-status"></div>
+        </div>
+      </div>
+      <div class="chat-messages" id="chat-messages">
+        <div id="chat-intro-block">
+          <div style="font-size:0.75rem;color:var(--text-dim);line-height:1.6;margin-bottom:0.75rem;">Ask anything about the communication patterns, relationships, or flagged signals in this organization.</div>
+          <div class="chat-starters" id="chat-starters"></div>
+        </div>
+      </div>
+      <div class="chat-input-wrap">
+        <div class="chat-input-row">
+          <textarea id="chat-textarea" rows="2" placeholder="Ask about the data…"></textarea>
+          <button class="chat-send" id="chat-send-btn" onclick="sendChat()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── GRAPH MODAL ── -->
+<div id="graph-modal">
+  <div class="graph-modal-header">
+    <div class="graph-controls">
+      <span style="font-size:0.82rem;font-weight:600;color:var(--text);margin-right:0.25rem;">Network map</span>
+      <label>Color</label>
+      <select id="graph-color-select">
+        <option value="none">Default</option>
+        <option value="community">Community</option>
+        <option value="betweenness">Influence</option>
+        <option value="reciprocity">Reciprocity</option>
+        <option value="dept">Department</option>
+      </select>
+      <label>Size</label>
+      <select id="graph-size-select">
+        <option value="none">Default</option>
+        <option value="degree">Connections</option>
+        <option value="betweenness">Influence</option>
+        <option value="eigenvector">Strategic</option>
+      </select>
+      <div class="view-toggle">
+        <button class="view-btn active" data-view="full">All</button>
+        <button class="view-btn" data-view="public">Public</button>
+        <button class="view-btn" data-view="private">Private</button>
+        <button class="view-btn" data-view="direct">Direct</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.5rem;">
+      <button class="btn btn-ghost" onclick="exportGraphSVG()">Export SVG</button>
+      <button class="btn btn-secondary" onclick="closeGraphModal()">Close</button>
+    </div>
+  </div>
+  <div id="graph-container"></div>
+</div>
+
+<!-- Person detail modal (populated by app.js) -->
+<div class="modal-overlay" id="person-modal-overlay" onclick="this.classList.remove('open')">
+  <div class="modal-box" id="person-modal-box" onclick="event.stopPropagation()"></div>
+</div>
+
+<div id="tooltip"></div>
+
+<!-- ── VENDOR LIBRARIES ── -->
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/d3.min.js"></script>
+
+<!-- ── APP MODULES (load order matters) ── -->
+<script src="js/config.js"></script>
+<script src="js/orgdata.js"></script>
+<script src="js/prompts.js"></script>
+<script src="js/helpers.js"></script>
+<script src="js/metrics.js"></script>
+<script src="js/generate.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
