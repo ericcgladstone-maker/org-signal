@@ -88,6 +88,18 @@ export class DatasetBuilder {
     return i;
   }
 
+  // Replace a node's label after the fact, e.g. once an importer has seen every
+  // display name used for an address and picked the most common one.
+  setLabel(i, label) { if (label) this.nodes.labels[i] = label; }
+
+  // Change a context's visibility after creation, for importers that only know
+  // it once every message has been read (an email thread that turns out to be 1:1).
+  setVisibility(ci, visibility) {
+    const v = visIndex[visibility];
+    if (v === undefined) throw new Error(`Unknown visibility: ${visibility}`);
+    this.contexts.visibility[ci] = v;
+  }
+
   hasNode(key) { return this._nodeIndex.has(key); }
   nodeIndex(key) { return this._nodeIndex.get(key) ?? -1; }
 

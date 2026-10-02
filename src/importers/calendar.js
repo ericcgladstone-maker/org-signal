@@ -347,13 +347,13 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
     if (o.allDay) builder.stat('all-day-included');
   }
   // A series' visibility is the most restrictive / widest seen across occurrences.
-  for (const [ci, v] of ctxVis) builder.contexts.visibility[ci] = VIS.indexOf(v);
+  for (const [ci, v] of ctxVis) builder.setVisibility(ci, v);
   for (const [addr, m] of names) {
     const i = builder.nodeIndex(`email:${addr}`);
     if (i < 0) continue;
     let b = null, bc = 0;
     for (const [n, c] of m) if (c > bc) { b = n; bc = c; }
-    if (b && builder.nodes.labels[i] === addr) builder.nodes.labels[i] = b;
+    if (b && builder.nodes.labels[i] === addr) builder.setLabel(i, b);
   }
   builder.source.window = { start: Number.isFinite(winStart) ? winStart : null, end: Number.isFinite(winEnd) ? winEnd : null };
   progress(1, 'done');

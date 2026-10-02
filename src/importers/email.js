@@ -487,12 +487,11 @@ function finish(st) {
     if (i < 0) continue;
     let best = null, bc = 0;
     for (const [n, c] of m) if (c > bc) { best = n; bc = c; }
-    if (best) builder.nodes.labels[i] = best;
+    if (best) builder.setLabel(i, best);
   }
   // Thread visibility is the widest seen over the thread's messages. The
   // builder keeps the first value it was given, so fix it up here.
-  const VIS = ['public', 'private', 'direct', 'group', 'unknown'];
-  for (const [ci, v] of st.threadVis) builder.contexts.visibility[ci] = VIS.indexOf(v);
+  for (const [ci, v] of st.threadVis) builder.setVisibility(ci, v);
 
   // Ego: explicit option, else Delivered-To, else From of Sent-labelled mail,
   // else the most frequent recipient (weakest evidence, flagged).

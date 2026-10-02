@@ -31,6 +31,10 @@ Org Signal turns raw relational traces (exports, surveys, hand-drawn networks, s
 - Events (columnar): `type` (`message | copresence | declared | reaction | repost | like | follow | join | leave`), `t`, `actor`, targets as `[node, role]` (`to | cc | bcc | mention | reply | dm | attendee | member | declared | subject`), `context`, `parent` (event index), `weight`, `text`, `source`.
 - Importers put *who an event is directed at* into targets whenever the source says so: DM partners as `dm`, email recipients as `to/cc/bcc`, a reply's parent author as `reply` (even when the parent message itself is absent), meeting attendees as `attendee`, survey ties as `declared`, follows as `follow` event with the followed account as `subject` target.
 - Sources: `{ format, family, medium, view, context, tz, fileNames, egoKey, counts, warnings }`. `view` is one of `VIEWS`. Set `egoKey` (the node key of the person whose export it is) for ego views when known.
+- Optional source fields in use: `directed` (false = ties stored once and meant undirected, e.g. LinkedIn connections, drawn or survey networks), `variant` (export layout variant), `egoKeys` / `egoInferredFrom` (how the ego was identified), `window` (`{ start, end }` of a bounded export, e.g. calendar recurrence expansion), `tableKind` (tabular imports: events | edges | nodes).
+- Reactions target the reacted-to author with role `subject`. Meetings, Slack huddles and Purview transcripts are `copresence` events with `attendee` targets.
+- After creation, change a label with `builder.setLabel(i, label)` and a context's visibility with `builder.setVisibility(ci, vis)`; never write the builder's arrays directly.
+- `detect()` may return `files` (the entries it claims) so the pipeline can hand unclaimed files (e.g. an HR CSV dropped next to a Slack export) to the profile join.
 
 ## Module ownership
 
