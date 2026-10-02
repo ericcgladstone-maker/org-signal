@@ -1,4 +1,4 @@
-// Chart and graph colours, read from the CSS tokens so there is one source.
+// Chart and graph colors, read from the CSS tokens so there is one source.
 //
 // The values live in assets/app.css (--cat-*, --seq-*, --div-*). They were
 // derived from the site's ground (#071A2B) and accent family and run through
@@ -58,10 +58,14 @@ export function tokens() {
 // Category -> colour map. `values` must already be in the fixed order the
 // caller wants (by size over the whole dataset, then name), so the mapping is
 // decided once and reused by every filter state.
-export function categoricalScale(values) {
+//
+// `hues` caps the distinct hues: where any two groups can touch (the network
+// map), only the first few slots stay apart under every color-vision
+// deficiency, so the map passes hues: 5 and the rest share "Other".
+export function categoricalScale(values, { hues = null } = {}) {
   const t = tokens();
   const map = new Map();
-  const shown = values.length > 8 ? values.slice(0, 7) : values.slice(0, 8);
+  const shown = hues != null ? values.slice(0, hues) : values.length > 8 ? values.slice(0, 7) : values.slice(0, 8);
   shown.forEach((v, i) => map.set(String(v), t.cat[i]));
   const folded = values.length > shown.length;
   return {

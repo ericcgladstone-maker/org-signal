@@ -23,6 +23,25 @@ export const RULE_TEXT = {
   reaction: 'A reacts to B',
 };
 
+// Plain names for the construction rules, for evidence lists and filters.
+export const RULE_LABEL = {
+  reply: 'Replies',
+  mention: 'Mentions',
+  dm: 'Direct messages',
+  to: 'Emails (To)',
+  cc: 'Emails (Cc)',
+  bcc: 'Emails (Bcc)',
+  adjacency: 'Turn-taking',
+  copresence: 'Shared meetings or spaces',
+  declared: 'Named ties (survey or drawing)',
+  repost: 'Reposts',
+  like: 'Likes',
+  follow: 'Follows',
+  reaction: 'Reactions',
+};
+
+export const VISIBILITY_LABEL = { public: 'Public', private: 'Private', direct: 'Direct', group: 'Group', unknown: 'Unknown' };
+
 export function label(ds, i) {
   if (!ds || i == null || i < 0) return '';
   return ds.nodes.labels[i] ?? ds.nodes.keys[i];
@@ -45,6 +64,30 @@ export function groupableAttributes(ds) {
   });
   groupableCache.set(ds, out);
   return out;
+}
+
+// Yes/no fields that record how the data was collected rather than who
+// people are (is_phone_number, responded, deactivated): offered last and never
+// chosen by default.
+export function isBookkeeping(a) {
+  if (!a) return false;
+  const vals = (a.values || []).map(v => String(v).toLowerCase());
+  const yesNo = a.type === 'boolean' || (vals.length > 0 && vals.length <= 2 && vals.every(v => ['true', 'false', 'yes', 'no', '0', '1'].includes(v)));
+  return yesNo || /^(is|has)[ _-]?|^responded$|^deactivated$|^deleted$|^bot$/i.test(a.key);
+}
+
+// Groupable attributes in the order a reader most likely wants them: names
+// like department or team first, then attributes with 3-15 values, then the
+// rest; bookkeeping fields last.
+export function preferredAttributes(ds) {
+  const attrs = groupableAttributes(ds);
+  const score = (a) => {
+    if (isBookkeeping(a)) return 3;
+    if (/(^|[ _-])(dept|department|team|group|division|unit|office|function|planted)/i.test(`${a.key} ${a.label || ''}`)) return 0;
+    const k = a.values?.length ?? 0;
+    return k >= 3 && k <= 15 ? 1 : 2;
+  };
+  return attrs.map((a, i) => ({ a, i, s: score(a) })).sort((x, y) => x.s - y.s || x.i - y.i).map(x => x.a);
 }
 
 export function numericAttributes(ds) {
@@ -173,7 +216,7 @@ export const VIEW_TEXT = {
   ego: {
     name: 'Ego network',
     can: 'Who this person interacts with, how often, and how their contacts cluster.',
-    cannot: 'Ties among other people that the owner did not see, so whole-network measures (betweenness, communities across the organisation) are not meaningful.',
+    cannot: 'Ties among other people that the owner did not see, so whole-network measures (betweenness, communities across the organization) are not meaningful.',
   },
   chat: {
     name: 'Single conversation',

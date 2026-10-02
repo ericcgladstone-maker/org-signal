@@ -1,1 +1,79 @@
 /* Network and People views (UX pass, 2026-10-02). Loaded after app.css. */
+
+/* ---------- measure names with a plain gloss (decision 3) ---------- */
+.metric-name{display:flex;flex-direction:column;gap:.1rem;min-width:0}
+.metric-name__gloss{font-size:.75rem;line-height:1.4;color:var(--text-muted);max-width:40ch}
+/* Glossary underlines only on hover and focus inside measure rows (V23). */
+.split__side .metric-row .tip-trigger{text-decoration-color:transparent}
+.split__side .metric-row .tip-trigger:hover,.split__side .metric-row .tip-trigger:focus-visible{text-decoration-color:var(--rule-strong)}
+.metric-row__val .swatch{margin-right:.3rem;vertical-align:-.05rem}
+
+/* ---------- network ---------- */
+.net-banner{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .9rem;padding:.6rem 0;margin-bottom:.75rem;border-block:1px solid var(--rule);font-size:.8125rem;color:var(--text-2)}
+.net-search__list{position:absolute;top:100%;left:0;right:0;z-index:20;list-style:none;margin:0;padding:0;background:var(--bg-deep);border:1px solid var(--rule-strong)}
+.net-search__list li{padding:.45rem .6rem;cursor:pointer;font-size:.85rem;color:var(--text-2)}
+.net-search__list li.is-active{background:rgba(111,216,190,.08);color:var(--text)}
+.net-sel__name{font-size:1.125rem;font-weight:600;letter-spacing:-.012em;color:var(--text);margin:0}
+.net-legend{padding-top:0}
+.split__side > .section:first-child{border-top:0}
+.net-summary > summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:.4rem;min-height:var(--target,1.5rem);margin-bottom:.4rem}
+.net-summary > summary::-webkit-details-marker{display:none}
+.net-summary > summary::after{content:'';width:.4rem;height:.4rem;border-right:1.5px solid var(--text-muted);border-bottom:1.5px solid var(--text-muted);transform:rotate(-45deg);margin-left:.2rem}
+.net-summary[open] > summary::after{transform:rotate(45deg) translateY(-.15rem)}
+.net-ties{list-style:none;margin:0 0 .5rem;padding:0}
+.net-ties li{padding:.3rem 0;border-bottom:1px solid var(--rule);font-size:.8125rem}
+.net-ties__btn{display:flex;width:100%;gap:.75rem;align-items:center;text-decoration:none}
+.net-ties__btn .grow{text-decoration:underline;text-decoration-color:var(--rule-strong);text-underline-offset:.2em}
+.net-ties__btn:hover .grow,.net-ties__btn:focus-visible .grow{text-decoration-color:var(--accent)}
+.net-ties__btn .tnum{color:var(--text);margin-left:auto}
+.net-ties .metric-row__sub{display:block}
+.net-evidence{list-style:none;margin:0;padding:0}
+.net-evidence li{padding:.5rem 0;border-bottom:1px solid var(--rule);font-size:.8125rem}
+.net-export{display:inline-flex;align-items:center;gap:.6rem;white-space:nowrap}
+/* The selected person, right under the map on narrow screens, where the
+   side panel sits far below (S21). */
+.net-selbar{display:none}
+@media (max-width:1060px){
+  .net-selbar{display:flex;align-items:center;gap:.4rem 1rem;padding:.55rem 0;border-bottom:1px solid var(--rule);font-size:.875rem}
+  .net-selbar .grow{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+
+/* ---------- people ---------- */
+.people-cols{position:relative}
+.people-cols > summary{cursor:pointer;list-style:none;font-size:var(--fs-small,.875rem);font-weight:600;color:var(--accent);min-height:var(--target,1.5rem);display:inline-flex;align-items:center}
+.people-cols > summary::-webkit-details-marker{display:none}
+.people-cols__panel{position:absolute;z-index:30;top:100%;right:0;width:min(30rem,calc(100vw - 2rem));max-height:60vh;overflow:auto;background:var(--bg-deep);border:1px solid var(--rule-strong);padding:.8rem 1rem;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.people-cols__panel fieldset{border:0;padding:0;margin:0 0 .6rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(12rem,1fr));gap:0 1rem}
+.people-cols__panel legend{padding:0;margin-bottom:.3rem}
+.stab{margin:0 0 1rem;padding:.75rem 0;border-block:1px solid var(--rule)}
+.stab__list{list-style:none;margin:.4rem 0 0;padding:0;display:grid;gap:.15rem}
+.stab__row{display:grid;grid-template-columns:minmax(7rem,13rem) minmax(8rem,1fr) 4.5rem;gap:.75rem;align-items:center;font-size:.8125rem}
+.stab__row .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.stab__bar{position:relative;height:14px}
+.stab__bar .axis{position:absolute;left:0;right:0;top:50%;height:1px;background:var(--rule)}
+.stab__bar .span{position:absolute;top:calc(50% - 1px);height:2px;background:var(--cat-1,#13aa89)}
+.stab__bar .dot{position:absolute;top:calc(50% - 4px);width:8px;height:8px;margin-left:-4px;border-radius:50%;background:var(--cat-1,#13aa89);box-shadow:0 0 0 2px var(--bg)}
+.stab__row .tnum{text-align:right;color:var(--text-2)}
+.profile-skip{display:flex;flex-wrap:wrap;gap:.25rem 1rem;margin:0 0 .6rem}
+.profile-head{font-size:1.25rem;font-weight:600;letter-spacing:-.015em;margin:0}
+
+/* ---------- shared table (VirtualTable): rules that belong in app.css;
+   kept here until F4 moves them. ---------- */
+/* Visible row cursor while the table has focus (A2). */
+.vt__scroll.has-focus .vt__row.is-focus{background:rgba(111,216,190,.12);box-shadow:inset 3px 0 0 var(--accent)}
+/* Room for the selection bar so it never clips the first cell (V38). */
+.vt__th:first-child,.vt__td:first-child{padding-left:.6rem}
+/* A fade on the side with more columns (P21). */
+.vt--more-right::after,.vt--more-left::before{content:'';position:absolute;top:0;bottom:0;width:2.5rem;pointer-events:none;z-index:3}
+.vt--more-right::after{right:0;background:linear-gradient(90deg,rgba(var(--bg-rgb,7,26,43),0),var(--bg))}
+.vt--more-left::before{left:0;background:linear-gradient(270deg,rgba(var(--bg-rgb,7,26,43),0),var(--bg))}
+.vt__th .tip-wrap--icon{flex:0 0 auto}
+.vt__th .tip-wrap--icon .tip-trigger{display:inline-flex;align-items:center;justify-content:center;min-width:1.5rem;min-height:1.5rem;color:var(--text-muted);text-decoration:none}
+.vt__th .tip-wrap--icon .tip-trigger:hover,.vt__th .tip-wrap--icon .tip-trigger:focus-visible{color:var(--text)}
+.vt__th .tip-wrap--icon svg{width:.8rem;height:.8rem}
+.vt__th.is-sorted .vt__sort{color:var(--text)}
+/* Long measure names wrap to two lines instead of being clipped. */
+.vt__th .vt__sort{min-width:0;white-space:normal}
+.vt__th.num .vt__sort{text-align:right;justify-content:flex-end}
+.stab > summary{cursor:pointer;list-style:none}
+.stab > summary::-webkit-details-marker{display:none}

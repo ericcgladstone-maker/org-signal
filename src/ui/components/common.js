@@ -39,7 +39,9 @@ export function Tip({ content, children, label, className = '' }) {
     const r = ref.current.getBoundingClientRect();
     const t = tipRef.current.getBoundingClientRect();
     const vw = document.documentElement.clientWidth;
-    let left = Math.min(Math.max(8, r.left), vw - t.width - 8);
+    // Clamp inside the viewport on both sides; a tip wider than the screen
+    // is capped by its max-width below.
+    let left = Math.max(8, Math.min(r.left, vw - t.width - 8));
     let top = r.bottom + 6;
     if (top + t.height > window.innerHeight - 8) top = Math.max(8, r.top - t.height - 6);
     if (!pos || pos.left !== left || pos.top !== top) setPos({ left, top });
@@ -54,7 +56,7 @@ export function Tip({ content, children, label, className = '' }) {
       onMouseEnter=${() => setOpen(true)} onMouseLeave=${() => { setOpen(false); setPos(null); }}>
     <button type="button" class="tip-trigger" aria-describedby=${open ? id : undefined} aria-label=${label}
       onFocus=${() => setOpen(true)} onBlur=${() => { setOpen(false); setPos(null); }}>${children}</button>
-    ${open && html`<span role="tooltip" id=${id} class="tip" ref=${tipRef} style=${pos ? `left:${pos.left}px;top:${pos.top}px` : 'left:-9999px;top:0'}>${content}</span>`}
+    ${open && html`<span role="tooltip" id=${id} class="tip" ref=${tipRef} style=${`${pos ? `left:${pos.left}px;top:${pos.top}px` : 'left:-9999px;top:0'};max-width:min(22rem,calc(100vw - 16px));text-align:left;white-space:normal;display:block`}>${content}</span>`}
   </span>`;
 }
 
@@ -65,15 +67,36 @@ export function applicabilityReason(a) {
 }
 
 // Metric name with its glossary meaning, reliability note and applicability.
-export function MetricName({ metric, short = false, showFlag = true, iconOnly = false }) {
+// `label` overrides the glossary name (degree on a directed network reads
+// "Total ties (in + out)"); `gloss` adds the plain one-line meaning under the
+// name, for rows of measures (shown, not only on hover).
+function metricTip(g, label, level, ap) {
+  return html`<strong>${label}</strong><p>${g.meaning}</p>${g.reliability && html`<p class="tip__rel">Reliability: ${g.reliability}</p>`}${level !== 'ok' && html`<p><${Flag} level=${level} /> ${applicabilityReason(ap)}</p>`}`;
+}
+
+export function MetricName({ metric, short = false, showFlag = true, iconOnly = false, label = null, gloss: showGloss = false }) {
   const ap = useStore(s => s.applicability?.[metric]);
   const g = gloss(metric);
+  const name = label || g.label;
   const level = ap?.level || 'ok';
-  const content = html`<strong>${g.label}</strong><p>${g.meaning}</p>${g.reliability && html`<p class="tip__rel">Reliability: ${g.reliability}</p>`}${level !== 'ok' && html`<p><${Flag} level=${level} /> ${applicabilityReason(ap)}</p>`}`;
+  const content = metricTip(g, name, level, ap);
   const flag = showFlag && level !== 'ok' && (iconOnly
     ? html` <span class=${`flag flag--${level}`} role="img" aria-label=${level === 'na' ? 'not applicable' : 'caution'}>${Icon[level] || Icon.info}</span>`
     : html` <${Flag} level=${level}>${level === 'na' ? 'n/a' : 'caution'}</${Flag}>`);
-  return html`<span class=${iconOnly ? '' : 'nowrap'}><${Tip} content=${content} label=${`${g.label}: what it means`}>${short ? g.label.split(' (')[0] : g.label}</${Tip}>${flag}</span>`;
+  const main = html`<span class=${iconOnly ? '' : 'nowrap'}><${Tip} content=${content} label=${`${name}: what it means`}>${short ? name.split(' (')[0] : name}</${Tip}>${flag}</span>`;
+  if (!showGloss || !g.meaning) return main;
+  return html`<span class="metric-name">${main}<span class="metric-name__gloss">${g.meaning}</span></span>`;
+}
+
+// The "what it means" control on its own, as an info icon, for places where
+// the name itself is another control (a sortable column header). Keeps the
+// two buttons siblings rather than one inside the other.
+export function MetricInfo({ metric, label = null }) {
+  const ap = useStore(s => s.applicability?.[metric]);
+  const g = gloss(metric);
+  const name = label || g.label;
+  const level = ap?.level || 'ok';
+  return html`<${Tip} className="tip-wrap--icon" content=${metricTip(g, name, level, ap)} label=${`${name}: what it means`}>${level !== 'ok' ? html`<span class=${`flag flag--${level}`}>${Icon[level] || Icon.info}</span>` : Icon.info}</${Tip}>`;
 }
 
 export function Loading({ children = 'Working' }) {
@@ -83,7 +106,7 @@ export function Loading({ children = 'Working' }) {
 export function ErrorLine({ error, onRetry }) {
   if (!error) return null;
   const msg = typeof error === 'string' ? error : error.message || String(error);
-  return html`<div class="notice-line" role="alert"><${Flag} level="error" /><span class="grow">${msg}</span>${onRetry && html`<button class="btn btn--sm" onClick=${onRetry}>Try again</button>`}</div>`;
+  return html`<div class="notice-line" role="alert"><${Flag} level="error" /><span class="grow">${msg}</span>${onRetry && html`<button type="button" class="tlink" onClick=${onRetry}>Try again</button>`}</div>`;
 }
 
 export function Unavailable({ what, children }) {
@@ -179,14 +202,14 @@ export function NeedsData({ title }) {
       <h2>No network yet</h2>
       <p class="lead">Import data, build a network by hand, or generate a synthetic one. This view fills in once a network is loaded.</p>
       <div class="row" style="margin-top:1.25rem">
-        <button class="btn btn--primary" onClick=${() => store.actions.setView('data')}>Import data</button>
-        <button class="btn" onClick=${() => store.actions.setView('build')}>Build by hand</button>
-        <button class="btn" onClick=${() => store.actions.setView('generate')}>Generate</button>
+        <button type="button" class="btn btn--primary" onClick=${() => store.actions.setView('data')}>Import data</button>
+        <button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView('build')}>Build by hand</button>
+        <button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView('generate')}>Generate</button>
       </div>
     </div>
   </div>`;
 }
 
 export function ConstructionButton() {
-  return html`<button class="btn" onClick=${() => store.actions.openDrawer()} aria-haspopup="dialog">Construction settings</button>`;
+  return html`<button type="button" class="tlink" onClick=${() => store.actions.openDrawer()} aria-haspopup="dialog">Construction settings</button>`;
 }

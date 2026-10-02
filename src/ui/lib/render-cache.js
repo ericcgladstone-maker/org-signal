@@ -19,3 +19,25 @@ export function getRender(version) {
 }
 
 export function clearRender() { cache = { version: null, promise: null, data: null }; }
+
+// One person's ties from the render data (dataset index in, dataset indices
+// out), strongest first: { other, w, dir, rules[] }. The render keeps every
+// tie of a drawn network; over the drawing budget the weakest ties are
+// missing here, which callers state.
+export function tiesOf(d, dsIdx, directed) {
+  if (!d) return [];
+  const rv = Array.prototype.indexOf.call(d.nodeIds, dsIdx);
+  if (rv < 0) return [];
+  const out = new Map();
+  for (let k = 0; k < d.src.length; k++) {
+    const a = d.src[k], b = d.dst[k];
+    if (a !== rv && b !== rv) continue;
+    const o = a === rv ? b : a;
+    const e = out.get(o) || { other: d.nodeIds[o], w: 0, out: false, in: false, rules: new Set() };
+    e.w += d.w ? d.w[k] : 1;
+    if (a === rv) e.out = true; else e.in = true;
+    for (const r in d.byRule || {}) if (d.byRule[r][k] > 0) e.rules.add(r);
+    out.set(o, e);
+  }
+  return [...out.values()].map(e => ({ ...e, rules: [...e.rules], dir: !directed ? 'undirected' : e.out && e.in ? 'both ways' : e.out ? 'outgoing' : 'incoming' })).sort((a, b) => b.w - a.w || a.other - b.other);
+}

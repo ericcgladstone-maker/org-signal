@@ -2,7 +2,13 @@
 // scroll smoothly. Columns are CSS grid tracks; the header is sticky inside
 // the scroll box, which also scrolls horizontally on narrow screens so the
 // page itself never does. Keyboard: the body is focusable; Up/Down/PageUp/
-// PageDown/Home/End move the focused row, Enter activates it.
+// PageDown/Home/End move the focused row, Enter activates it; the focused
+// row is tinted while the table has focus so the cursor is visible.
+//
+// Columns: { key, title, width, min, num, name, sortable, header, info }.
+// `title` (or `header`, plain content) goes inside the sort button; `info`
+// (for example a MetricInfo) sits beside it, never inside it, so the two
+// controls stay separate buttons.
 
 import { html, useState, useRef, useEffect, useLayoutEffect } from '../../../vendor/preact.js';
 import { Icon } from './common.js';
@@ -12,6 +18,14 @@ export function VirtualTable({ columns, rows, rowKey, cell, onActivate, selected
   const [top, setTop] = useState(0);
   const [height, setHeight] = useState(480);
   const [focus, setFocus] = useState(0);
+  const [hasFocus, setHasFocus] = useState(false);
+  const [edge, setEdge] = useState({ left: false, right: false });
+  const checkEdge = () => {
+    const el = box.current; if (!el) return;
+    const left = el.scrollLeft > 2, right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+    if (left !== edge.left || right !== edge.right) setEdge({ left, right });
+  };
+  useEffect(checkEdge);
   useLayoutEffect(() => {
     if (!box.current) return;
     const ro = new ResizeObserver(([e]) => setHeight(e.contentRect.height));
@@ -50,16 +64,20 @@ export function VirtualTable({ columns, rows, rowKey, cell, onActivate, selected
   const vis = [];
   for (let i = start; i < end; i++) vis.push(i);
   const activeId = rows.length ? `vt-row-${rowKey(rows[focus])}` : undefined;
-  return html`<div class="vt">
-    <div class="vt__scroll" ref=${box} tabindex="0" role="grid" aria-label=${label} aria-rowcount=${rows.length + 1} aria-activedescendant=${activeId}
-        onScroll=${e => setTop(e.currentTarget.scrollTop)} onKeyDown=${onKey}>
+  // A fade on the side that has more columns, since overlay scrollbars hide
+  // the fact that the table scrolls sideways.
+  return html`<div class=${`vt${edge.right ? ' vt--more-right' : ''}${edge.left ? ' vt--more-left' : ''}`}>
+    <div class=${`vt__scroll${hasFocus ? ' has-focus' : ''}`} ref=${box} tabindex="0" role="grid" aria-label=${label} aria-rowcount=${rows.length + 1} aria-activedescendant=${activeId}
+        onScroll=${e => { setTop(e.currentTarget.scrollTop); checkEdge(); }} onKeyDown=${onKey}
+        onFocus=${e => { if (e.target === box.current) setHasFocus(true); }} onBlur=${e => { if (e.target === box.current) setHasFocus(false); }}>
       <div style=${`min-width:${minWidth}px;position:relative;height:${headH + rows.length * rowHeight}px`}>
         <div class="vt__head" role="row" aria-rowindex="1" style=${`grid-template-columns:${template};height:${headH}px`}>
           ${columns.map(c => {
             const active = sort?.key === c.key;
             const dir = active ? sort.dir : null;
-            return html`<div class=${`vt__th${c.num ? ' num' : ''}`} role="columnheader" aria-sort=${active ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
-              ${c.sortable !== false ? html`<button class="vt__sort" aria-sort=${active ? dir : undefined} onClick=${() => onSort?.(c.key)} aria-label=${`Sort by ${c.title}`}>${c.header || c.title}${active ? (dir === 'asc' ? Icon.sortAsc : Icon.sortDesc) : ''}</button>` : (c.header || c.title)}
+            return html`<div class=${`vt__th${c.num ? ' num' : ''}${active ? ' is-sorted' : ''}`} role="columnheader" aria-sort=${active ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+              ${c.sortable !== false ? html`<button type="button" class="vt__sort" onClick=${() => onSort?.(c.key)} title=${`Sort by ${c.title}`}>${c.header || c.title}${active ? (dir === 'asc' ? Icon.sortAsc : Icon.sortDesc) : ''}</button>` : (c.header || c.title)}
+              ${c.info || ''}
             </div>`;
           })}
         </div>

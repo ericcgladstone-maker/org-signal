@@ -1,24 +1,42 @@
 // Network view: sigma.js (WebGL) over positions from the engine.
 //
-// Colour by community, any categorical attribute, or a metric (sequential);
+// Color by community, any categorical attribute, or a metric (sequential);
 // size by a metric; filter ties by construction rule and visibility layer;
-// search; hover and click to select with neighbourhood highlight; click a tie
-// to see the events that created it; export the current view as SVG or PNG
-// (drawn from positions, not a screenshot of the canvas).
+// search; hover and click to select with neighborhood highlight; click a tie
+// (or pick one from the selected person's list) to see the events that
+// created it; export the current view as SVG or PNG (drawn from positions,
+// not a screenshot of the canvas).
+//
+// Figure style (design rules): solid mint-family ties, a ring of the canvas
+// ground around every person so dense clusters stay separable, 12px labels
+// with a halo, placed by our own pass that skips any label that would collide
+// with another or run off the canvas, and community numbers at each cluster
+// so communities never rely on color alone.
 
 import { html, useState, useEffect, useRef, useMemo, useCallback } from '../../../vendor/preact.js';
-import { Sigma } from '../../../vendor/sigma.js';
+import { Sigma, NodeCircleProgram } from '../../../vendor/sigma.js';
 import { Graph } from '../../../vendor/graphology.js';
 import { store, useStore } from '../store.js';
 import { engine } from '../services/engine.js';
-import { gloss, NODE_METRICS } from '../services/glossary.js';
-import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, Flag, Swatch, ConstructionButton, useEngine, download, Icon, applicabilityReason } from '../components/common.js';
+import { gloss } from '../services/glossary.js';
+import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, Flag, Swatch, ConstructionButton, useEngine, download, Icon } from '../components/common.js';
 import { RampLegend } from '../components/charts.js';
 import { categoricalScale, sequentialScale, tokens, dim, mixTo } from '../lib/palette.js';
-import { groupableAttributes, orderedValues, label as nodeLabel } from '../lib/dsutil.js';
-import { fmtNum, fmtInt, fmtDateTime, fmtP, humanize } from '../lib/format.js';
+import { preferredAttributes, isBookkeeping, orderedValues, label as nodeLabel, RULE_LABEL, VISIBILITY_LABEL } from '../lib/dsutil.js';
+import { fmtNum, fmtInt, fmtDateTime, fmtP, fmtAttr, humanize, plural } from '../lib/format.js';
+import { withContacts, metricLabel, displayKey, isDeactivated } from '../lib/measures.js';
+import { communityScale } from '../lib/communities.js';
+import { orientLayout, labelBudget, overlaps } from '../lib/labels.js';
 import { VISIBILITY } from '../../core/model.js';
-import { cachedRender, getRender, clearRender } from '../lib/render-cache.js';
+import { cachedRender, getRender, clearRender, tiesOf } from '../lib/render-cache.js';
+
+const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const dur = ms => (reducedMotion() ? 0 : ms);
+const coarse = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const narrow = () => typeof innerWidth === 'number' && innerWidth <= 1060;
+
+// Display choices survive switching views (not reloads); reset per dataset.
+let prefs = { ds: null };
 
 export function NetworkView() {
   const ds = useStore(s => s.dataset);
@@ -41,61 +59,91 @@ function useRender(net) {
   return state;
 }
 
+// The hand layout a drawn network carries (ds.meta.positions, by dataset
+// index), when it still matches the dataset.
+function drawnPositions(ds) {
+  const p = ds.meta?.positions;
+  return Array.isArray(p) && p.length === ds.nodes.count ? p : null;
+}
+
+function defaultColor(ds, communities, attrs) {
+  const drawn = (ds.meta?.sources || []).some(s => s.format === 'draw');
+  if (drawn && attrs.some(a => a.key === 'group')) return 'attr:group';
+  if (communities) return 'community';
+  const a = attrs.find(x => !isBookkeeping(x));
+  return a ? `attr:${a.key}` : 'none';
+}
+
 function NetworkInner({ ds, net }) {
   const r = useRender(net);
-  const metrics = useStore(s => s.metrics);
+  const rawMetrics = useStore(s => s.metrics);
   const communities = useStore(s => s.communities);
   const applicability = useStore(s => s.applicability);
   const selection = useStore(s => s.selection);
-  const attrs = useMemo(() => groupableAttributes(ds), [ds]);
-  const [colorBy, setColorBy] = useState(() => (communities ? 'community' : attrs[0] ? `attr:${attrs[0].key}` : 'none'));
-  const [sizeBy, setSizeBy] = useState('degree');
+  const attrs = useMemo(() => preferredAttributes(ds), [ds]);
+  const nodeMetrics = useMemo(() => withContacts(rawMetrics?.node, net.directed), [rawMetrics, net.directed]);
+  const positions = drawnPositions(ds);
+  if (prefs.ds !== ds) prefs = { ds, colorBy: defaultColor(ds, communities, attrs), sizeBy: 'contacts', layout: positions ? 'drawn' : 'force' };
+  const [colorBy, setColorBy0] = useState(prefs.colorBy);
+  const [sizeBy, setSizeBy0] = useState(prefs.sizeBy);
+  const [layout, setLayout0] = useState(prefs.layout);
+  const setColorBy = v => { prefs.colorBy = v; setColorBy0(v); };
+  const setSizeBy = v => { prefs.sizeBy = v; setSizeBy0(v); };
+  const setLayout = v => { prefs.layout = v; setLayout0(v); };
   const [rulesOff, setRulesOff] = useState(new Set());
   const [visOff, setVisOff] = useState(new Set());
   const [focusCat, setFocusCat] = useState(null);
   const [edgeSel, setEdgeSel] = useState(null); // { a, b } dataset indices
-  const [hoverNode, setHoverNode] = useState(null);
   const sigmaRef = useRef(null);
+  const sideRef = useRef(null);
 
-  const nodeMetricKeys = Object.keys(metrics?.node || {}).filter(k => applicability?.[k]?.level !== 'na');
+  const nodeMetricKeys = Object.keys(nodeMetrics || {}).filter(k => applicability?.[k]?.level !== 'na');
+  const mlabel = k => metricLabel(k, net.directed);
 
-  // Colour assignment, decided over the whole network so filters never repaint.
-  const colouring = useMemo(() => {
+  // Color assignment, decided over the whole network so filters never repaint.
+  const coloring = useMemo(() => {
     const t = tokens();
     if (!r.data) return null;
     const ids = r.data.nodeIds;
     const ni = r.data.netIndex;
     if (colorBy === 'community' && communities?.membership) {
-      const k = communities.count ?? Math.max(...communities.membership) + 1;
-      const values = Array.from({ length: k }, (_, i) => String(i));
-      const sc = categoricalScale(values);
-      const sizes = communities.sizes || values.map((_, i) => communities.membership.filter(m => m === i).length);
-      return { kind: 'cat', of: v => sc.color(String(communities.membership[ni[v]])), key: v => String(communities.membership[ni[v]]),
-        legend: sc.entries.map(e => ({ ...e, label: `Community ${Number(e.value) + 1}`, count: sizes[Number(e.value)] })), folded: sc.folded, foldedCount: sizes.slice(sc.entries.length).reduce((a, b) => a + b, 0), other: sc.otherColor, title: 'Community (Louvain)' };
+      const sc = communityScale(communities);
+      const k = communities.count ?? 0;
+      const sizes = communities.sizes || Array.from({ length: k }, (_, i) => communities.membership.filter(m => m === i).length);
+      const key = v => String(communities.membership[ni[v]]);
+      // Every community is listed (numbers tell the gray ones apart), up to
+      // a dozen; the long tail of tiny ones is summed.
+      const listed = Math.min(k, 12);
+      return { kind: 'cat', community: true, of: v => sc.color(key(v)), key,
+        legend: Array.from({ length: listed }, (_, c) => ({ value: String(c), color: sc.color(String(c)), label: `Community ${c + 1}`, count: sizes[c], folded: c >= sc.entries.length })),
+        folded: k > listed, foldedCount: sizes.slice(listed).reduce((a, b) => a + b, 0), foldedLabel: `${plural(k - listed, 'smaller community', 'smaller communities')}`,
+        hues: sc.entries.length, other: sc.otherColor, title: 'Community (found by Louvain)' };
     }
     if (colorBy.startsWith('attr:')) {
       const key = colorBy.slice(5);
       const ov = orderedValues(ds, key);
       const sc = categoricalScale(ov.map(o => o.value));
       const shownCount = sc.entries.length;
+      const a = attrs.find(x => x.key === key);
       return { kind: 'cat', of: v => { const x = ds.nodes.attrs[ids[v]][key]; return x == null || x === '' ? t.other : sc.color(String(x)); }, key: v => String(ds.nodes.attrs[ids[v]][key] ?? ''),
-        legend: sc.entries.map((e, i) => ({ ...e, label: e.value, count: ov[i].count })), folded: sc.folded, foldedCount: ov.slice(shownCount).reduce((a, b) => a + b.count, 0), other: sc.otherColor, title: humanize(key), missing: ds.nodes.count - ov.reduce((a, b) => a + b.count, 0) };
+        legend: sc.entries.map((e, i) => ({ ...e, label: fmtAttr(key, e.value), count: ov[i].count })), folded: sc.folded, foldedCount: ov.slice(shownCount).reduce((x, b) => x + b.count, 0), foldedLabel: 'Other (smaller groups)',
+        other: sc.otherColor, title: a?.label || humanize(key), missing: ds.nodes.count - ov.reduce((x, b) => x + b.count, 0) };
     }
     if (colorBy.startsWith('metric:')) {
       const m = colorBy.slice(7);
-      const arr = metrics?.node?.[m];
+      const arr = nodeMetrics?.[m];
       if (!arr) return null;
       const fin = Array.from(arr).filter(Number.isFinite);
       const sc = sequentialScale(Math.min(...fin), Math.max(...fin));
-      return { kind: 'seq', of: v => sc(arr[ni[v]]), scale: sc, title: gloss(m).label, metric: m };
+      return { kind: 'seq', of: v => sc(arr[ni[v]]), scale: sc, title: mlabel(m), metric: m };
     }
     return { kind: 'none', of: () => t.node, title: null };
-  }, [r.data, colorBy, communities, metrics, ds]);
+  }, [r.data, colorBy, communities, nodeMetrics, ds]);
 
   const sizes = useMemo(() => {
     if (!r.data) return null;
     const n = r.data.x.length;
-    const arr = sizeBy !== 'none' ? metrics?.node?.[sizeBy] : null;
+    const arr = sizeBy !== 'none' ? nodeMetrics?.[sizeBy] : null;
     const base = n > 2000 ? 1.6 : n > 500 ? 2.4 : 3.5;
     const span = n > 2000 ? 5 : n > 500 ? 7 : 9;
     const out = new Float32Array(n).fill(base + span * 0.25);
@@ -105,7 +153,7 @@ function NetworkInner({ ds, net }) {
       for (let i = 0; i < n; i++) { const x = arr[ni[i]]; out[i] = base + span * Math.sqrt(Math.max(0, Number.isFinite(x) ? x : 0) / (mx || 1)); }
     }
     return out;
-  }, [r.data, sizeBy, metrics]);
+  }, [r.data, sizeBy, nodeMetrics]);
 
   const rulesPresent = useMemo(() => (r.data ? Object.keys(r.data.byRule || {}).filter(k => r.data.byRule[k]?.some?.(x => x > 0)) : []), [r.data]);
   const visPresent = useMemo(() => {
@@ -120,44 +168,62 @@ function NetworkInner({ ds, net }) {
     const cur = store.get().selection;
     store.actions.select(additive ? (cur.includes(dsIdx) ? cur.filter(x => x !== dsIdx) : [...cur, dsIdx]) : [dsIdx]);
   }, []);
+  const showDetails = () => sideRef.current?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
 
   if (r.error) return html`<div class="view"><${ViewHead} title="Network" /><${ErrorLine} error=${r.error} onRetry=${() => { clearRender(); store.set({ network: { ...net, version: Date.now() } }); }} /></div>`;
 
+  const plainAttrs = attrs.filter(a => !isBookkeeping(a));
+  const bookAttrs = attrs.filter(a => isBookkeeping(a));
   const colorOptions = [
-    { value: 'none', label: 'Single colour' },
+    { value: 'none', label: 'Single color' },
     ...(communities ? [{ value: 'community', label: `Community (${communities.count})` }] : []),
-    ...(attrs.length ? [{ group: 'Attributes', options: attrs.map(a => ({ value: `attr:${a.key}`, label: `${a.label} (${a.values.length})` })) }] : []),
-    { group: 'Metric (low to high)', options: nodeMetricKeys.map(k => ({ value: `metric:${k}`, label: gloss(k).label })) },
+    ...(plainAttrs.length ? [{ group: 'Attributes', options: plainAttrs.map(a => ({ value: `attr:${a.key}`, label: `${a.label} (${a.values.length})` })) }] : []),
+    { group: 'Measure (low to high)', options: nodeMetricKeys.map(k => ({ value: `metric:${k}`, label: mlabel(k) })) },
+    ...(bookAttrs.length ? [{ group: 'Data-collection fields', options: bookAttrs.map(a => ({ value: `attr:${a.key}`, label: `${a.label} (${a.values.length})` })) }] : []),
   ];
-  const sizeOptions = [{ value: 'none', label: 'Same size' }, ...nodeMetricKeys.map(k => ({ value: k, label: gloss(k).label }))];
+  const sizeOptions = [{ value: 'none', label: 'Same size' }, ...nodeMetricKeys.map(k => ({ value: k, label: mlabel(k) }))];
+  const sel = selection[selection.length - 1];
+  const touch = coarse();
 
   return html`<div class="view">
-    <${ViewHead} title="Network" intro=${`${fmtInt(net.n)} people and ${fmtInt(net.edgeCount)} ties, ${net.directed ? 'directed' : 'undirected'}. Click a person to see their neighbourhood, or a tie to see the events behind it.`}
-      actions=${html`<${ConstructionButton} /><${ExportMenu} sigmaRef=${sigmaRef} data=${r.data} colouring=${colouring} sizes=${sizes} ds=${ds} />`} />
+    <${ViewHead} title="Network" intro=${`${fmtInt(net.n)} people and ${fmtInt(net.edgeCount)} ties${net.directed ? ' (directed: a two-way tie counts as two)' : ''}. ${touch ? 'Tap' : 'Click'} a person to see their neighborhood, or a tie to see the events behind it.`}
+      actions=${html`<div class="tlinks"><${ConstructionButton} /><${ExportMenu} sigmaRef=${sigmaRef} data=${r.data} coloring=${coloring} ds=${ds} /></div>`} />
+    <${RecoveryBanner} ds=${ds} />
     <div class="toolbar" role="group" aria-label="Network display">
-      <${Select} label="Colour by" value=${colorBy} onChange=${v => { setColorBy(v); setFocusCat(null); }} options=${colorOptions} />
+      <${Select} label="Color by" value=${colorBy} onChange=${v => { setColorBy(v); setFocusCat(null); }} options=${colorOptions} />
       <${Select} label="Size by" value=${sizeBy} onChange=${setSizeBy} options=${sizeOptions} />
+      ${positions && html`<${Select} label="Layout" value=${layout} onChange=${setLayout} options=${[{ value: 'drawn', label: 'As drawn' }, { value: 'force', label: 'Force-directed' }]} />`}
       <${Search} ds=${ds} ids=${r.data?.nodeIds} onPick=${(i) => { selectNode(i); sigmaRef.current?.focusNode(i); }} />
     </div>
     <div class="split">
       <div class="split__main">
         ${r.loading || !r.data ? html`<div class="net"><div class="net__empty"><${Loading}>Computing layout</${Loading}></div></div>`
-          : html`<${SigmaCanvas} ref_=${sigmaRef} data=${r.data} ds=${ds} colouring=${colouring} sizes=${sizes} selection=${selection} focusCat=${focusCat}
-              rulesOff=${rulesOff} visOff=${visOff} edgeSel=${edgeSel} onNode=${selectNode} onEdge=${setEdgeSel} onHover=${setHoverNode} />`}
+          : html`<${SigmaCanvas} ref_=${sigmaRef} data=${r.data} ds=${ds} coloring=${coloring} sizes=${sizes} selection=${selection} focusCat=${focusCat}
+              rulesOff=${rulesOff} visOff=${visOff} edgeSel=${edgeSel} onNode=${selectNode} onEdge=${setEdgeSel}
+              positions=${layout === 'drawn' ? positions : null} />`}
+        ${selection.length > 0 && html`<div class="net-selbar" aria-live="polite">
+          <span class="grow"><strong>${nodeLabel(ds, sel)}</strong>${selection.length > 1 ? html` <span class="muted">and ${selection.length - 1} more</span>` : ''}</span>
+          <button type="button" class="tlink tlink--down" onClick=${showDetails}>Details</button>
+          <button type="button" class="tlink tlink--quiet" onClick=${() => store.actions.select([])}>Clear</button>
+        </div>`}
         ${r.data?.truncated && (r.data.truncated.nodes || r.data.truncated.edges) ? html`<p class="small" style="margin-top:.5rem"><${Flag} level="info">Drawing simplified</${Flag}> <span class="text2">${r.data.truncated.nodes ? `${fmtInt(r.data.truncated.nodes)} least connected people` : ''}${r.data.truncated.nodes && r.data.truncated.edges ? ' and ' : ''}${r.data.truncated.edges ? `${fmtInt(r.data.truncated.edges)} weakest ties` : ''} are not drawn. Every measure still uses the full network.</span></p>` : ''}
-        <p class="basis" style="margin-top:.5rem">Positions: force-directed layout from the engine. Distance on screen is approximate; read structure from the measures, not the picture. Keys: plus and minus zoom, 0 resets, Escape clears the selection.</p>
+        <p class="basis" style="margin-top:.5rem">${layout === 'drawn' && positions ? 'Positions: as drawn in Build.' : 'Positions: force-directed layout from the engine. Distance on screen is approximate; read structure from the measures, not the picture.'}
+          ${touch ? ' Tap a person to select them, tap empty space to clear. Move or zoom the map with two fingers; one finger scrolls the page.'
+            : ' Click a person to select them; Shift-click adds people. Keys on the map: arrows move it, plus and minus zoom, 0 fits, Escape clears the selection.'}</p>
       </div>
-      <aside class="split__side" aria-label="Details">
-        ${edgeSel ? html`<${Evidence} ds=${ds} a=${edgeSel.a} b=${edgeSel.b} onClose=${() => setEdgeSel(null)} />`
-          : selection.length ? html`<${SelectionPanel} ds=${ds} selection=${selection} />`
-          : html`<${NetworkSummary} />`}
+      <aside class="split__side" aria-label="Details" ref=${sideRef}>
+        <div class="section net-legend">
+          <${Legend} coloring=${coloring} focusCat=${focusCat} setFocusCat=${setFocusCat} sizeBy=${sizeBy} directed=${net.directed} />
+        </div>
         <div class="section">
-          <${Legend} colouring=${colouring} focusCat=${focusCat} setFocusCat=${setFocusCat} sizeBy=${sizeBy} />
+          ${edgeSel ? html`<${Evidence} ds=${ds} a=${edgeSel.a} b=${edgeSel.b} onClose=${() => setEdgeSel(null)} />`
+            : selection.length ? html`<${SelectionPanel} ds=${ds} selection=${selection} data=${r.data} metrics=${nodeMetrics} onEdge=${setEdgeSel} />`
+            : html`<${NetworkSummary} />`}
         </div>
         ${(rulesPresent.length > 1 || visPresent.length > 1) && html`<div class="section stack">
-          <p class="label" style="margin:0">Show ties</p>
-          ${rulesPresent.length > 1 && html`<${Filter} label="From these rules" items=${rulesPresent} off=${rulesOff} setOff=${setRulesOff} />`}
-          ${visPresent.length > 1 && html`<${Filter} label="In these layers" items=${visPresent} off=${visOff} setOff=${setVisOff} />`}
+          <h2 class="label" style="margin:0">Show ties</h2>
+          ${rulesPresent.length > 1 && html`<${Filter} label="From these rules" items=${rulesPresent} names=${RULE_LABEL} off=${rulesOff} setOff=${setRulesOff} />`}
+          ${visPresent.length > 1 && html`<${Filter} label="In these layers" items=${visPresent} names=${VISIBILITY_LABEL} off=${visOff} setOff=${setVisOff} />`}
           <p class="basis">Hides ties on the map only. To change what counts as a tie in the measures, use the construction settings.</p>
         </div>`}
       </aside>
@@ -165,11 +231,24 @@ function NetworkInner({ ds, net }) {
   </div>`;
 }
 
-function Filter({ label, items, off, setOff }) {
+// Decision 6: whenever the loaded data is the generated world, say so and
+// point to the recovery check, which lives in Generate.
+function RecoveryBanner({ ds }) {
+  const gen = useStore(s => s.generated);
+  if (!gen || !(gen.dataset === ds || (gen.datasetName && gen.datasetName === ds.meta?.name))) return null;
+  const rec = gen.recovery;
+  return html`<div class="net-banner" role="note">
+    <${Flag} level="info">Generated</${Flag}>
+    <span class="grow">${rec?.summary ? `Recovery check: ${rec.summary}` : 'This network was generated with planted structure. The recovery check compares what the analysis finds with what was planted.'}</span>
+    <button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView('generate')}>${rec ? 'Full recovery check' : 'Run the recovery check'}</button>
+  </div>`;
+}
+
+function Filter({ label, items, names = {}, off, setOff }) {
   return html`<fieldset class="field" style="border:0;padding:0;margin:0;min-width:0">
     <legend class="field__label" style="padding:0;margin-bottom:.3rem">${label}</legend>
     <div class="row" style="gap:.15rem .8rem">
-      ${items.map(it => html`<label class="check"><input type="checkbox" checked=${!off.has(it)} onChange=${e => { const n = new Set(off); if (e.currentTarget.checked) n.delete(it); else n.add(it); setOff(n); }} />${it}</label>`)}
+      ${items.map(it => html`<label class="check"><input type="checkbox" checked=${!off.has(it)} onChange=${e => { const n = new Set(off); if (e.currentTarget.checked) n.delete(it); else n.add(it); setOff(n); }} />${names[it] || humanize(it)}</label>`)}
     </div>
   </fieldset>`;
 }
@@ -200,22 +279,72 @@ function Search({ ds, ids, onPick }) {
         else if (e.key === 'Enter' && results[active] != null) { e.preventDefault(); pick(results[active]); }
         else if (e.key === 'Escape') setOpen(false);
       }} onBlur=${() => setTimeout(() => setOpen(false), 150)} />
-    ${open && results.length > 0 && html`<ul id="net-search-list" role="listbox" style="position:absolute;top:100%;left:0;right:0;z-index:20;list-style:none;margin:0;padding:0;background:var(--bg-deep);border:1px solid var(--rule-strong)">
-      ${results.map((i, k) => html`<li id=${`ns-${i}`} role="option" aria-selected=${String(k === active)} onMouseDown=${e => { e.preventDefault(); pick(i); }}
-        style=${`padding:.45rem .6rem;cursor:pointer;font-size:.85rem;${k === active ? 'background:rgba(111,216,190,.08);color:var(--text)' : 'color:var(--text-2)'}`}>${ds.nodes.labels[i]} <span class="meta">${ds.nodes.keys[i]}</span></li>`)}
+    ${open && results.length > 0 && html`<ul id="net-search-list" role="listbox" class="net-search__list">
+      ${results.map((i, k) => { const key = displayKey(ds.nodes.keys[i]); return html`<li id=${`ns-${i}`} role="option" aria-selected=${String(k === active)} class=${k === active ? 'is-active' : ''} onMouseDown=${e => { e.preventDefault(); pick(i); }}>${ds.nodes.labels[i]}${key ? html` <span class="meta">${key}</span>` : ''}</li>`; })}
     </ul>`}
   </div>`;
 }
 
 // ---- sigma canvas -----------------------------------------------------------------
 
+// Node discs with a thin ring of the canvas ground, so touching people in a
+// dense cluster stay separate shapes (sigma's own circle program has no
+// border). The triangle that carries each disc is grown by 2px so the ring
+// sits outside the disc and the visible size of a node is unchanged.
+function borderedNodeProgram(ringHex) {
+  const c = ringHex.replace('#', '');
+  const rgb = [0, 2, 4].map(i => (parseInt(c.slice(i, i + 2), 16) / 255).toFixed(4));
+  const FRAG = `
+precision highp float;
+varying vec4 v_color;
+varying vec2 v_diffVector;
+varying float v_radius;
+uniform float u_correctionRatio;
+const vec4 transparent = vec4(0.0, 0.0, 0.0, 0.0);
+const vec4 ring = vec4(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 1.0);
+void main(void) {
+  float px = u_correctionRatio * 2.0;
+  float dist = length(v_diffVector) - v_radius;
+  #ifdef PICKING_MODE
+  if (dist > 0.0) gl_FragColor = transparent; else gl_FragColor = v_color;
+  #else
+  vec4 c = mix(v_color, ring, smoothstep(-0.5 * px, 0.5 * px, dist));
+  float outer = 1.5 * px;
+  gl_FragColor = mix(c, transparent, smoothstep(outer - 0.5 * px, outer + 0.5 * px, dist));
+  #endif
+}
+`;
+  return class BorderedNodeProgram extends NodeCircleProgram {
+    getDefinition() {
+      const d = super.getDefinition();
+      const sizeLine = 'float size = a_size * u_correctionRatio / u_sizeRatio * 4.0;';
+      const radiusLine = 'v_radius = size / 2.0;';
+      // Fall back to plain discs if a sigma update changes the shader text.
+      if (!d.VERTEX_SHADER_SOURCE.includes(sizeLine) || !d.VERTEX_SHADER_SOURCE.includes(radiusLine)) return d;
+      return {
+        ...d,
+        VERTEX_SHADER_SOURCE: d.VERTEX_SHADER_SOURCE
+          .replace(sizeLine, 'float size = (a_size / u_sizeRatio + 2.0) * u_correctionRatio * 4.0;')
+          .replace(radiusLine, 'v_radius = a_size / u_sizeRatio * u_correctionRatio * 2.0;'),
+        FRAGMENT_SHADER_SOURCE: FRAG,
+      };
+    }
+  };
+}
+
+const LABEL_FONT = 'Geist Variable, Geist, system-ui, sans-serif';
+
 function drawHover(ctx, data, settings) {
-  // Dark label box for hover, in place of sigma's default white one.
-  const size = settings.labelSize, font = settings.labelFont;
-  ctx.font = `600 ${size}px ${font}`;
+  // Dark label box for hover, in place of sigma's default white one; flips
+  // to the left of the node near the right edge so it never leaves the map.
+  const size = settings.labelSize;
+  ctx.font = `600 ${size}px ${LABEL_FONT}`;
   const label = data.label || '';
   const w = ctx.measureText(label).width + 12;
-  const x = data.x + data.size + 4, y = data.y - size / 2 - 5;
+  const W = ctx.canvas.clientWidth || ctx.canvas.width;
+  let x = data.x + data.size + 4;
+  if (x + w > W - 4) x = Math.max(4, data.x - data.size - 4 - w);
+  const y = data.y - size / 2 - 5;
   ctx.fillStyle = 'rgba(5,21,33,0.94)';
   ctx.strokeStyle = 'rgba(255,255,255,0.26)';
   ctx.lineWidth = 1;
@@ -225,12 +354,13 @@ function drawHover(ctx, data, settings) {
   ctx.fillText(label, x + 6, data.y + size / 3);
 }
 
-function SigmaCanvas({ ref_, data, ds, colouring, sizes, selection, focusCat, rulesOff, visOff, edgeSel, onNode, onEdge, onHover }) {
+function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rulesOff, visOff, edgeSel, onNode, onEdge, positions }) {
   const box = useRef(null);
+  const outer = useRef(null);
   const sig = useRef(null);
   const graph = useRef(null);
   const state = useRef({});
-  state.current = { colouring, sizes, selection, focusCat, rulesOff, visOff, edgeSel };
+  state.current = { coloring, sizes, selection, focusCat, rulesOff, visOff, edgeSel };
   const focus = useRef({ set: null, core: null });
   const [hovered, setHovered] = useState(null);
   const hoverRef = useRef(null);
@@ -241,9 +371,17 @@ function SigmaCanvas({ ref_, data, ds, colouring, sizes, selection, focusCat, ru
     const t = tokens();
     const g = new Graph({ type: data.directed ? 'directed' : 'undirected', multi: false, allowSelfLoops: false });
     const n = data.x.length;
+    let X = data.x, Y = data.y;
+    if (positions) {
+      X = Float32Array.from(data.nodeIds, i => positions[i]?.[0] ?? 0);
+      Y = Float32Array.from(data.nodeIds, i => positions[i]?.[1] ?? 0);
+    } else {
+      const rect = box.current.getBoundingClientRect();
+      ({ x: X, y: Y } = orientLayout(data.x, data.y, rect.width >= rect.height));
+    }
     for (let v = 0; v < n; v++) {
       const i = data.nodeIds[v];
-      g.addNode(String(v), { x: data.x[v], y: -data.y[v], size: 3, color: t.node, label: ds.nodes.labels[i] || ds.nodes.keys[i], ds: i });
+      g.addNode(String(v), { x: X[v], y: -Y[v], size: 3, color: t.node, label: ds.nodes.labels[i] || ds.nodes.keys[i], ds: i });
     }
     const m = data.src.length;
     const maxW = Math.max(1e-9, ...Array.from(data.w || []).slice(0, 200000));
@@ -254,46 +392,47 @@ function SigmaCanvas({ ref_, data, ds, colouring, sizes, selection, focusCat, ru
       g.addEdgeWithKey(String(k), a, b, { size: 0.4 + 1.6 * Math.sqrt(w / maxW), k });
     }
     graph.current = g;
-    // Solid colours mixed toward the canvas ground instead of alpha: WebGL
+    // Solid colors mixed toward the canvas ground instead of alpha: WebGL
     // blending of thousands of translucent lines washes out to near-white.
-    const edgeMix = m > 20000 ? 0.86 : m > 3000 ? 0.8 : m > 800 ? 0.72 : 0.6;
+    // Up to a few thousand ties the lines stay in the mint family.
+    const edgeMix = m > 20000 ? 0.86 : m > 3000 ? 0.78 : 0.55;
     const edgeBase = mixTo(t.edge, t.bgDeep, edgeMix);
     const edgeHi = mixTo('#A8E4D2', t.bgDeep, 0.15);
     const renderer = new Sigma(g, box.current, {
-      renderLabels: true,
-      labelFont: 'Geist Variable, system-ui, sans-serif',
+      // Labels are placed by drawLabels() below (halo, collision culling,
+      // canvas edges); sigma draws only the hover box.
+      renderLabels: false,
+      labelFont: LABEL_FONT,
       labelSize: 12,
       labelWeight: '500',
-      labelColor: { color: '#C6D3DE' },
-      // Sigma shows at most labelDensity labels per grid cell; names are wide,
-      // so fewer, larger cells keep labels from running into each other.
-      // Hovered and selected people are always labelled.
-      labelDensity: 0.25,
-      labelGridCellSize: 140,
-      labelRenderedSizeThreshold: n > 1000 ? 8 : 7,
       defaultEdgeType: 'line',
       defaultEdgeColor: edgeBase,
+      defaultNodeType: 'circle',
+      nodeProgramClasses: { circle: borderedNodeProgram(t.bgDeep) },
       enableEdgeEvents: m < 60000,
       hideEdgesOnMove: m > 30000,
       zIndex: true,
       minCameraRatio: 0.03,
       maxCameraRatio: 8,
-      stagePadding: 24,
+      stagePadding: 28,
+      // The container can be momentarily zero-width while views switch; the
+      // ResizeObserver below refits it once it has a size.
+      allowInvalidContainer: true,
       defaultDrawNodeHover: drawHover,
       nodeReducer: (key, attr) => {
         const s = state.current;
         const v = +key;
         const res = { ...attr };
-        res.color = s.colouring ? s.colouring.of(v) : attr.color;
+        res.color = s.coloring ? s.coloring.of(v) : attr.color;
         res.size = s.sizes ? s.sizes[v] : attr.size;
         const sel = s.selection;
         const hv = hoverRef.current;
         const focusSet = focus.current.set;
         if (focusSet) {
-          if (!focusSet.has(v)) { res.color = dim(res.color, 0.82); res.label = ''; res.zIndex = 0; }
+          if (!focusSet.has(v)) { res.color = dim(res.color, 0.82); res.dimmed = true; res.zIndex = 0; }
           else { res.zIndex = 2; if (sel.includes(attr.ds)) { res.highlighted = true; res.forceLabel = true; } }
-        } else if (s.focusCat != null && s.colouring?.key) {
-          if (s.colouring.key(v) !== s.focusCat) { res.color = dim(res.color, 0.8); res.label = ''; res.zIndex = 0; } else res.zIndex = 2;
+        } else if (s.focusCat != null && s.coloring?.key) {
+          if (s.coloring.key(v) !== s.focusCat) { res.color = dim(res.color, 0.8); res.dimmed = true; res.zIndex = 0; } else res.zIndex = 2;
         }
         if (hv === key) res.highlighted = true;
         return res;
@@ -317,9 +456,9 @@ function SigmaCanvas({ ref_, data, ds, colouring, sizes, selection, focusCat, ru
           const sel = focus.current.core;
           if (sel.has(+a) || sel.has(+b)) { res.color = edgeHi; res.size = Math.max(1, attr.size); res.zIndex = 2; }
           else { res.hidden = true; }
-        } else if (s.focusCat != null && s.colouring?.key) {
+        } else if (s.focusCat != null && s.coloring?.key) {
           const [a, b] = g.extremities(key);
-          if (s.colouring.key(+a) !== s.focusCat && s.colouring.key(+b) !== s.focusCat) res.hidden = true;
+          if (s.coloring.key(+a) !== s.focusCat && s.coloring.key(+b) !== s.focusCat) res.hidden = true;
         }
         if (s.edgeSel) {
           const [a, b] = g.extremities(key);
@@ -330,29 +469,61 @@ function SigmaCanvas({ ref_, data, ds, colouring, sizes, selection, focusCat, ru
       },
     });
     sig.current = renderer;
-    renderer.on('enterNode', ({ node }) => { setHovered(node); onHover(+node); box.current.style.cursor = 'pointer'; });
-    renderer.on('leaveNode', () => { setHovered(null); onHover(null); box.current.style.cursor = ''; });
+
+    // Our label layer sits above sigma's node and label layers and below the
+    // hover box.
+    renderer.createCanvasContext('f2labels', { afterLayer: 'labels' });
+    const placed = { labels: [], badges: [] };
+    const centres = communityCentres(g, data, state);
+    renderer.on('afterRender', () => {
+      try { drawLabels(renderer, g, data, state.current, focus.current, hoverRef.current, centres, placed); } catch { /* killed mid-frame */ }
+    });
+    renderer.refresh();
+
+    renderer.on('enterNode', ({ node }) => { setHovered(node); box.current.style.cursor = 'pointer'; });
+    renderer.on('leaveNode', () => { setHovered(null); box.current.style.cursor = ''; });
     renderer.on('clickNode', ({ node, event }) => onNode(data.nodeIds[+node], event?.original?.shiftKey));
     renderer.on('clickStage', () => { onNode(null); });
     renderer.on('clickEdge', ({ edge }) => { const [a, b] = g.extremities(edge); onEdge({ a: data.nodeIds[+a], b: data.nodeIds[+b] }); });
     renderer.on('enterEdge', () => { box.current.style.cursor = 'pointer'; });
     renderer.on('leaveEdge', () => { box.current.style.cursor = ''; });
+
+    // Phones: one finger scrolls the page (the map took 60% of the screen
+    // and swallowed every swipe), a tap still selects through the mouse
+    // events the browser synthesises, and two fingers move or zoom the map.
+    const wrap = outer.current;
+    let multi = false;
+    const onTouch = (e) => {
+      if (e.type === 'touchstart') multi = e.touches.length > 1;
+      if (!multi && e.touches.length <= 1) e.stopPropagation();
+    };
+    if (coarse()) {
+      const mouse = renderer.getContainer().querySelector('.sigma-mouse');
+      if (mouse) mouse.style.touchAction = 'pan-y';
+      for (const ev of ['touchstart', 'touchmove', 'touchend']) wrap.addEventListener(ev, onTouch, { capture: true });
+    }
+
     ref_.current = {
       sigma: renderer,
       graph: g,
+      placed,
       focusNode(dsIdx) {
         const v = data.nodeIds.indexOf(dsIdx);
         if (v < 0) return;
         const p = renderer.getNodeDisplayData(String(v));
-        if (p) renderer.getCamera().animate({ x: p.x, y: p.y, ratio: 0.35 }, { duration: 400 });
+        if (p) renderer.getCamera().animate({ x: p.x, y: p.y, ratio: 0.35 }, { duration: dur(400) });
       },
     };
     // The canvas height follows the viewport and the status bar; keep sigma's
     // idea of its size in step so the graph stays fitted.
     const ro = new ResizeObserver(() => { try { renderer.resize(); renderer.refresh(); } catch { /* killed */ } });
     ro.observe(box.current);
-    return () => { ro.disconnect(); renderer.kill(); sig.current = null; ref_.current = null; };
-  }, [data]);
+    return () => {
+      ro.disconnect();
+      for (const ev of ['touchstart', 'touchmove', 'touchend']) wrap.removeEventListener(ev, onTouch, { capture: true });
+      renderer.kill(); sig.current = null; ref_.current = null;
+    };
+  }, [data, positions]);
 
   // Recompute highlight sets and refresh when display state changes.
   useEffect(() => {
@@ -370,45 +541,163 @@ function SigmaCanvas({ ref_, data, ds, colouring, sizes, selection, focusCat, ru
       focus.current = { set, core };
     } else focus.current = { set: null, core: null };
     sig.current.refresh({ skipIndexation: false });
-  }, [colouring, sizes, selection, focusCat, rulesOff, visOff, edgeSel, hovered]);
+  }, [coloring, sizes, selection, focusCat, rulesOff, visOff, edgeSel, hovered]);
 
   const onKey = (e) => {
     const r = sig.current; if (!r) return;
     const cam = r.getCamera();
-    if (e.key === '+' || e.key === '=') { e.preventDefault(); cam.animatedZoom({ duration: 200 }); }
-    else if (e.key === '-' || e.key === '_') { e.preventDefault(); cam.animatedUnzoom({ duration: 200 }); }
-    else if (e.key === '0') { e.preventDefault(); cam.animatedReset({ duration: 300 }); }
+    const st = cam.getState();
+    const step = 0.12 * st.ratio;
+    const pan = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key];
+    if (pan) { e.preventDefault(); cam.animate({ x: st.x + pan[0], y: st.y + pan[1] }, { duration: dur(120) }); }
+    else if (e.key === '+' || e.key === '=') { e.preventDefault(); cam.animatedZoom({ duration: dur(200) }); }
+    else if (e.key === '-' || e.key === '_') { e.preventDefault(); cam.animatedUnzoom({ duration: dur(200) }); }
+    else if (e.key === '0') { e.preventDefault(); cam.animatedReset({ duration: dur(300) }); }
     else if (e.key === 'Escape') { onNode(null); onEdge(null); }
   };
 
-  return html`<div class="net" tabindex="0" role="application" aria-label="Network map. Use the search box or the People view to select people by keyboard." onKeyDown=${onKey}>
+  return html`<div class="net" ref=${outer} tabindex="0" role="application" aria-label="Network map. Arrow keys move the map, plus and minus zoom, 0 fits. Select people with the search box; their ties are listed beside the map." onKeyDown=${onKey}>
     <div class="net__canvas" ref=${box}></div>
     <div class="net__zoom">
-      <button class="btn" aria-label="Zoom in" onClick=${() => sig.current?.getCamera().animatedZoom({ duration: 200 })}>+</button>
-      <button class="btn" aria-label="Zoom out" onClick=${() => sig.current?.getCamera().animatedUnzoom({ duration: 200 })}>−</button>
-      <button class="btn" aria-label="Reset view" onClick=${() => sig.current?.getCamera().animatedReset({ duration: 300 })} style="font-size:.7rem">Fit</button>
+      <button type="button" class="btn" aria-label="Zoom in" onClick=${() => sig.current?.getCamera().animatedZoom({ duration: dur(200) })}>+</button>
+      <button type="button" class="btn" aria-label="Zoom out" onClick=${() => sig.current?.getCamera().animatedUnzoom({ duration: dur(200) })}>−</button>
+      <button type="button" class="btn" aria-label="Fit the whole network" onClick=${() => sig.current?.getCamera().animatedReset({ duration: dur(300) })} style="font-size:.7rem">Fit</button>
     </div>
   </div>`;
 }
 
+// Mean position of each community's members in graph coordinates, for the
+// number badges. Read lazily so a new coloring needs no graph rebuild.
+function communityCentres(g, data, state) {
+  let cacheFor = null, cache = null;
+  return () => {
+    const c = state.current.coloring;
+    if (!c?.community) return null;
+    if (cacheFor === c) return cache;
+    const acc = new Map();
+    g.forEachNode((key, a) => {
+      const k = c.key(+key);
+      const e = acc.get(k) || { x: 0, y: 0, n: 0 };
+      e.x += a.x; e.y += a.y; e.n++;
+      acc.set(k, e);
+    });
+    cache = [...acc.entries()].filter(([, e]) => e.n >= 3).map(([k, e]) => ({ key: k, x: e.x / e.n, y: e.y / e.n, n: e.n }))
+      .sort((a, b) => b.n - a.n);
+    cacheFor = c;
+    return cache;
+  };
+}
+
+// Label placement over the current frame. Candidates in priority order:
+// selected people, the hovered person, their neighbors, then everyone by
+// size. Each label goes right of its node, or left near the right edge, and
+// is skipped if it would overlap a label or badge already placed or leave
+// the canvas. Small networks label everyone who fits.
+function drawLabels(renderer, g, data, s, focus, hovered, centres, placed) {
+  const ctx = renderer.canvasContexts?.f2labels;
+  if (!ctx) return;
+  const { width: W, height: H } = renderer.getDimensions();
+  // Sigma does not resize layers added after it starts; keep ours in step.
+  const pr = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1;
+  const cv = ctx.canvas;
+  if (cv.width !== Math.round(W * pr) || cv.height !== Math.round(H * pr)) {
+    cv.width = Math.round(W * pr); cv.height = Math.round(H * pr);
+    cv.style.width = `${W}px`; cv.style.height = `${H}px`;
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.setTransform(pr, 0, 0, pr, 0, 0);
+  const t = tokens();
+  const rects = [];
+  placed.labels = []; placed.badges = [];
+  const ratio = renderer.getCamera().getState().ratio;
+
+  // Community numbers first: they are the non-color cue for communities.
+  const cs = centres();
+  if (cs && !focus.set) {
+    ctx.font = `600 11px ${LABEL_FONT}`;
+    for (const c of cs) {
+      const p = renderer.graphToViewport({ x: c.x, y: c.y });
+      const text = String(Number(c.key) + 1);
+      const rad = 9;
+      const box = { x: p.x - rad, y: p.y - rad, w: rad * 2, h: rad * 2 };
+      if (box.x < 2 || box.y < 2 || box.x + box.w > W - 2 || box.y + box.h > H - 2 || overlaps(box, rects)) continue;
+      if (s.focusCat != null && s.focusCat !== c.key) continue;
+      const color = s.coloring.legend.find(e => e.value === c.key)?.color ?? s.coloring.other;
+      ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+      ctx.fillStyle = t.bgDeep; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
+      ctx.fillStyle = t.text; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(text, p.x, p.y + 0.5);
+      rects.push(box);
+      placed.badges.push({ x: p.x, y: p.y, r: rad, text, color });
+    }
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+
+  const n = g.order;
+  const cand = [];
+  g.forEachNode((key, attr) => {
+    const d = renderer.getNodeDisplayData(key);
+    if (!d || d.hidden || d.dimmed || !attr.label) return;
+    const p = renderer.framedGraphToViewport({ x: d.x, y: d.y });
+    if (p.x < -10 || p.y < -10 || p.x > W + 10 || p.y > H + 10) return;
+    const v = +key;
+    const forced = d.forceLabel || (focus.core && focus.core.has(v));
+    const pri = forced ? 0 : key === hovered ? 1 : focus.set?.has(v) ? 2 : 3;
+    cand.push({ key, label: attr.label, x: p.x, y: p.y, r: renderer.scaleSize(d.size), pri, size: d.size });
+  });
+  cand.sort((a, b) => a.pri - b.pri || b.size - a.size || a.key - b.key);
+  const budget = labelBudget({ n, width: W, ratio, focus: !!focus.set });
+  ctx.lineJoin = 'round';
+  let count = 0;
+  for (const c of cand) {
+    if (count >= budget && c.pri > 1) break;
+    const strong = c.pri === 0;
+    ctx.font = `${strong ? 600 : 500} 12px ${LABEL_FONT}`;
+    const w = ctx.measureText(c.label).width, h = 14;
+    const y = c.y - h / 2;
+    let box = { x: c.x + c.r + 4, y, w, h };
+    if (box.x + w > W - 4 || overlaps(box, rects)) {
+      const left = { x: c.x - c.r - 4 - w, y, w, h };
+      if (left.x >= 4 && !overlaps(left, rects)) box = left;
+      else if (strong) box = { x: Math.max(4, Math.min(box.x, W - 4 - w)), y, w, h };
+      else continue;
+    }
+    if (box.y < 2 || box.y + h > H - 2) { if (!strong) continue; box.y = Math.max(2, Math.min(box.y, H - h - 2)); }
+    // Halo in the canvas ground, then the text.
+    ctx.lineWidth = 4; ctx.strokeStyle = t.bgDeep;
+    ctx.strokeText(c.label, box.x, box.y + 11);
+    ctx.fillStyle = strong ? t.text : t.text2;
+    ctx.fillText(c.label, box.x, box.y + 11);
+    rects.push(box);
+    placed.labels.push({ x: box.x, y: box.y + 11, text: c.label, strong });
+    count++;
+  }
+}
+
 // ---- side panel -----------------------------------------------------------------
 
-function Legend({ colouring, focusCat, setFocusCat, sizeBy }) {
-  if (!colouring) return null;
+function Legend({ coloring, focusCat, setFocusCat, sizeBy, directed }) {
+  if (!coloring) return null;
   return html`<div>
-    ${colouring.kind === 'cat' && html`<p class="label">Colour: ${colouring.title}</p>
+    ${coloring.kind === 'cat' && html`<h2 class="label">Color: ${coloring.title}</h2>
       <div class="legend">
-        ${colouring.legend.map(e => html`<button class="legend__item" aria-pressed=${String(focusCat === e.value)} onClick=${() => setFocusCat(focusCat === e.value ? null : e.value)}
+        ${coloring.legend.map(e => html`<button type="button" class="legend__item" aria-pressed=${String(focusCat === e.value)} onClick=${() => setFocusCat(focusCat === e.value ? null : e.value)}
             onMouseEnter=${() => setFocusCat(e.value)} onMouseLeave=${() => setFocusCat(null)}>
           <${Swatch} color=${e.color} /><span class="grow">${e.label}</span><span class="legend__count">${fmtInt(e.count)}</span></button>`)}
-        ${colouring.folded && html`<div class="legend__item" style="cursor:default"><${Swatch} color=${colouring.other} /><span class="grow">Other (smaller groups)</span><span class="legend__count">${fmtInt(colouring.foldedCount)}</span></div>`}
-        ${colouring.missing > 0 && html`<div class="legend__item" style="cursor:default"><${Swatch} color=${colouring.other} /><span class="grow">No value</span><span class="legend__count">${fmtInt(colouring.missing)}</span></div>`}
+        ${coloring.folded && html`<div class="legend__item" style="cursor:default"><${Swatch} color=${coloring.other} /><span class="grow">${coloring.foldedLabel}</span><span class="legend__count">${fmtInt(coloring.foldedCount)}</span></div>`}
+        ${coloring.missing > 0 && html`<div class="legend__item" style="cursor:default"><${Swatch} color=${coloring.other} /><span class="grow">Not recorded</span><span class="legend__count">${fmtInt(coloring.missing)}</span></div>`}
       </div>
-      <p class="basis">Hover or click a group to pick it out. Colours are assigned by group size and stay fixed while you filter.</p>`}
-    ${colouring.kind === 'seq' && html`<${RampLegend} scale=${colouring.scale} label=${`Colour: ${colouring.title}`} />`}
-    ${sizeBy !== 'none' && html`<p class="label" style="margin-top:1rem">Size: ${gloss(sizeBy).label}</p><p class="basis" style="margin-top:0">Area grows with the value (square-root scale).</p>`}
+      <p class="basis">${coloring.community
+        ? `Numbers on the map mark each community of three or more people.${coloring.legend.some(e => e.folded) ? ` Communities after the ${['', 'first', 'second', 'third', 'fourth', 'fifth'][coloring.hues] || coloring.hues + 'th'} share gray, so colors stay distinct for color-blind readers; select one to pick it out.` : ''}`
+        : 'Hover or select a group to pick it out.'} Colors stay fixed while you filter.</p>`}
+    ${coloring.kind === 'seq' && html`<${RampLegend} scale=${coloring.scale} label=${`Color: ${coloring.title}`} />`}
+    ${sizeBy !== 'none' && html`<h2 class="label" style="margin-top:1rem">Size: ${metricLabel(sizeBy, directed)}</h2><p class="basis" style="margin-top:0">Area grows with the value (square-root scale).</p>`}
   </div>`;
 }
+
+const SUMMARY_KEYS = ['density', 'reciprocity', 'transitivity', 'avgClustering', 'components', 'largestComponentShare', 'avgPathLength', 'degreeCentralization', 'strengthGini'];
 
 function NetworkSummary() {
   const m = useStore(s => s.metrics?.network);
@@ -416,7 +705,7 @@ function NetworkSummary() {
   const [nm, setNm] = useState(null);
   const [busy, setBusy] = useState(false);
   if (!m) return null;
-  const keys = ['density', 'reciprocity', 'transitivity', 'avgClustering', 'components', 'largestComponentShare', 'avgPathLength', 'degreeCentralization', 'strengthGini'].filter(k => Number.isFinite(m[k]));
+  const keys = SUMMARY_KEYS.filter(k => Number.isFinite(m[k]));
   const runNull = async () => {
     setBusy(true);
     try {
@@ -424,65 +713,113 @@ function NetworkSummary() {
       setNm(r);
     } catch (e) { if (e.name !== 'AbortError') store.actions.notify('error', e.message); } finally { setBusy(false); }
   };
-  return html`<div class="section" style="border-top:0;padding-top:0">
-    <p class="label">Whole network</p>
-    ${keys.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k === 'reciprocity' ? 'reciprocityNetwork' : k} /></span><span class="metric-row__val">${k === 'largestComponentShare' ? `${Math.round(m[k] * 100)}%` : fmtNum(m[k])}</span>
-      ${nm?.[k] && html`<span class="metric-row__sub">Random networks with the same degrees: ${fmtNum(nm[k].mean)} (sd ${fmtNum(nm[k].sd)}), z ${fmtNum(nm[k].z, { digits: 2 })}, ${fmtP(nm[k].p)}</span>`}</div>`)}
-    ${communities && html`<div class="metric-row"><span><${MetricName} metric="modularity" /></span><span class="metric-row__val">${fmtNum(communities.modularity)}</span>
-      <span class="metric-row__sub">${communities.count} communities${communities.nontrivial != null ? `, ${communities.nontrivial} with more than one person` : ''}${nm?.modularity ? `. Random: ${fmtNum(nm.modularity.mean)}, z ${fmtNum(nm.modularity.z, { digits: 2 })}, ${fmtP(nm.modularity.p)}` : ''}</span></div>`}
-    ${!nm ? html`<div style="margin-top:.8rem"><button class="btn btn--sm" onClick=${runNull} disabled=${busy}>Compare with random networks</button>
+  const nullLine = (x) => {
+    const above = x.observed > x.mean;
+    const clear = x.p < 0.05;
+    return `${clear ? (above ? 'Higher than' : 'Lower than') : 'Not clearly different from'} random networks with the same degrees (random ${fmtNum(x.mean)}, sd ${fmtNum(x.sd)}; z ${fmtNum(x.z, { digits: 2 })}, ${fmtP(x.p)}).`;
+  };
+  return html`<details class="net-summary" open=${!narrow()}>
+    <summary><h2 class="label" style="display:inline;margin:0">Whole network</h2></summary>
+    ${communities && html`<div class="metric-row"><span><${MetricName} metric="modularity" gloss=${true} /></span><span class="metric-row__val">${fmtNum(communities.modularity)}</span>
+      <span class="metric-row__sub">${plural(communities.count, 'community', 'communities')}${communities.nontrivial != null ? `, ${fmtInt(communities.nontrivial)} with more than one person` : ''}.${nm?.modularity ? ` ${nullLine(nm.modularity)}` : ''}</span></div>`}
+    ${keys.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k === 'reciprocity' ? 'reciprocityNetwork' : k} gloss=${true} /></span><span class="metric-row__val">${k === 'largestComponentShare' ? `${Math.round(m[k] * 100)}%` : fmtNum(m[k])}</span>
+      ${nm?.[k] && html`<span class="metric-row__sub">${nullLine(nm[k])}</span>`}</div>`)}
+    ${!nm ? html`<div style="margin-top:.8rem"><button type="button" class="tlink" onClick=${runNull} disabled=${busy}>${busy ? 'Comparing' : 'Compare with random networks'}</button>
       <p class="basis">Clustering, reciprocity and modularity are only notable if they exceed what random networks with the same degrees produce.</p></div>`
       : html`<p class="basis">Null model: ${nm.meta?.model || 'degree-preserving rewiring'}, ${nm.meta?.reps ?? 100} replicates, seed ${nm.meta?.seed ?? 1}. Two-sided empirical p.</p>`}
-  </div>`;
+  </details>`;
 }
 
-function SelectionPanel({ ds, selection }) {
-  const metrics = useStore(s => s.metrics);
+const PANEL_METRICS = ['contacts', 'degree', 'strength', 'betweenness', 'closeness', 'pagerank', 'clustering', 'constraint'];
+
+function SelectionPanel({ ds, selection, data, metrics, onEdge }) {
   const net = useStore(s => s.network);
   const communities = useStore(s => s.communities);
+  const ap = useStore(s => s.applicability);
+  const [allTies, setAllTies] = useState(false);
   const i = selection[selection.length - 1];
   const v = net.nodeIds ? Array.prototype.indexOf.call(net.nodeIds, i) : -1;
-  const ap = useStore(s => s.applicability);
-  const show = ['degree', 'strength', 'betweenness', 'closeness', 'pagerank', 'clustering', 'constraint'].filter(k => metrics?.node?.[k] && ap?.[k]?.level !== 'na');
-  return html`<div class="section" style="border-top:0;padding-top:0">
-    <p class="label">${selection.length > 1 ? `${selection.length} selected` : 'Selected'}</p>
-    <h2 style="font-size:1.15rem;font-weight:600">${nodeLabel(ds, i)}</h2>
-    <p class="meta" style="margin:.2rem 0 .6rem">${ds.nodes.keys[i]}${ds.nodes.isBot[i] ? ' · bot' : ''}</p>
+  const show = PANEL_METRICS.filter(k => metrics?.[k] && ap?.[k]?.level !== 'na' && !(k === 'degree' && !net.directed));
+  const ties = useMemo(() => tiesOf(data, i, net.directed), [data, i]);
+  const shownTies = allTies ? ties : ties.slice(0, 8);
+  const sc = communities ? communityScale(communities) : null;
+  const key = displayKey(ds.nodes.keys[i]);
+  const attrs = Object.entries(ds.nodes.attrs[i]).filter(([k]) => k !== 'deactivated');
+  return html`<div>
+    <h2 class="label">${selection.length > 1 ? `${selection.length} selected` : 'Selected'}</h2>
+    <p class="net-sel__name">${nodeLabel(ds, i)}</p>
+    <p class="meta" style="margin:.2rem 0 .6rem">${key || ''}${ds.nodes.isBot[i] ? `${key ? ' · ' : ''}bot` : ''}${isDeactivated(ds, i) ? html` <${Flag} level="caution">Deactivated account</${Flag}>` : ''}</p>
     ${v < 0 ? html`<p class="small text2">Not in the current network (filtered out or without ties).</p>` : html`
-      ${communities && html`<div class="metric-row"><span>Community</span><span class="metric-row__val">${communities.membership[v] + 1}</span></div>`}
-      ${show.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k} /></span><span class="metric-row__val">${fmtNum(metrics.node[k][v])}</span></div>`)}
+      ${communities && html`<div class="metric-row"><span>Community</span><span class="metric-row__val"><${Swatch} color=${sc.color(String(communities.membership[v]))} /> ${communities.membership[v] + 1}</span></div>`}
+      ${show.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k} label=${metricLabel(k, net.directed)} gloss=${true} /></span><span class="metric-row__val">${fmtNum(metrics[k][v])}</span></div>`)}
     `}
-    ${Object.keys(ds.nodes.attrs[i]).length > 0 && html`<dl class="kv" style="margin-top:.8rem">${Object.entries(ds.nodes.attrs[i]).slice(0, 8).map(([k, x]) => html`<dt>${humanize(k)}</dt><dd>${String(x)}</dd>`)}</dl>`}
-    <div class="row" style="margin-top:.9rem">
-      <button class="btn btn--sm btn--primary" onClick=${() => { store.set({ ui: { ...store.get().ui, profile: i } }); store.actions.setView('people'); }}>Full profile</button>
-      <button class="btn btn--sm" onClick=${() => store.actions.select([])}>Clear</button>
+    ${v >= 0 && html`<h3 class="label" style="margin-top:1.1rem">Ties (${fmtInt(ties.length)})</h3>
+      ${ties.length ? html`<ul class="net-ties">
+        ${shownTies.map(tie => html`<li><button type="button" class="linkish net-ties__btn" onClick=${() => onEdge({ a: i, b: tie.other })} aria-label=${`Evidence for the tie with ${nodeLabel(ds, tie.other)}`}>
+          <span class="grow">${nodeLabel(ds, tie.other)}</span><span class="tnum">${fmtNum(tie.w)}</span></button>
+          <span class="metric-row__sub">${tie.dir}${tie.rules.length ? ` · ${tie.rules.map(r => (RULE_LABEL[r] || r).toLowerCase()).join(', ')}` : ''}</span></li>`)}
+      </ul>
+      ${ties.length > 8 && html`<button type="button" class="tlink" onClick=${() => setAllTies(x => !x)}>${allTies ? 'Show the strongest 8' : `Show all ${fmtInt(ties.length)} ties`}</button>`}
+      <p class="basis">Weight under the current construction rules. Select a tie to see the events behind it.${data?.truncated?.edges ? ' The weakest ties are not drawn and not listed.' : ''}</p>`
+      : html`<p class="small text2">No ties drawn.</p>`}`}
+    ${attrs.length > 0 && html`<dl class="kv" style="margin-top:.8rem">${attrs.slice(0, 8).map(([k, x]) => html`<dt>${humanize(k)}</dt><dd>${fmtAttr(k, x)}</dd>`)}</dl>`}
+    <div class="tlinks" style="margin-top:.9rem">
+      <button type="button" class="btn btn--sm btn--primary" onClick=${() => { store.set({ ui: { ...store.get().ui, profile: i } }); store.actions.setView('people'); }}>Full profile</button>
+      <button type="button" class="tlink tlink--quiet" onClick=${() => store.actions.select([])}>Clear selection</button>
     </div>
-    <p class="basis">Shift-click to add people to the selection. Click a highlighted tie to see its evidence.</p>
   </div>`;
 }
 
+const EVIDENCE_PAGE = 60;
+
 export function Evidence({ ds, a, b, onClose }) {
-  const q = useEngine('evidence', () => engine.edgeEvidence(a, b, { limit: 60, bothDirections: true }), [a, b]);
-  return html`<div class="section" style="border-top:0;padding-top:0">
-    <div class="row row--between"><p class="label" style="margin:0">Evidence for this tie</p><button class="btn btn--quiet btn--sm" onClick=${onClose} aria-label="Close evidence">${Icon.close}</button></div>
-    <h2 style="font-size:1.05rem;font-weight:600;margin-top:.3rem">${nodeLabel(ds, a)} <span class="muted" style="font-weight:400">and</span> ${nodeLabel(ds, b)}</h2>
+  const [limit, setLimit] = useState(EVIDENCE_PAGE);
+  // Ask for one more than shown, to know whether there is more.
+  const q = useEngine('evidence', () => engine.edgeEvidence(a, b, { limit: limit + 1, bothDirections: true }), [a, b, limit]);
+  const head = useRef(null);
+  useEffect(() => { head.current?.focus({ preventScroll: true }); }, [a, b]);
+  const events = q.data ? q.data.events.slice(0, limit) : [];
+  const more = q.data ? q.data.events.length > limit : false;
+  const exportCSV = async () => {
+    try {
+      const all = await engine.edgeEvidence(a, b, { limit: 1e7, bothDirections: true });
+      const esc = x => { const s = x == null ? '' : String(x); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      const lines = ['time_utc,actor,rule,type,context,visibility,weight,text'];
+      for (const e of all.events) lines.push([Number.isFinite(e.t) ? new Date(e.t).toISOString() : '', e.actorLabel || nodeLabel(ds, e.actor), e.rule, e.type, e.context, e.visibility, e.amount, e.text].map(esc).join(','));
+      download(lines.join('\n'), 'tie-evidence.csv', 'text/csv');
+    } catch (e) { store.actions.notify('error', e.message); }
+  };
+  const parentText = (e) => {
+    const p = ds.events.parent?.[e.event];
+    if (!(p >= 0) || !['reaction', 'like', 'repost'].includes(e.type)) return null;
+    const tx = ds.events.text?.[p];
+    return tx ? (tx.length > 160 ? `${tx.slice(0, 157)}...` : tx) : null;
+  };
+  return html`<div>
+    <div class="row row--between"><h2 class="label" style="margin:0" tabindex="-1" ref=${head}>Evidence for this tie</h2><button type="button" class="btn btn--quiet btn--sm" onClick=${onClose} aria-label="Close evidence">${Icon.close}</button></div>
+    <p class="net-sel__name" style="margin-top:.3rem">${nodeLabel(ds, a)} <span class="muted" style="font-weight:400">and</span> ${nodeLabel(ds, b)}</p>
     ${q.loading && html`<${Loading}>Finding the events</${Loading}>`}
     <${ErrorLine} error=${q.error} />
-    ${q.data && html`<p class="small text2" style="margin:.4rem 0 .6rem">${q.data.capped ? `The first ${fmtInt(q.data.events.length)} pieces` : `${fmtInt(q.data.total)} piece${q.data.total === 1 ? '' : 's'}`} of evidence under the current construction rules, oldest first${q.data.total > q.data.events.length ? `; ${fmtInt(q.data.events.length)} shown` : ''}.</p>
-      <ol style="list-style:none;margin:0;padding:0">
-        ${q.data.events.map(e => html`<li style="padding:.5rem 0;border-bottom:1px solid var(--rule);font-size:.8125rem">
-          <div class="row row--between" style="gap:.2rem .6rem"><span style="color:var(--text)">${e.actorLabel || nodeLabel(ds, e.actor)} <span class="muted">· ${e.rule}</span></span><span class="meta">${fmtDateTime(e.t)}</span></div>
-          <div class="meta" style="margin-top:.15rem">${e.type}${e.context ? ` in ${e.context}` : ''}${e.visibility ? ` · ${e.visibility}` : ''}${e.amount != null ? ` · weight ${fmtNum(e.amount)}` : ''}</div>
+    ${q.data && html`<p class="small text2" style="margin:.4rem 0 .6rem">${more ? `The first ${fmtInt(events.length)} pieces of evidence` : events.length === 1 ? 'One piece of evidence' : `${fmtInt(events.length)} pieces of evidence`} under the current construction rules, oldest first.</p>
+      <ol class="net-evidence">
+        ${events.map(e => { const pt = parentText(e); return html`<li>
+          <div class="row row--between" style="gap:.2rem .6rem"><span style="color:var(--text)">${e.actorLabel || nodeLabel(ds, e.actor)} <span class="muted">· ${RULE_LABEL[e.rule] || e.rule}</span></span><span class="meta">${fmtDateTime(e.t)}</span></div>
+          <div class="meta" style="margin-top:.15rem">${humanize(e.type)}${e.context ? ` in ${e.context}` : ''}${e.visibility && e.visibility !== 'unknown' ? ` · ${(VISIBILITY_LABEL[e.visibility] || e.visibility).toLowerCase()}` : ''}${e.amount != null ? ` · weight ${fmtNum(e.amount)}` : ''}</div>
+          ${pt && html`<p class="text2" style="margin-top:.25rem"><span class="muted">On:</span> ${pt}</p>`}
           ${e.text && html`<p class="text2" style="margin-top:.25rem">${e.text}</p>`}
-        </li>`)}
-      </ol>`}
+        </li>`; })}
+      </ol>
+      <div class="tlinks" style="margin-top:.6rem">
+        ${more && html`<button type="button" class="tlink" onClick=${() => setLimit(1e6)}>Show all</button>`}
+        <button type="button" class="tlink tlink--down" onClick=${exportCSV}>Download as CSV</button>
+      </div>`}
   </div>`;
 }
 
 // ---- export ------------------------------------------------------------------------
 
-function ExportMenu({ sigmaRef, data, colouring, sizes, ds }) {
-  const svg = () => buildSVG(sigmaRef.current, data, colouring, sizes, ds);
+function ExportMenu({ sigmaRef, data, coloring, ds }) {
+  const svg = () => buildSVG(sigmaRef.current, coloring, ds);
   const doSVG = () => { const s = svg(); if (s) download(s, 'network.svg', 'image/svg+xml'); };
   const doPNG = async () => {
     const s = svg(); if (!s) return;
@@ -495,11 +832,12 @@ function ExportMenu({ sigmaRef, data, colouring, sizes, ds }) {
     URL.revokeObjectURL(url);
     c.toBlob(b => download(b, 'network.png', 'image/png'), 'image/png');
   };
-  return html`<button class="btn" onClick=${doSVG} disabled=${!data}>Export SVG</button><button class="btn" onClick=${doPNG} disabled=${!data}>Export PNG</button>`;
+  return html`<span class="net-export"><span class="muted small">Export figure:</span> <button type="button" class="tlink tlink--down" onClick=${doSVG} disabled=${!data}>SVG</button> <button type="button" class="tlink tlink--down" onClick=${doPNG} disabled=${!data}>PNG</button></span>`;
 }
 
-// Redraw the current viewport as SVG from node positions and the reducers' output.
-function buildSVG(ref, data, colouring, sizes, ds) {
+// Redraw the current viewport as SVG from node positions, the reducers'
+// output and the labels and badges placed on screen.
+function buildSVG(ref, coloring, ds) {
   if (!ref?.sigma) return null;
   const r = ref.sigma, g = ref.graph;
   const t = tokens();
@@ -513,8 +851,9 @@ function buildSVG(ref, data, colouring, sizes, ds) {
     const rad = r.scaleSize(d.size);
     pos.set(key, p);
     if (p.x < -20 || p.y < -20 || p.x > width + 20 || p.y > height + 20) return;
-    nodes.push({ key, x: p.x, y: p.y, r: Math.max(1, rad), color: d.color, label: d.label, forceLabel: d.forceLabel || d.highlighted });
+    nodes.push({ key, x: p.x, y: p.y, r: Math.max(1, rad), color: d.color, z: d.zIndex || 0 });
   });
+  nodes.sort((a, b) => a.z - b.z);
   const edges = [];
   g.forEachEdge((key, attr, a, b) => {
     const d = r.getEdgeDisplayData(key);
@@ -524,15 +863,16 @@ function buildSVG(ref, data, colouring, sizes, ds) {
     edges.push(`<line x1="${pa.x.toFixed(1)}" y1="${pa.y.toFixed(1)}" x2="${pb.x.toFixed(1)}" y2="${pb.y.toFixed(1)}" stroke="${d.color}" stroke-width="${Math.max(0.3, r.scaleSize(d.size) * 0.5).toFixed(2)}"/>`);
   });
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  const big = [...nodes].sort((a, b) => b.r - a.r).slice(0, 40).filter(n => n.label);
-  const labelSet = new Set(big.map(n => n.key));
-  const legend = colouring?.kind === 'cat' ? colouring.legend.map((e, i) => `<g transform="translate(16,${height - 16 - (colouring.legend.length - i) * 16})"><circle r="5" cx="5" cy="-4" fill="${e.color}"/><text x="16" y="0" fill="${t.text2}" font-size="11">${esc(e.label)}</text></g>`).join('') : '';
+  const placed = ref.placed || { labels: [], badges: [] };
+  const items = coloring?.kind === 'cat' ? [...coloring.legend.filter(e => !e.folded), ...(coloring.legend.some(e => e.folded) || coloring.folded ? [{ color: coloring.other, label: coloring.community ? 'Other communities (numbered on the map)' : coloring.foldedLabel }] : [])] : [];
+  const legend = items.map((e, i) => `<g transform="translate(16,${height - 16 - (items.length - i) * 16})"><circle r="5" cx="5" cy="-4" fill="${e.color}"/><text x="16" y="0" fill="${t.text2}" font-size="11">${esc(e.label)}</text></g>`).join('');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="Geist, system-ui, sans-serif">
 <rect width="100%" height="100%" fill="${t.bgDeep}"/>
 <g>${edges.join('')}</g>
-<g>${nodes.map(n => `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${n.r.toFixed(2)}" fill="${n.color}"/>`).join('')}</g>
-<g font-size="11" fill="${t.text2}">${nodes.filter(n => n.label && (labelSet.has(n.key) || n.forceLabel)).map(n => `<text x="${(n.x + n.r + 3).toFixed(1)}" y="${(n.y + 4).toFixed(1)}">${esc(n.label)}</text>`).join('')}</g>
+<g stroke="${t.bgDeep}" stroke-width="1.5">${nodes.map(n => `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(n.r + 0.75).toFixed(2)}" fill="${n.color}"/>`).join('')}</g>
+<g font-size="11" font-weight="600">${placed.badges.map(b => `<circle cx="${b.x.toFixed(1)}" cy="${b.y.toFixed(1)}" r="${b.r}" fill="${t.bgDeep}" stroke="${b.color}" stroke-width="2"/><text x="${b.x.toFixed(1)}" y="${(b.y + 4).toFixed(1)}" text-anchor="middle" fill="${t.text}">${esc(b.text)}</text>`).join('')}</g>
+<g font-size="12" stroke="${t.bgDeep}" stroke-width="4" stroke-linejoin="round" paint-order="stroke">${placed.labels.map(l => `<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" fill="${l.strong ? t.text : t.text2}"${l.strong ? ' font-weight="600"' : ''}>${esc(l.text)}</text>`).join('')}</g>
 ${legend}
 <text x="${width - 12}" y="${height - 10}" text-anchor="end" font-size="10" fill="${t.muted}">${esc(ds.meta.name)} · Org Signal</text>
 </svg>`;

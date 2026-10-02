@@ -11,8 +11,35 @@ export function fmtNum(v, { digits = 3 } = {}) {
   if (a === 0) return '0';
   if (a >= 1000) return Math.round(v).toLocaleString('en-US');
   if (a >= 1) return Number(v.toFixed(Math.max(0, digits - 1 - Math.floor(Math.log10(a))))).toString();
-  if (a < 1e-6) return v.toExponential(1);
+  // Never scientific notation in the interface: below a millionth the value
+  // is zero for every reading the measures support.
+  if (a < 1e-6) return '~0';
   return Number(v.toPrecision(digits)).toString();
+}
+
+// One formatter for a whole table column, with the same number of decimals on
+// every row so values line up (0.174 / 0.088 / 0.007, not 0.174 / 0.0878 /
+// 0.00692). Decimals follow the largest magnitude in the column; a nonzero
+// value that rounds to zero shows as ~0.
+export function columnFormat(values) {
+  let mx = 0, allInt = true, any = false;
+  for (const v of values) {
+    if (!Number.isFinite(v)) continue;
+    any = true;
+    const a = Math.abs(v);
+    if (a > mx) mx = a;
+    if (allInt && !Number.isInteger(v)) allInt = false;
+  }
+  const digits = !any || allInt || mx >= 100 ? 0 : mx >= 10 ? 1 : mx >= 1 ? 2 : 3;
+  const fmt = (v) => {
+    if (v == null || Number.isNaN(v)) return '–';
+    if (!Number.isFinite(v)) return v > 0 ? '∞' : '-∞';
+    const s = v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    if (v !== 0 && Number(s.replace(/,/g, '')) === 0) return '~0';
+    return s;
+  };
+  fmt.digits = digits;
+  return fmt;
 }
 
 export function fmtInt(v) {
@@ -67,6 +94,22 @@ export function fmtBytes(b) {
   if (b < 1024 ** 2) return `${(b / 1024).toFixed(1)} KB`;
   if (b < 1024 ** 3) return `${(b / 1024 ** 2).toFixed(1)} MB`;
   return `${(b / 1024 ** 3).toFixed(2)} GB`;
+}
+
+// Attribute values for display. Time zone offsets arrive in seconds from
+// several exports (Slack tz_offset); show them as UTC+5:30.
+export function fmtAttr(key, v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'boolean') return v ? 'yes' : 'no';
+  if (typeof v === 'object') return JSON.stringify(v);
+  if (/(tz|utc|timezone)[ _-]?offset/i.test(String(key))) {
+    const x = Number(v);
+    if (Number.isFinite(x) && Math.abs(x) <= 14 * 3600 && x % 900 === 0) {
+      const m = Math.abs(x) / 60;
+      return `UTC${x < 0 ? '-' : '+'}${Math.floor(m / 60)}${m % 60 ? `:${String(m % 60).padStart(2, '0')}` : ''}`;
+    }
+  }
+  return String(v);
 }
 
 // Turn "inDegree" / "largest_component_share" into "In degree" / "Largest component share".
