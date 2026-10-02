@@ -91,7 +91,7 @@ function PeopleInner({ ds, net }) {
     ...(communities ? [{ key: 'community', title: 'Community', width: 'minmax(5.5rem,.7fr)', min: 96, group: 'People' }] : []),
     ...attrs.map(a => ({ key: `attr:${a.key}`, title: a.label, width: 'minmax(7rem,1fr)', min: 110, group: isBookkeeping(a) ? 'Data-collection fields' : 'Attributes' })),
     ...numAttrs.map(a => ({ key: `num:${a.key}`, title: a.label, num: true, width: 'minmax(5.5rem,.8fr)', min: 90, group: 'Attributes' })),
-    ...metricKeys.map(k => ({ key: `m:${k}`, title: mlabel(k), header: k === 'degree' ? mlabel(k) : mlabel(k).split(' (')[0], info: html`<${MetricInfo} metric=${k} label=${mlabel(k)} />`, num: true, width: 'minmax(7.5rem,.9fr)', min: 124, group: ap[k]?.level === 'na' ? 'Measures that do not apply to this data' : 'Measures' })),
+    ...metricKeys.map(k => ({ key: `m:${k}`, title: mlabel(k), header: k === 'degree' ? mlabel(k) : mlabel(k).split(' (')[0], info: html`<${MetricInfo} metric=${k} label=${mlabel(k)} />`, num: true, width: 'minmax(8.5rem,.9fr)', min: 136, group: ap[k]?.level === 'na' ? 'Measures that do not apply to this data' : 'Measures' })),
   ];
   const stabCols = Object.keys(stability).filter(m => cols.has(`m:${m}`)).flatMap(m => [
     { key: `iv:${m}`, title: `${mlabel(m).split(' (')[0]} rank interval`, num: true, sortable: false, width: 'minmax(7rem,.9fr)', min: 112, after: `m:${m}` },
@@ -143,7 +143,7 @@ function PeopleInner({ ds, net }) {
   };
   const cell = (v, c) => {
     const i = ids[v];
-    if (c.key === 'name') return html`${comm ? html`<${Swatch} color=${comm.color(String(communities.membership[v]))} />` : ''}${nodeLabel(ds, i)}${ds.nodes.isBot[i] ? html` <span class="meta">bot</span>` : ''}${isDeactivated(ds, i) ? html` <${Flag} level="caution">left</${Flag}>` : ''}`;
+    if (c.key === 'name') return html`${comm ? html`<${Swatch} color=${comm.color(String(communities.membership[v]))} />` : ''}${nodeLabel(ds, i)}${ds.nodes.isBot[i] ? html` <span class="meta">bot</span>` : ''}${isDeactivated(ds, i) ? html` <${Flag} level="caution">deactivated</${Flag}>` : ''}`;
     if (c.key === 'community') return String(communities.membership[v] + 1);
     if (c.key.startsWith('attr:')) { const x = ds.nodes.attrs[i][c.key.slice(5)]; return x == null || x === '' ? html`<span class="muted">–</span>` : fmtAttr(c.key.slice(5), x); }
     if (c.key.startsWith('num:')) { const k = c.key.slice(4); const x = ds.nodes.attrs[i][k]; return x == null || x === '' ? html`<span class="muted">–</span>` : fmtAttr(k, Number.isFinite(Number(x)) && !/offset/i.test(k) ? fmtNum(Number(x)) : x); }
