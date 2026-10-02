@@ -42,7 +42,9 @@ Org Signal turns raw relational traces (exports, surveys, hand-drawn networks, s
 | Analysis engine | `src/analysis/**`, `src/workers/analysis.worker.js` | analysis |
 | Synthetic generator | `src/generator/**` | generator |
 | LLM layer | `src/llm/**` | llm |
-| UI and hand builders | `index.html`, `assets/app.css`, `src/ui/**`, `src/builders/**` | ui |
+| UI shell and analysis views | `index.html`, `assets/app.css`, `src/ui/**` except `src/ui/build/**` and `src/ui/generate/**` | ui-core |
+| Hand builders and generator UI | `src/builders/**`, `src/ui/build/**`, `src/ui/generate/**`, `assets/build.css` | ui-build |
+| Shared UI store | `src/ui/store.js` | lead |
 
 Each owner writes only inside their paths plus `test/<area>/` and `test/fixtures/<area>/`, and documents their public API in `docs/api/<area>.md`. If you need a change in someone else's file, describe it in your final report instead of editing it.
 
@@ -100,4 +102,4 @@ recoveryCheck(groundTruth, ds, net, results) -> report
 
 ## UI
 
-Single page (`index.html` → `src/ui/app.js`). Views: Data (sources, import report, identity review, profile join), Network, People, Groups, Content, Time, Generate, Build (ego, roster, perceived, draw), Ask (LLM), Methods and Export. Settings drawer for construction rules. All heavy work through the analysis engine and import worker with progress and cancel. Must work at phone width (no horizontal page scroll) though the primary target is a laptop.
+Single page (`index.html` → `src/ui/app.js`). Shared state is `src/ui/store.js` (`store`, `useStore`, `store.actions`). ui-core owns the shell and registers `store.actions` (at least `loadDataset(ds, { mode })`, `setView(view)`, `select(nodes)`, `notify(level, text)`); ui-build exports `BuildView` from `src/ui/build/index.js` and `GenerateView` from `src/ui/generate/index.js`, which ui-core mounts for the Build and Generate views, and hands results back only through `store.actions.loadDataset`. Views: Data (sources, import report, identity review, profile join), Network, People, Groups, Content, Time, Generate, Build (ego, roster, perceived, draw), Ask (LLM), Methods and Export. Settings drawer for construction rules. All heavy work through the analysis engine and import worker with progress and cancel. Must work at phone width (no horizontal page scroll) though the primary target is a laptop.
