@@ -169,10 +169,20 @@ export function importReport(ds) {
   if (ds.meta.merges?.length) notes.push(`${ds.meta.merges.reduce((n, m) => n + m.groups.length, 0)} identities were merged by hand; see the merge log.`);
   const empty = sources.filter(s => s.counts.events === 0);
   if (empty.length) notes.push(`${empty.length} source(s) produced no events.`);
+  // People listed in an export (users.json, a roster) may never act or be
+  // addressed; count those who appear in events separately so totals and the
+  // per-source rows (which count only people in events) agree visibly.
+  const inEvents = new Uint8Array(ds.nodes.count);
+  for (let i = 0; i < e.count; i++) {
+    inEvents[e.actor[i]] = 1;
+    for (let j = e.tOff[i]; j < e.tOff[i + 1]; j++) inEvents[e.tgt[j]] = 1;
+  }
+  let nodesInEvents = 0, botsInEvents = 0;
+  for (let i = 0; i < ds.nodes.count; i++) if (inEvents[i]) { nodesInEvents++; if (ds.nodes.isBot[i]) botsInEvents++; }
   return {
     totals: {
-      nodes: ds.nodes.count, events: e.count, contexts: ds.contexts.count, sources: S,
-      bots: ds.nodes.isBot.reduce((a, b) => a + b, 0),
+      nodes: ds.nodes.count, nodesInEvents, events: e.count, contexts: ds.contexts.count, sources: S,
+      bots: ds.nodes.isBot.reduce((a, b) => a + b, 0), botsInEvents,
       timeRange: Number.isFinite(tMin) ? { start: tMin, end: tMax } : null,
       warnings: { error: 0, warn: 0, info: 0, ...countSev(sources) },
     },

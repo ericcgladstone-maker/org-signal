@@ -379,7 +379,7 @@ export function ReportView({ report, ds }) {
   const t = report.totals;
   return html`<div>
     <dl class="grid-3" style="margin:.5rem 0 1rem">
-      ${[['People', fmtInt(t.nodes)], ['Events', fmtInt(t.events)], ['Conversations and contexts', fmtInt(t.contexts)], ['Sources', fmtInt(t.sources)], ['Time range', t.timeRange ? fmtRange(t.timeRange.start, t.timeRange.end) : 'no timestamps'], ['Accounts marked as bots', fmtInt(t.bots)]].map(([k, v]) => html`<div><dt class="label" style="margin:0">${k}</dt><dd class="tnum" style="margin:.1rem 0 0;font-size:1.05rem;color:var(--text)">${v}</dd></div>`)}
+      ${[['People', t.nodesInEvents != null && t.nodesInEvents !== t.nodes ? `${fmtInt(t.nodes)} listed, ${fmtInt(t.nodesInEvents)} in events` : fmtInt(t.nodes)], ['Events', fmtInt(t.events)], ['Conversations and contexts', fmtInt(t.contexts)], ['Sources', fmtInt(t.sources)], ['Time range', t.timeRange ? fmtRange(t.timeRange.start, t.timeRange.end) : 'no timestamps'], ['Accounts marked as bots', t.botsInEvents != null && t.botsInEvents !== t.bots ? `${fmtInt(t.bots)} listed, ${fmtInt(t.botsInEvents)} in events` : fmtInt(t.bots)]].map(([k, v]) => html`<div><dt class="label" style="margin:0">${k}</dt><dd class="tnum" style="margin:.1rem 0 0;font-size:1.05rem;color:var(--text)">${v}</dd></div>`)}
     </dl>
     ${(report.notes || []).map(n => html`<p class="small text2" style="margin-bottom:.3rem"><${Flag} level="info" /> ${n}</p>`)}
     ${report.unclaimed?.length > 0 && html`<p class="small text2"><${Flag} level="caution">Unread</${Flag}> ${plural(report.unclaimed.length, 'file')} matched no importer: ${report.unclaimed.slice(0, 6).join(', ')}${report.unclaimed.length > 6 ? ', ...' : ''}</p>`}
@@ -398,13 +398,13 @@ function SourceReport({ s }) {
     </div>
     <p class="small text2" style="margin-top:.25rem">${(s.fileNames || []).slice(0, 3).join(', ')}${(s.fileNames || []).length > 3 ? ` and ${s.fileNames.length - 3} more files` : ''}${s.ego ? html` · ego: <span style="color:var(--text)">${s.ego.label}</span>` : ''}</p>
     <dl class="kv" style="max-width:34rem;margin-top:.6rem">
-      <dt>People</dt><dd>${fmtInt(counts.nodes)}</dd>
+      <dt>People in events</dt><dd>${fmtInt(counts.nodes)}</dd>
       <dt>Events</dt><dd>${fmtInt(counts.events)}</dd>
       ${byType && html`<dt class="small">by type</dt><dd class="small text2" style="white-space:normal">${byType}</dd>`}
       <dt>Contexts</dt><dd>${fmtInt(counts.contexts)}</dd>
       <dt>Messages with text</dt><dd>${fmtInt(counts.messagesWithText)}</dd>
       ${counts.undatedEvents > 0 && html`<dt>Events without a time</dt><dd>${fmtInt(counts.undatedEvents)}</dd>`}
-      ${s.bots?.nodes > 0 && html`<dt>Bot accounts</dt><dd>${fmtInt(s.bots.nodes)}</dd>`}
+      ${s.bots?.nodes > 0 && html`<dt>Bot accounts in events</dt><dd>${fmtInt(s.bots.nodes)}</dd>`}
     </dl>
     <div class="src__cols">
       <div><p class="label">This data can show</p><ul class="can-list">${(s.canShow || []).map(x => html`<li>${x}</li>`)}</ul></div>
