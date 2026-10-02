@@ -400,7 +400,7 @@ export function toDataset(s, { name } = {}) {
   const egoKey = `ego:${s.egoId}`;
   const b = new DatasetBuilder({ name: name || `Ego network: ${s.egoLabel || s.caseId || 'respondent'}` });
   b.beginSource({ format: 'ego-interview', family: 'survey', medium: 'survey', view: 'ego', context: 'survey', egoKey, tz: 'UTC',
-    fileNames: [], directed: true, sessionId: s.id, protocolName: s.protocolName });
+    fileNames: [], directed: false, sessionId: s.id, protocolName: s.protocolName });
   const ego = b.node(egoKey, { label: s.egoLabel || 'Ego', attrs: { kind: 'ego', caseId: s.caseId || undefined, ...s.egoAttrs } });
   const genCtx = new Map();
   const usedSlugs = new Set();

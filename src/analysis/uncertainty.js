@@ -105,8 +105,14 @@ export function nullModel(net, opts = {}) {
   return res;
 }
 
-function summarise(obs, xs) {
+function summarise(obs, xsAll) {
+  // Replicates where the statistic is undefined (e.g. too few coded ties) carry
+  // no information; with none left there is no test, so no p-value either.
+  const xs = Array.from(xsAll).filter(Number.isFinite);
   const k = xs.length;
+  if (!k || !Number.isFinite(obs)) {
+    return { observed: obs, mean: NaN, sd: NaN, z: NaN, p: null, pUpper: null, pLower: null, lo: NaN, hi: NaN, replicates: k };
+  }
   let mean = 0;
   for (const x of xs) mean += x;
   mean /= k;
@@ -123,6 +129,7 @@ function summarise(obs, xs) {
     pUpper: (ge + 1) / (k + 1),
     pLower: (le + 1) / (k + 1),
     lo: quantile(sorted, 0.025), hi: quantile(sorted, 0.975),
+    replicates: k,
   };
 }
 

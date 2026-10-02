@@ -103,3 +103,18 @@ test('resampleRanks is deterministic for a seed and returns rank intervals', () 
 test('ranks: competition ranking, ties share the best rank, NaN last', () => {
   assert.deepEqual(Array.from(ranks([3, 5, 5, NaN, 1])), [3, 1, 1, 5, 4]);
 });
+
+test('nullModel: a statistic undefined in every replicate gets no p-value', async () => {
+  const { DatasetBuilder } = await import('../../src/core/model.js');
+  const A = await import('../../src/analysis/index.js');
+  const b = new DatasetBuilder({ source: { format: 'test', view: 'full' } });
+  const n = Array.from({ length: 12 }, (_, i) => b.node(`t:${i}`, { attrs: i === 0 ? { team: 'A' } : {} }));
+  for (let i = 0; i < 12; i++) for (const j of [1, 2, 5]) b.event({ type: 'declared', actor: n[i], targets: [[n[(i + j) % 12], 'declared']] });
+  const ds = b.build();
+  const net = A.buildNetwork(ds, A.defaultSettings(ds));
+  const r = A.nullModel(net, { stats: ['attrAssortativity'], reps: 20, seed: 1, ds, attr: 'team' });
+  const s = r.attrAssortativity;
+  assert.ok(s, 'statistic reported');
+  assert.equal(s.p, null);
+  assert.equal(s.replicates, 0);
+});
