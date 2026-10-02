@@ -18,10 +18,10 @@
 import * as d3 from '../../../vendor/d3.js';
 
 const FALLBACK = {
-  cat: ['#13aa89', '#bb881a', '#9470cd', '#d36757', '#21a3bc', '#6ba04b', '#528ed9', '#c96598'],
+  cat: ['#228f61', '#9f74f8', '#dd5d94', '#b48d17', '#4a9ec6', '#5055d3', '#8c5485', '#bc4001'],
   seq: ['#16594b', '#1f7d69', '#29a288', '#46c6aa', '#7be9cd', '#c5fcec'],
   div: ['#85b6e9', '#4e90d2', '#2a3a48', '#cf6b5b', '#e59c8f'],
-  other: '#5b6f80',
+  other: '#444c52',
   node: '#D8F2FF',
   edge: '#6FA79B',
   accent: '#6FD8BE',
@@ -44,7 +44,7 @@ export function tokens() {
     if (cat.every(Boolean)) out.cat = cat;
     const seq = [0, 1, 2, 3, 4, 5].map(i => v(`--seq-${i}`)).filter(Boolean);
     if (seq.length >= 5) out.seq = seq;
-    const div = ['--div-neg-2', '--div-neg-1', '--div-mid', '--div-pos-1', '--div-pos-2'].map(v);
+    const div = ['--div-cool-2', '--div-cool-1', '--div-mid', '--div-warm-1', '--div-warm-2'].map(v);
     if (div.every(Boolean)) out.div = div;
     for (const [k, name] of [['other', '--cat-other'], ['node', '--node'], ['edge', '--edge'], ['accent', '--accent'],
       ['bg', '--bg'], ['bgDeep', '--bg-deep'], ['text', '--text'], ['text2', '--text-2'], ['muted', '--text-muted']]) {

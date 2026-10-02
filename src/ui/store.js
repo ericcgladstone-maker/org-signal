@@ -25,6 +25,13 @@ const initial = {
   // cleared by loadDataset when a different dataset replaces it. Lets any view
   // show the recovery check after the user leaves Generate.
   generated: null,
+  // Set by the shell and views during the UX pass (see docs/api/ui-core.md):
+  //   lastRebuild  { at, ...before/after summary } of the last settings rebuild (actions.js)
+  //   methodsLog   { [analysis kind]: [{ options }] } runs feeding the methods appendix (services/engine.js)
+  //   stability    { version, byMetric } rank-stability results shown in People (views/people.js)
+  lastRebuild: null,
+  methodsLog: {},
+  stability: null,
 };
 
 function createStore(state) {

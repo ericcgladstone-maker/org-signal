@@ -302,6 +302,10 @@ const PST_ADVICE = 'Outlook PST/OST/MSG files cannot be read in the browser yet 
 
 // ---- import -----------------------------------------------------------------
 
+const CONSUMER_DOMAINS = new Set(['gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com',
+  'ymail.com', 'icloud.com', 'me.com', 'mac.com', 'aol.com', 'proton.me', 'protonmail.com', 'gmx.com', 'gmx.de', 'web.de',
+  'mail.com', 'fastmail.com', 'zoho.com', 'yandex.com', 'hey.com']);
+
 async function importEmail(fs, { builder, options = {}, progress = () => {}, signal } = {}) {
   const opt = { keepText: true, headersOnly: false, excludeLists: false, excludeAutomated: false, includeSpamTrash: false, maxRecipients: 50, egoAddress: '', ...options };
   // The UI offers one choice (`content`) instead of two booleans that could
@@ -525,6 +529,9 @@ function finish(st) {
     builder.node(key, { attrs: { email: ego, domain: ego.slice(ego.lastIndexOf('@') + 1), is_ego: true }, platformIds: { email: ego } });
     builder.source.egoKey = key;
     builder.source.egoInferredFrom = how;
+    // A consumer mailbox is someone's personal mail, not a workplace's; the
+    // report and the methods appendix describe the source by this context.
+    if (CONSUMER_DOMAINS.has(ego.slice(ego.lastIndexOf('@') + 1))) { builder.source.context = 'personal'; builder.source.family = 'personal'; }
     if (how === 'most-frequent-recipient') builder.warn('ego-guessed', `The mailbox owner was guessed as ${ego} (the most frequent recipient). Set "Your email address" in the import options if this is wrong.`);
   } else {
     builder.warn('ego-unknown', 'Could not tell whose mailbox this is. Set "Your email address" in the import options.');

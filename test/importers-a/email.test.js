@@ -200,3 +200,14 @@ print(json.dumps(out))`, f);
     assert.deepEqual(events(ds).map(e => e.actor.slice(6)), ref.map(r => r[0]));
   }
 });
+
+test('a consumer mailbox (gmail.com) is recorded as personal, not workplace', async () => {
+  const { DatasetBuilder } = await import('../../src/core/model.js');
+  const mbox = 'From MAILER-DAEMON Mon Jan  6 10:00:00 2025\nFrom: Ana <ana@example.org>\nTo: Me <me.person@gmail.com>\nDelivered-To: me.person@gmail.com\nDate: Mon, 6 Jan 2025 10:00:00 +0000\nMessage-ID: <a1@x>\nSubject: hi\n\nhello\n';
+  const fs = await FileSet.from([{ blob: new Blob([mbox]), path: 'mail.mbox' }]);
+  const b = new DatasetBuilder();
+  await email.import(fs, { builder: b });
+  const s = b.build().meta.sources[0];
+  assert.equal(s.egoKey, 'email:me.person@gmail.com');
+  assert.equal(s.context, 'personal');
+});

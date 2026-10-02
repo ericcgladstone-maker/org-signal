@@ -51,29 +51,11 @@
 .stab__row .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
 .stab__bar{position:relative;height:14px}
 .stab__bar .axis{position:absolute;left:0;right:0;top:50%;height:1px;background:var(--rule)}
-.stab__bar .span{position:absolute;top:calc(50% - 1px);height:2px;background:var(--cat-1,#13aa89)}
-.stab__bar .dot{position:absolute;top:calc(50% - 4px);width:8px;height:8px;margin-left:-4px;border-radius:50%;background:var(--cat-1,#13aa89);box-shadow:0 0 0 2px var(--bg)}
+.stab__bar .span{position:absolute;top:calc(50% - 1px);height:2px;background:var(--cat-1,#228f61)}
+.stab__bar .dot{position:absolute;top:calc(50% - 4px);width:8px;height:8px;margin-left:-4px;border-radius:50%;background:var(--cat-1,#228f61);box-shadow:0 0 0 2px var(--bg)}
 .stab__row .tnum{text-align:right;color:var(--text-2)}
 .profile-skip{display:flex;flex-wrap:wrap;gap:.25rem 1rem;margin:0 0 .6rem}
 .profile-head{font-size:1.25rem;font-weight:600;letter-spacing:-.015em;margin:0}
 
-/* ---------- shared table (VirtualTable): rules that belong in app.css;
-   kept here until F4 moves them. ---------- */
-/* Visible row cursor while the table has focus (A2). */
-.vt__scroll.has-focus .vt__row.is-focus{background:rgba(111,216,190,.12);box-shadow:inset 3px 0 0 var(--accent)}
-/* Room for the selection bar so it never clips the first cell (V38). */
-.vt__th:first-child,.vt__td:first-child{padding-left:.6rem}
-/* A fade on the side with more columns (P21). */
-.vt--more-right::after,.vt--more-left::before{content:'';position:absolute;top:0;bottom:0;width:2.5rem;pointer-events:none;z-index:3}
-.vt--more-right::after{right:0;background:linear-gradient(90deg,rgba(var(--bg-rgb,7,26,43),0),var(--bg))}
-.vt--more-left::before{left:0;background:linear-gradient(270deg,rgba(var(--bg-rgb,7,26,43),0),var(--bg))}
-.vt__th .tip-wrap--icon{flex:0 0 auto}
-.vt__th .tip-wrap--icon .tip-trigger{display:inline-flex;align-items:center;justify-content:center;min-width:1.5rem;min-height:1.5rem;color:var(--text-muted);text-decoration:none}
-.vt__th .tip-wrap--icon .tip-trigger:hover,.vt__th .tip-wrap--icon .tip-trigger:focus-visible{color:var(--text)}
-.vt__th .tip-wrap--icon svg{width:.8rem;height:.8rem}
-.vt__th.is-sorted .vt__sort{color:var(--text)}
-/* Long measure names wrap to two lines instead of being clipped. */
-.vt__th .vt__sort{min-width:0;white-space:normal}
-.vt__th.num .vt__sort{text-align:right;justify-content:flex-end}
 .stab > summary{cursor:pointer;list-style:none}
 .stab > summary::-webkit-details-marker{display:none}
