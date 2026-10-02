@@ -15,7 +15,7 @@ import { WDAY, MON, pad, parts } from '../time.js';
 
 const PART_SIZE = 5000; // tweets per part file; larger archives get tweets-part1.js ...
 
-export function write({ world, ctx, records, ident, obs, rng }) {
+export function write({ world, ctx, records, ident, obs, rng, native = {} }) {
   const r = rng.fork('xarchive');
   const ego = obs.ego;
   const { span } = world;
@@ -177,6 +177,8 @@ export function write({ world, ctx, records, ident, obs, rng }) {
     const a = ties.a[ti], b = ties.b[ti];
     if (a === ego && live(b)) following.push({ following: { accountId: ident.accountId[b], userLink: `https://twitter.com/intent/user?user_id=${ident.accountId[b]}` } });
     if (b === ego && live(a)) followers.push({ follower: { accountId: ident.accountId[a], userLink: `https://twitter.com/intent/user?user_id=${ident.accountId[a]}` } });
+    if (a === ego && live(b)) (native.following ||= []).push(b);
+    if (b === ego && live(a)) (native.followers ||= []).push(a);
   }
 
   const attrs = world.people.attrs[ego];

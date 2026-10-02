@@ -15,6 +15,10 @@
 
 const DAY_FILE = /^(?:(teams\/[^/]+)\/)?([^/]+)\/(\d{4}-\d{2}-\d{2})\.json$/i;
 const META = ['channels', 'groups', 'dms', 'mpims'];
+// Root files a real export carries that hold no messages or people
+// (docs/formats/slack.md section 2). They are claimed, so they do not end up
+// "unclaimed" next to the export, but never read.
+const AUX_FILE = /^(?:teams\/[^/]+\/)?(integration_logs|canvases|file_conversations|huddle_transcripts|lists|content_flags)\.json$/i;
 const VIS = { channels: 'public', groups: 'private', dms: 'direct', mpims: 'group' };
 const KIND = { channels: 'channel', groups: 'channel', dms: 'dm', mpims: 'group_dm' };
 
@@ -59,6 +63,7 @@ async function detect(fs) {
   }
   const files = [...dayFiles.map(e => e.rel)];
   for (const r of roots.values()) for (const e of Object.values(r)) files.push(e.rel);
+  for (const e of fs.entries) if (AUX_FILE.test(e.rel)) files.push(e.rel);
   const grid = !!top.org_users || [...roots.keys()].some(k => k && roots.get(k).users);
   return { score: 0.95, reason: grid ? 'Slack Enterprise Grid export' : 'Slack workspace export', files };
 }
@@ -158,6 +163,10 @@ async function importSlack(fs, { builder, options = {}, progress = () => {}, sig
     return i;
   }
   for (const id of users.keys()) userNode(id);
+  // Bot users list their bot id in profile.bot_id (spec section 3). A
+  // bot_message carrying only bot_id belongs to that user, not to a second node.
+  const botUser = new Map();
+  for (const [id, u] of users) if (u.profile?.bot_id && !botUser.has(u.profile.bot_id)) botUser.set(u.profile.bot_id, id);
 
   // ---- conversations ------------------------------------------------------
   // folder key: root + folder name -> conversation descriptor
@@ -277,7 +286,7 @@ async function importSlack(fs, { builder, options = {}, progress = () => {}, sig
       }
 
       // Sender. bot_message often has no `user`; it is attributed to a bot node.
-      let actorId = m.user;
+      let actorId = m.user || (m.bot_id ? botUser.get(m.bot_id) : undefined);
       if (sub === 'file_comment' && m.comment?.user) actorId = m.comment.user; // legacy: author is in comment.user
       let actor;
       const isBotMsg = sub === 'bot_message' || !!m.bot_id;

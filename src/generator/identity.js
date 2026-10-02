@@ -106,8 +106,11 @@ export function makeIdentities(world, medium, rng) {
       break;
     }
     case 'survey': {
+      // A roster form names people only by name, and the survey importer keys
+      // them `survey:<normalised name>`; interview exports keep roster ids.
+      const byName = world.recall?.variant === 'roster-matrix';
       id.rosterId = [];
-      for (let i = 0; i < n; i++) { id.rosterId[i] = 'R' + String(i + 1).padStart(3, '0'); key[i] = 'survey:' + id.rosterId[i]; platformIds[i] = {}; }
+      for (let i = 0; i < n; i++) { id.rosterId[i] = 'R' + String(i + 1).padStart(3, '0'); key[i] = byName ? 'survey:' + normName(P.label[i]) : 'survey:' + id.rosterId[i]; platformIds[i] = {}; }
       break;
     }
     default: {
@@ -115,6 +118,12 @@ export function makeIdentities(world, medium, rng) {
     }
   }
   return { ...id, key, label, platformIds };
+}
+
+// Same normalisation as the survey and Network Canvas importers (normName in
+// src/importers/network-canvas.js): NFKD, accents dropped, lower case, spaces collapsed.
+export function normName(s) {
+  return String(s ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 function base32(r, n) { const al = 'abcdefghijklmnopqrstuvwxyz234567'; let s = ''; for (let i = 0; i < n; i++) s += al[r.int(32)]; return s; }

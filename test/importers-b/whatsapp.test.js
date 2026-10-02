@@ -182,8 +182,9 @@ test('iOS 2024+ group export in a zip', async () => {
   assert.equal(src.tz, 'unknown');
   assert.equal(src.egoKey, null);
   assert.deepEqual(src.fileNames, ['_chat.txt']);
-  // The group name never becomes a person.
-  assert.deepEqual(ds.nodes.keys.slice().sort(), ['whatsapp:dana', 'whatsapp:marcus oyelaran', 'whatsapp:priya nandakumar']);
+  // The group name never becomes a person. ~ Ghost Person never wrote but is
+  // @-mentioned between isolates, which names a member exactly.
+  assert.deepEqual(ds.nodes.keys.slice().sort(), ['whatsapp:dana', 'whatsapp:ghost person', 'whatsapp:marcus oyelaran', 'whatsapp:priya nandakumar']);
   assert.equal(node(ds, 'whatsapp:dana').attrs.is_saved_contact, false);
   assert.equal(node(ds, 'whatsapp:dana').label, 'Dana');
   assert.equal(node(ds, 'whatsapp:priya nandakumar').attrs.is_saved_contact, true);
@@ -193,7 +194,7 @@ test('iOS 2024+ group export in a zip', async () => {
   assert.equal(ctx.kind, 'group_dm');
   assert.equal(ctx.visibility, 'group');
   assert.equal(ctx.name, 'Project Falcon');
-  assert.equal(ctx.members.length, 3);
+  assert.equal(ctx.members.length, 4);
   assert.ok(evs.every(e => e.context === evs[0].context));
   // File order and exact wall-clock-as-UTC times.
   assert.deepEqual(evs.map(e => [e.type, e.actor, e.t]), [
@@ -210,7 +211,7 @@ test('iOS 2024+ group export in a zip', async () => {
     ['message', 'whatsapp:marcus oyelaran', Date.UTC(2025, 2, 13, 18, 31, 0)],
   ]);
   // No broadcast targets in a group; mentions only.
-  assert.deepEqual(evs.filter(e => e.targets.length).map(e => e.targets), [[['whatsapp:priya nandakumar', 'mention']]]);
+  assert.deepEqual(evs.filter(e => e.targets.length).map(e => e.targets), [[['whatsapp:priya nandakumar', 'mention']], [['whatsapp:ghost person', 'mention']]]);
   assert.equal(evs[4].text, 'Agenda:\n1. budget\n2. hiring: next week');
   assert.equal(evs[5].text, 'Moved to 3pm');
   assert.equal(evs[2].text, null); // omitted image
@@ -223,7 +224,7 @@ test('iOS 2024+ group export in a zip', async () => {
   assert.equal(src.counts.systemMessages, 4);
   const w = Object.fromEntries(src.warnings.map(x => [x.code, x.count]));
   assert.equal(w['system-by-heuristic'], 4);
-  assert.equal(w['mention-unmatched'], 1); // ~ Ghost Person never wrote
+  assert.ok(!('mention-unmatched' in w)); // ~ Ghost Person never wrote, but the mention is linked
   assert.equal(w['system-you-unresolved'], 1); // 'You created the group'
   for (const c of ['identity-by-name', 'timezone-unknown']) assert.ok(c in w, c);
   assert.ok(!('date-order-ambiguous' in w));

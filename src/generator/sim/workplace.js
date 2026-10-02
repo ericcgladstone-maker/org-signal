@@ -332,7 +332,9 @@ export function simCalendar(world, ctx) {
     const si = ctx.series.push(series) - 1;
     const sp = ctx.addSpace({ key: 'series-' + si, name: title, kind: 'meeting', visibility: att.length > 1 ? 'group' : 'direct', members: [a, ...att], series: si });
     series.space = sp;
-    ctx.emit({ kind: 'meeting', t: start, actor: a, space: sp, attendees: att, present: att.filter(x => partstat[x] !== 'DECLINED'), text: ctx.content.level === 'none' ? null : title, meta: { series: si, durMin: series.durMin, partstat } });
+    const present = att.filter(x => partstat[x] !== 'DECLINED');
+    if (!present.length) return; // everyone declined: no co-presence (the .ics still lists the meeting), as for series
+    ctx.emit({ kind: 'meeting', t: start, actor: a, space: sp, attendees: att, present, text: ctx.content.level === 'none' ? null : title, meta: { series: si, durMin: series.durMin, partstat } });
   });
 }
 

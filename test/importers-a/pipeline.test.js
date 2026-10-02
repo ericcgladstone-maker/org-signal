@@ -56,8 +56,9 @@ test('mixed drop: Slack folder plus HR CSV; the CSV is left for the profile join
   const res = await runImport(fs, {});
   assert.deepEqual(res.plan.map(p => p.id), ['slack']);
   assert.equal(res.plan[0].root, 'standard/');
-  // integration_logs.json is part of the export but carries no network data.
-  assert.deepEqual(res.unclaimed.sort(), ['people.csv', 'standard/integration_logs.json']);
+  // integration_logs.json is part of the export (no network data): Slack claims
+  // it without reading it, so only the HR CSV is left for the profile join.
+  assert.deepEqual(res.unclaimed.sort(), ['people.csv']);
   assert.deepEqual(res.report.unclaimed, res.unclaimed);
   assert.equal(res.dataset.meta.sources[0].format, 'slack');
   assert.ok(res.dataset.events.count > 0);

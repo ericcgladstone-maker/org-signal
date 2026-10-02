@@ -17,7 +17,7 @@ import { fakePhone } from '../identity.js';
 
 const NOT_INCLUDED = '(File not included. Change data exporting settings to download.)';
 
-export function write({ world, ctx, records, ident, obs, spec, rng }) {
+export function write({ world, ctx, records, ident, obs, spec, rng, native = {} }) {
   const r = rng.fork('telegram');
   const ego = obs.ego;
   const { span } = world;
@@ -105,6 +105,7 @@ export function write({ world, ctx, records, ident, obs, spec, rng }) {
   }
   const top = [...msgCount].filter(([i]) => i !== ego).sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, 10);
   const max = top[0]?.[1] || 1;
+  native.frequent = top.map(([i, c]) => ({ person: i, rating: Math.round((c / max) * 1e6) / 1e6 }));
   const result = {
     about: 'Here is the data you requested. Remember: Telegram is ad free, it doesn\'t sell your data, and it doesn\'t use your messages to target you with ads.',
     personal_information: { user_id: Number(uid(ego)), first_name: world.people.first[ego], last_name: world.people.last[ego], phone_number: fakePhone(r, ego), username: '@' + world.people.first[ego].toLowerCase() + r.int(1000), bio: '' },

@@ -61,16 +61,20 @@ export function write({ world, ctx, records, ident, obs, spec, rng }) {
     const title = group ? s.name : name(s.members.find(m => m !== ego));
     const lines = [];
     const header = t => fmt(parts(t, off));
-    // A group the ego was in before the span opens with the encryption notice;
-    // if it was created inside the span, the creation notice follows.
-    const t0 = Math.min(recs[0].t, group && s.created >= span.start ? s.created : Infinity) - 60000;
+    // An export holds the chat's whole history on the phone, so a group opens
+    // with the encryption notice and then the creation notice, dated when the
+    // group was made (often long before the span). That notice is the only
+    // thing that marks a chat with one or two speakers as a group (spec:
+    // conversation_type "prefer the system-message evidence").
+    const created = group && Number.isFinite(s.created) && s.creator >= 0;
+    const t0 = Math.min(recs[0].t, created ? s.created : Infinity) - 60000;
     const sys = (t, author, body) => {
       if (platform === 'ios') lines.push(`${LRM}${header(t)}${author}: ${LRM}${body}`);
       else lines.push(`${header(t)}${body}`);
     };
     if (platform === 'ios') sys(t0, title, E2E_GROUP);
     else sys(t0, null, E2E_ANDROID);
-    if (group && s.created >= span.start) {
+    if (created) {
       const who = s.creator === ego ? 'You' : name(s.creator);
       sys(s.created, title, `${who} created group "${s.name}"`);
     }

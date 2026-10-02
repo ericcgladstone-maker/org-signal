@@ -50,7 +50,7 @@ spec = {
 }
 ```
 
-- `dataset`: a built Dataset (`src/core/model.js`) with one source `{ format: 'synthetic', family, medium, view, context, egoKey, generator: { context, medium, preset, seed } }`. Node keys follow the importers' key rules where known (`slack:<U id>`, `email:<address>`, `x:<id>`, `whatsapp:<lower-cased name or +digits>`, `telegram:user<N>`, `discord:<snowflake>`, `reddit:<username>`, `linkedin:<slug>`, `survey:R001`, `net:n<i>`), so native round trips land on the same keys. Roles follow the contract: `dm` for direct and group DMs, `to/cc/bcc` for email, `reply`, `mention`, `member` for group-chat audience, `attendee` for meetings (copresence weight = hours), `declared` for survey answers, LinkedIn connections and network files, `subject` for follows, reactions, likes and reposts.
+- `dataset`: a built Dataset (`src/core/model.js`) with one source `{ format: 'synthetic', family, medium, view, context, egoKey, generator: { context, medium, preset, seed } }`. Node keys follow the importers' key rules where known (`slack:<U id>`, `email:<address>`, `x:<id>`, `whatsapp:<lower-cased name or +digits>`, `telegram:user<N>`, `discord:<snowflake>`, `reddit:<username>`, `linkedin:<slug>`, `survey:R001` (`survey:<normalised name>` for the roster form, as the survey importer keys it), `email:list:<list-id>` for mailing lists, `net:n<i>`), so native round trips land on the same keys. Roles follow the contract: `dm` for direct and group DMs, `to/cc/bcc` for email, `reply`, `mention`, `member` for group-chat audience, `attendee` for meetings (copresence weight = hours), `declared` for survey answers, LinkedIn connections and network files, `subject` for follows, reactions, likes and reposts.
 - `files` (native only): `[{ path, bytes: Uint8Array }]`, usually one zip in the real layout (WhatsApp: one file per chat; Discord: one JSON per channel; Reddit: two NDJSON per subreddit). Writers follow `docs/formats/*.md`; see each writer's header comment.
 - `groundTruth` (structured-cloneable):
   - `people { count, keys, labels, attrs, isBot, leftAt, platformIds }` (person index = position)
@@ -91,19 +91,38 @@ Report: `{ summary, checks: [{ id, name, area, planted, recovered, metric, value
 
 Event volume is proportional to true ties x weeks x `activity`; lower `activity` or the span for browser use. Native output is meant for up to a few thousand people (it holds all records in memory and writes zips in one piece).
 
+## Native datasets: what the export can show
+
+With `output: 'native'` the `dataset` is what the written files contain, not the simulation behind them, so importing `files` with automatic detection gives the same nodes and events (`test/integration/digestion.test.js` checks every native medium one for one). The writer runs first and reports values it draws (bot ids, invitation times, follow lists, frequent contacts); `src/generator/native.js` then turns the simulated records into the records the export holds, per `docs/formats/*.md`:
+
+| Medium | What the native dataset leaves out or changes, and why |
+|---|---|
+| slack | Reactions are dated at their message (the export lists reactors without a time) and counted once per reactor and emoji. |
+| email | The mailbox only: Bcc only on the owner's own sent copies; a `reply` tie only when the parent is in the mailbox; thread visibility by the spec's size rule over the copies present; mailing lists keyed `email:list:<List-Id>`. |
+| calendar | An ad-hoc meeting that every invitee declined is on the calendar but brings nobody together, so it has no event (as for series). |
+| x | The archive only: the owner's tweets (public thread contexts), retweets, likes (undated, no author), both sides of the owner's DMs, and the follower/following snapshot (undated). Others' replies, likes, reposts and follow events are not in an archive. Bot status is not marked. |
+| linkedin | Connections ego -> connection at the UTC date of Connected On; one more declared tie per Invitations.csv row (inviter -> invitee, minute resolution). |
+| whatsapp | No reply links and no audience lists in group chats (the text export has neither); mentions only as written (`@⁨Name⁩`); in a 1:1 chat only mentions of the two people in it. |
+| telegram | Deleted messages are not exported; a reply only to a message present in the same chat; no audience lists; a join by invitation names the inviter as `subject`; frequent contacts as declared ties weighted by Telegram's rating (undated). |
+| discord | Reactions at message time, once per reactor and emoji glyph; a reply only to a message in the same file; a reply's ping is folded into the reply. Only accounts that appear in the files are nodes. |
+| reddit | Only authors that appear are nodes; in a sample, a reply target only when the parent is in the sample. |
+| survey | Roster form: people keyed `survey:<normalised name>` like the survey importer, nodes = roster. |
+| network | Ties present for the whole span carry no time (the GraphML has no `first_contact` for them); bot status is only the `is_bot` attribute. |
+
+Differences that remain are properties of the formats and are documented with the importers (`docs/api/importers-b.md`, "Native round trips"): WhatsApp date order and zone, WhatsApp 1:1 chats where only the other person wrote, Telegram people seen only in service messages, LinkedIn exports that never name the owner's URL, Network Canvas alters per interview, and calendar weights (count, not hours). The survey `perceived` variant does not round-trip yet: it lists the whole roster as each informant's alters, which the Network Canvas importer (following the spec, every alter is a named alter) reads as ego -> alter ties.
+
 ## What is approximate
 
 - Time zones are fixed offsets (no daylight saving). Slack day files are bucketed in the workspace's offset.
 - Interaction timing comes from per-medium rhythms, not from conversation-level dynamics beyond simple turn-taking.
 - Diffusion is an independent cascade with random delays along true ties; adoption is not caused by exposure to a specific message. The first message after adoption almost always uses the term.
 - Affect is planted as the chance of a VADER-scored phrase; neutral templates carry a small constant VADER offset, the same for every group.
-- Bluesky, Mastodon and iMessage are dataset-only. Bot nodes are keyed `<prefix>:bot-<name>` in the dataset; importers key bots by their platform ids, so bots do not line up after a round trip (people do).
-- The X native dataset is the generator's ego view, which also includes others' replies and likes aimed at the ego that a real archive never shows.
+- Bluesky, Mastodon and iMessage are dataset-only. With `output: 'dataset'` bot nodes are keyed `<prefix>:bot-<name>`; with `output: 'native'` they take the key the importer gives them (Slack users.json id, Discord snowflake, Reddit user name), so native round trips line up bots too.
 - Community structure in forums is only weakly recoverable from reply networks by design (core members span spaces).
 
 ## Tests
 
-`node --test 'test/generator/**/*.test.js'`: determinism, 50k scale, structure sanity per context, content (affect measurable with VADER, terms spread along ties), observation slices, recoveryCheck, progress, writer conformance (independent parsers), and native round trips through the real importers (`writers-a.test.js`, `writers-b.test.js`). `test/generator/helpers.js` has a small graphology-based stand-in for analysis results used by the tests.
+`node --test 'test/generator/**/*.test.js'`: determinism, 50k scale, structure sanity per context, content (affect measurable with VADER, terms spread along ties), observation slices, recoveryCheck, progress, writer conformance (independent parsers), and native round trips through the real importers (`writers-a.test.js`, `writers-b.test.js`; the strict one-for-one check is `test/integration/digestion.test.js`, `DIGEST_SEED=<n>` shifts its seeds). `test/generator/helpers.js` has a small graphology-based stand-in for analysis results used by the tests.
 
 ## Betweenness fidelity check
 

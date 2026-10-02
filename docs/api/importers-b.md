@@ -2,7 +2,7 @@
 
 Owner: importers-B. All modules follow the importer contract in `src/importers/registry.js` and `docs/CONTRACTS.md`. `src/importers/index.personal.js` exports the array of all twelve importers.
 
-Tests: `node --test 'test/importers-b/**/*.test.js'` (99 tests). Fixtures are synthetic, under `test/fixtures/importers-b/<id>/`, each with the generator script that wrote it (`make_fixtures.py`, `make_fixture.py`, `make_car.mjs`).
+Tests: `node --test 'test/importers-b/**/*.test.js'` (102 tests). Fixtures are synthetic, under `test/fixtures/importers-b/<id>/`, each with the generator script that wrote it (`make_fixtures.py`, `make_fixture.py`, `make_car.mjs`).
 
 ## Shared conventions
 
@@ -99,7 +99,7 @@ Tests: `node --test 'test/importers-b/**/*.test.js'` (99 tests). Fixtures are sy
 - **Grammar:** iOS `[date, time] Name: text` and Android `date, time - Name: text`; 12/24 h; U+202F, U+200E/U+200F, BOM, U+2068/U+2069 mention isolates; `~ Name`; multi-line continuation; media-omitted (both capitalizations) and other attachment markers; edit and deleted markers; system messages including the 2024+ iOS style where the chat name is the author, and Android authorless notices containing ": " (`authorlessSystem`). Day/month order inferred over the whole file as whatsapp-chat-parser does (its 12 formats and date tests are reproduced in the tests); year-first dates always read Y-M-D.
 - **Nodes:** `whatsapp:<nameKey>` or `whatsapp:+<digits>`; attrs `is_phone_number`, `is_saved_contact`.
 - **Contexts:** `whatsapp:<dm|group_dm>:<hash of title + first timestamp>`; group when a group notice appears or more than 2 authors; members include people named in join / leave notices.
-- **Events (exact file order preserved):** `message` (1:1 `dm` target; `mention` targets when the name or phone resolves to a participant); `join` / `leave` from added / removed / left / joined-via-link notices.
+- **Events (exact file order preserved):** `message` (1:1 `dm` target; `mention` targets: in a 1:1 chat when the name or phone resolves to a participant, in a group for every isolate-delimited name or phone, adding the person if needed); `join` / `leave` from added / removed / left / joined-via-link notices.
 - **Warnings:** `identity-by-name`, `timezone-unknown`, `timezone-invalid`, `date-order-ambiguous`, `orphan-lines`, `system-by-heuristic`, `system-you-unresolved`, `direct-partner-unknown`, `mention-unmatched`, `bad-date`, `time-backwards`, `no-messages`.
 - **Extra exports:** `analyzeChat(text, { title, dateOrder })`; grammar functions in `lib/whatsapp-grammar.js` (`HEADER_RE`, `splitMessages`, `parseHeaders`, `inferDaysFirst`, `parseAuthor`, `classifyBody`, `extractMentions`, `matchSystem`, `authorlessSystem`, `cleanInvisible`, ...).
 
@@ -159,3 +159,26 @@ Tests: `node --test 'test/importers-b/**/*.test.js'` (99 tests). Fixtures are sy
 - **`.zst`:** alone, import throws `ZSTD_HELP` (`zstd -d --long=31 FILE.zst`); next to readable data, skipped with `zst-skipped`.
 - **Warnings:** `ego-unknown`, `ego-inferred`, `reply-author-unknown`, `message-to-subreddit`, `chat-parent-missing`, `chat-one-sided`, `friends-undated`, `unparsed-date`, `captured-record`, `deleted-author`, `reply-to-deleted`, `parent-outside-data`, `bad-time`, `bad-line`, `zst-skipped`.
 - **Extra exports:** `classifyCsvHeader`, `parseExportDate`, `createdMs`, `ZSTD_HELP`.
+
+---
+
+## Native round trips (generator exports)
+
+`test/integration/digestion.test.js` imports every native export the generator writes with automatic detection and compares it one for one with the generator's dataset. Fixes made for it (regression tests in `test/importers-b/digestion-fixes.test.js`):
+
+- **whatsapp:** in a group chat, an `@⁨Name⁩` mention (isolate-delimited, so its extent is exact) or `@+digits` mention links the person even if they never wrote; they become a node keyed like any author (spec section 4: mention spans "can be used to extract mention edges"). In a 1:1 chat a mention of a third person stays unlinked (`mention-unmatched`), since a participant there would become a `dm` recipient.
+- **linkedin:** with a single conversation in which only the other person wrote, the owner's URL is found by elimination (the URL in every conversation that never sent under someone else's name), instead of keying the owner `linkedin:me` beside their own URL node.
+
+Expected differences, by format (the test computes each rather than allowing slack):
+
+| Importer | Difference | Why |
+|---|---|---|
+| whatsapp | Day and month may be swapped in a chat whose dates all read either way. | Each chat file is inferred alone, as whatsapp-chat-parser does; with no day above 12 the order is a guess (`date-order-ambiguous`, or the parser's change-frequency heuristic). Set `dateOrder`. |
+| whatsapp | Times are off by the phone's UTC offset. | The export has wall-clock times and no zone; without the `timezone` option they are read as UTC (`timezone-unknown`). Android keeps minutes only. |
+| whatsapp | A 1:1 chat where only the other person wrote has no `dm` targets. | Nothing in the file names the owner (`direct-partner-unknown`); set `egoName`. |
+| telegram | Someone seen only in a service message (e.g. invited, never wrote) is keyed `telegram:name:<name>`. | Service messages name people, not ids. |
+| linkedin | The owner is `linkedin:me` when no invitation and no message names their URL. | Profile.csv carries no URL. |
+| x-archive | Likes and follows are undated; likes have no target (`/i/web/status/<id>` URLs). | The archive does not record them. |
+| discord | Reactions are dated at their message (`reaction-time-approximate`). | DCE lists reactors without a time. |
+| network-canvas | Alters are per interview (`nc:<ego>:<alter>`): nodes = respondents + all their alters. | Spec: the same name in two interviews is not the same person; identity review can merge. |
+

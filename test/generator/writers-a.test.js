@@ -141,7 +141,15 @@ test('calendar: folded CRLF .ics that ical.js parses and expands to the dataset 
   for (const ex of exceptions) masters.get(ex.getFirstPropertyValue('uid')).relateException(ex);
   assert.ok(vevents.some(v => v.hasProperty('exdate')), 'fixture should exercise EXDATE');
   const occ = [];
+  // A meeting every invitee declined is still on the calendar but brings
+  // nobody together, so the dataset has no co-presence event for it.
+  const nobodyCame = ev => {
+    const org = String(ev.component.getFirstPropertyValue('organizer')).toLowerCase();
+    return ev.component.getAllProperties('attendee').filter(a => String(a.getFirstValue()).toLowerCase() !== org && a.getParameter('cutype') !== 'RESOURCE')
+      .every(a => a.getParameter('partstat') === 'DECLINED');
+  };
   for (const ev of masters.values()) {
+    if (nobodyCame(ev)) continue;
     if (!ev.isRecurring()) { occ.push(ev.startDate.toJSDate().getTime()); continue; }
     const it = ev.iterator();
     for (let next = it.next(), k = 0; next && k < 500; next = it.next(), k++) occ.push(ev.getOccurrenceDetails(next).startDate.toJSDate().getTime());

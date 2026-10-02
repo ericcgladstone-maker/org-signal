@@ -13,7 +13,7 @@ import { MON, pad, parts } from '../time.js';
 
 const PREAMBLE = 'Notes:\n"When exporting your connection data, you may notice that some of the email addresses are missing. You will only see email addresses for connections who have allowed their connections to see or download their email address using this setting https://www.linkedin.com/psettings/privacy/email. You can learn more here https://www.linkedin.com/help/linkedin/answer/261"\n\n';
 
-export function write({ world, ctx, records, ident, obs, rng }) {
+export function write({ world, ctx, records, ident, obs, rng, native = {} }) {
   const r = rng.fork('linkedin');
   const ego = obs.ego;
   const { span, ties } = world;
@@ -30,6 +30,7 @@ export function write({ world, ctx, records, ident, obs, rng }) {
     conns.push({ other: a === ego ? b : a, t: Number.isFinite(t) ? t : span.start });
   }
   conns.sort((x, y) => y.t - x.t || x.other - y.other);
+  native.connections = conns;
   const connRows = [['First Name', 'Last Name', 'URL', 'Email Address', 'Company', 'Position', 'Connected On']];
   for (const c of conns) {
     const a = P.attrs[c.other];
@@ -64,6 +65,7 @@ export function write({ world, ctx, records, ident, obs, rng }) {
     const [from, to] = out ? [ego, c.other] : [c.other, ego];
     const sent = c.t - r.int(5 * 86400) * 1000;
     invRows.push([P.label[from], P.label[to], usDate(sent), '', out ? 'OUTGOING' : 'INCOMING', url(from), url(to)]);
+    (native.invitations ||= []).push({ from, to, t: sent });
   }
 
   // ---- ego profile, positions, education.

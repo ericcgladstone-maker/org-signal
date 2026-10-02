@@ -193,7 +193,7 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
       const toMs = makeToMs(f.calTz, true);
       for (const { master } of f.byUid.values()) {
         if (master && !master.getFirstProperty('rrule') && !master.getFirstProperty('rdate')) {
-          const s = new ICAL.Event(master).startDate;
+          const s = new ICAL.Event(master, { exceptions: [] }).startDate;
           if (s && !s.isDate) maxSingle = Math.max(maxSingle, toMs(s, tzidOf(master, 'dtstart')));
         }
       }
@@ -212,7 +212,11 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
         for (const x of exList) pushOcc(new ICAL.Event(x), x, null);
         continue;
       }
-      const ev = new ICAL.Event(g.master);
+      // `exceptions: []` matters: without it ical.js relates EVERY vevent with a
+      // RECURRENCE-ID in the calendar to this master, whatever its UID, so an
+      // override of one series replaces the same wall-clock occurrence of any
+      // other series. Only this UID's overrides are related, below.
+      const ev = new ICAL.Event(g.master, { exceptions: [] });
       for (const x of exList) {
         try { ev.relateException(new ICAL.Event(x)); }
         catch { builder.stat('bad-override'); pushOcc(new ICAL.Event(x), x, null); }
@@ -271,7 +275,8 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
     const orgP = c.getFirstProperty('organizer');
     const organizer = orgP ? normAddr(orgP.getFirstValue()) : '';
     if (organizer) vote(organizer, param(orgP, 'cn'));
-    const people = new Map(); // addr -> { declined, group }
+    const people = new Map(); // addr -> { group }, non-declined participants
+    const invited = new Set(organizer ? [organizer] : []); // every human invitee, declined included
     let declinedOrganizer = false;
     for (const a of c.getAllProperties('attendee')) {
       const addr = normAddr(a.getFirstValue());
@@ -283,6 +288,7 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
       if (cutype === 'ROOM' || cutype === 'RESOURCE' || /@resource\.calendar\.google\.com$/.test(addr)) { builder.stat('rooms-resources'); continue; }
       vote(addr, param(a, 'cn'));
       if (role === 'NON-PARTICIPANT') { builder.stat('non-participants'); continue; }
+      invited.add(addr);
       if (partstat === 'DECLINED') {
         builder.stat('declined');
         if (addr === organizer) declinedOrganizer = true;
@@ -297,7 +303,7 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
       egoVotes.set(addr, (egoVotes.get(addr) || 0) + 1);
     }
     if (organizer) egoVotes.set(organizer, (egoVotes.get(organizer) || 0) + 1);
-    rows.push({ o, organizer, people, declinedOrganizer, summary: prop1(c, 'summary'), cls: String(prop1(c, 'class') || '').toUpperCase() });
+    rows.push({ o, organizer, people, invited: invited.size, declinedOrganizer, summary: prop1(c, 'summary'), cls: String(prop1(c, 'class') || '').toUpperCase() });
   }
 
   // Ego: option, else owner evidence from file names / X-WR-CALNAME (heavily
@@ -320,7 +326,7 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
   const ctxVis = new Map();
   rows.sort((a, b) => a.o.start - b.o.start);
   for (let ri = 0; ri < rows.length; ri++) {
-    const { o, organizer, people, declinedOrganizer, summary, cls } = rows[ri];
+    const { o, organizer, people, invited, declinedOrganizer, summary, cls } = rows[ri];
     if (ri % 500 === 0) progress(0.6 + 0.4 * ri / rows.length, 'Building meetings');
     let actorAddr = organizer || ego;
     if (!actorAddr) { builder.stat('no-organizer'); continue; }
@@ -335,7 +341,11 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
     }
     const actor = person(actorAddr);
     const targets = others.map(a => [person(a), 'attendee']);
-    const vis = cls === 'PRIVATE' || cls === 'CONFIDENTIAL' ? 'private' : participants === 2 ? 'direct' : 'group';
+    // Size class (spec: 2 people = direct, more = group) counts who was
+    // invited, not who accepted: a three-person meeting with one decline is
+    // still a group meeting, not a 1:1.
+    const size = Math.max(invited + (organizer ? 0 : 1), participants);
+    const vis = cls === 'PRIVATE' || cls === 'CONFIDENTIAL' ? 'private' : size === 2 ? 'direct' : 'group';
     const ci = builder.context(`cal:${o.uid}`, { name: summary || '(no title)', kind: 'meeting', visibility: vis, medium: 'calendar', members: [actor, ...targets.map(t => t[0])] });
     const pv = ctxVis.get(ci);
     ctxVis.set(ci, pv === 'private' || vis === 'private' ? 'private' : pv === 'group' || vis === 'group' ? 'group' : 'direct');

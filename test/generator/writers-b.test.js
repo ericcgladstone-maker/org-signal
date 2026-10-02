@@ -362,19 +362,22 @@ rt('round trip: X archive -> x-archive importer', 'x-archive', async () => {
   const got = typeCounts(ds);
   const egoKey = groundTruth.observation.egoKey;
   assert.equal(ds.meta.sources[0].egoKey, egoKey, 'same ego key');
-  // Our ego view also holds others' replies and likes aimed at the ego, which an
-  // archive never shows, so compare the ego's own actions.
-  const ownPosts = egoCount(dataset, egoKey, 'message', i => dataset.events.context[i] < 0);
+  // The native dataset is what the archive holds (src/generator/native.js):
+  // the ego's own tweets, retweets and likes, both sides of the ego's DMs and
+  // the follow-list snapshot.
+  const ours = typeCounts(dataset);
+  const ownPosts = egoCount(dataset, egoKey, 'message', i => dataset.contexts.kinds[dataset.events.context[i]] === 'thread');
   const dmContexts = new Set(); for (let c = 0; c < dataset.contexts.count; c++) if (dataset.contexts.kinds[c] === 'dm') dmContexts.add(c);
   let dms = 0; for (let i = 0; i < dataset.events.count; i++) if (dmContexts.has(dataset.events.context[i])) dms++;
-  assert.equal(got.message, ownPosts + dms, 'tweets (non-retweet) + DMs');
-  assert.equal(got.repost, egoCount(dataset, egoKey, 'repost'));
+  assert.equal(ours.message, ownPosts + dms, 'dataset: own tweets and DMs only');
+  assert.equal(got.message, ours.message, 'tweets (non-retweet) + DMs');
+  assert.equal(got.repost, ours.repost);
+  assert.equal(got.like, ours.like);
   assert.equal(got.like, egoCount(dataset, egoKey, 'like'));
   assert.equal(got.follow, counts.follower + counts.following, 'follow lists are a snapshot');
+  assert.equal(ours.follow, got.follow);
   // Mentioned and replied-to accounts land on the same x:<id> keys as ours.
-  const ours = new Set(dataset.nodes.keys);
-  const shared = ds.nodes.keys.filter(k => ours.has(k)).length;
-  assert.ok(shared >= Math.min(ds.nodes.count, dataset.nodes.count) * 0.5, `shared node keys ${shared}`);
+  assert.deepEqual([...ds.nodes.keys].sort(), [...dataset.nodes.keys].sort());
 });
 
 rt('round trip: WhatsApp iOS and Android -> whatsapp importer', 'whatsapp', async () => {
@@ -417,11 +420,12 @@ rt('round trip: LinkedIn -> linkedin importer', 'linkedin', async () => {
   const ds = await roundTrip(files, 'linkedin');
   const got = typeCounts(ds), ours = typeCounts(dataset);
   assert.equal(got.message, ours.message);
-  // The importer adds a declared tie per invitation as well as per connection.
+  // A declared tie per connection and one per invitation (spec section 3).
   const z = unz(files[0]);
   const conns = text(z['Connections.csv']).split('\n').slice(4).filter(Boolean).length;
-  assert.equal(ours.declared, conns, 'our ego view has one declared tie per connection');
-  assert.ok(got.declared >= conns);
+  const invs = text(z['Invitations.csv']).split('\n').slice(1).filter(Boolean).length;
+  assert.equal(ours.declared, conns + invs, 'our ego view has one declared tie per connection and per invitation');
+  assert.equal(got.declared, ours.declared);
   assert.equal(ds.nodes.count, dataset.nodes.count);
 });
 

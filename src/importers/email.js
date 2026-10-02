@@ -324,6 +324,8 @@ async function importEmail(fs, { builder, options = {}, progress = () => {}, sig
     seen: new Set(),
     names: new Map(),          // address -> Map(name -> count)
     delivered: new Map(), sentFrom: new Map(), recipients: new Map(),
+    authorOf: new Map(),       // message key -> sender node, for reply ties
+    pending: [],               // replies read before their parent
     threadVis: new Map(),      // context index -> 'direct'|'group'|'unknown'
     opt, builder,
   };
@@ -474,13 +476,28 @@ async function handleMessage(st, bytes, fromLine) {
     text = p.text || (p.html ? htmlToText(p.html) : null);
     if (text) builder.stat('with-text');
   }
-  builder.event({ type: 'message', t, actor, targets, context: ci, key, parentKey: parentId ? `email:${parentId}` : null, text });
+  const ev = { type: 'message', t, actor, targets, context: ci, key, parentKey: parentId ? `email:${parentId}` : null, text };
+  st.authorOf.set(key, actor);
   builder.stat('messages');
   if (listId) builder.stat('list-messages');
+  // Reply tie to the parent's sender, known only when the parent is in the
+  // mailbox too (spec: "Reply edges: when the parent is present"). Mailboxes
+  // are not in time order, so a reply whose parent has not been read yet waits
+  // until the end.
+  if (ev.parentKey && !st.authorOf.has(ev.parentKey)) { st.pending.push(ev); return; }
+  emitWithReply(st, ev);
+}
+
+function emitWithReply(st, ev) {
+  const pa = ev.parentKey ? st.authorOf.get(ev.parentKey) : undefined;
+  if (pa !== undefined && pa !== ev.actor) ev.targets.push([pa, 'reply']);
+  st.builder.event(ev);
 }
 
 function finish(st) {
   const { builder, opt } = st;
+  for (const ev of st.pending) emitWithReply(st, ev);
+  st.pending.length = 0;
   // Most frequent display name per address becomes the label.
   for (const [addr, m] of st.names) {
     const i = builder.nodeIndex(`email:${addr}`);

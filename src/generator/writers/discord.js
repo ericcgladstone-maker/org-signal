@@ -10,7 +10,7 @@ import { snowflake, DISCORD_EPOCH } from '../identity.js';
 import { pad, parts } from '../time.js';
 
 // Slack-style reaction names (from content.reaction) -> unicode emoji and DCE code.
-const EMOJI = {
+export const EMOJI = {
   '+1': ['\u{1F44D}', 'thumbsup', '1f44d'], tada: ['\u{1F389}', 'tada', '1f389'], heart: ['\u{2764}\u{FE0F}', 'heart', '2764'],
   raised_hands: ['\u{1F64C}', 'raised_hands', '1f64c'], white_check_mark: ['\u{2705}', 'white_check_mark', '2705'], clap: ['\u{1F44F}', 'clap', '1f44f'],
   fire: ['\u{1F525}', 'fire', '1f525'], disappointed: ['\u{1F61E}', 'disappointed', '1f61e'], grimacing: ['\u{1F62C}', 'grimacing', '1f62c'],
@@ -18,13 +18,14 @@ const EMOJI = {
   thinking_face: ['\u{1F914}', 'thinking', '1f914'], memo: ['\u{1F4DD}', 'pencil', '1f4dd'], pray: ['\u{1F64F}', 'pray', '1f64f'],
 };
 
-export function write({ world, ctx, records, ident, rng }) {
+export function write({ world, ctx, records, ident, rng, native = {} }) {
   const r = rng.fork('discord');
   const { span } = world;
   const guild = { id: snowflake(span.start - 900 * 86400000, DISCORD_EPOCH, r), name: ctx.server?.name || 'Hobby Commons' };
   guild.iconUrl = `https://cdn.discordapp.example/icons/${guild.id}/${r.hex(32)}.png`;
   const categoryId = snowflake(span.start - 899 * 86400000, DISCORD_EPOCH, r);
   const bots = ctx.bots.map(b => ({ ...b, id: snowflake(span.start - 700 * 86400000, DISCORD_EPOCH, r) }));
+  native.botKeys = bots.map(b => 'discord:' + b.id);
   const modSet = new Set(world.moderators || []);
   const color = i => (modSet.has(i) ? '#1F8B4C' : world.isCore?.[i] ? '#3498DB' : null);
   const roles = i => (modSet.has(i) ? [{ id: roleId('mod'), name: 'Moderators', color: '#1F8B4C', position: 3 }] : world.isCore?.[i] ? [{ id: roleId('reg'), name: 'Regulars', color: '#3498DB', position: 2 }] : []);

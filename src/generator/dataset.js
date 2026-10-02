@@ -16,12 +16,25 @@ const CONTEXT_KIND = {
 
 const DIRECT = new Set(['dm', 'group_dm', 'chat']);
 
+// A mailing list is keyed by its List-Id like the email importer does
+// (`email:list:<list-id>`); the writer's List-Id is the address with '@' -> '.'.
+const listId = address => address.toLowerCase().replace('@', '.');
+
 export const FAMILY = {
   slack: 'workplace', email: 'workplace', calendar: 'workplace', x: 'online', bluesky: 'online', mastodon: 'online', linkedin: 'professional',
   whatsapp: 'personal', imessage: 'personal', telegram: 'personal', discord: 'community', reddit: 'community', survey: 'survey', network: 'network',
 };
 
-export function makeDatasetSink({ world, medium, ident, obs, name, seed }) {
+// Options for native output (see native.js), all optional:
+//   allNodes  how many people (from index 0) exist as nodes before any event:
+//             everyone in a full view by default; native exports that list
+//             only active accounts (dumps, chat exporters) pass 0, a roster
+//             survey passes the roster size
+//   hooks     { botKey(k) -> node key the importer gives bot k, visibility(si) ->
+//             visibility the export implies for space si, isBot(i) -> whether
+//             the export marks person i as a bot }, read lazily so the
+//             writer can fill them in after the dataset sink exists
+export function makeDatasetSink({ world, medium, ident, obs, name, seed, allNodes, hooks = {} }) {
   const prefix = KEY_PREFIX[medium] || medium;
   const b = new DatasetBuilder({ name });
   const egoKey = obs.ego >= 0 ? ident.key[obs.ego] : null;
@@ -39,7 +52,7 @@ export function makeDatasetSink({ world, medium, ident, obs, name, seed }) {
     if (i < 0) return -1;
     let k = nodeIdx[i];
     if (k < 0) {
-      k = b.node(ident.key[i], { label: ident.label[i], attrs: world.people.attrs[i], isBot: !!world.isBot[i], platformIds: ident.platformIds[i] });
+      k = b.node(ident.key[i], { label: ident.label[i], attrs: world.people.attrs[i], isBot: hooks.isBot ? hooks.isBot(i) : !!world.isBot[i], platformIds: ident.platformIds[i] });
       nodeIdx[i] = k;
     }
     return k;
@@ -48,7 +61,7 @@ export function makeDatasetSink({ world, medium, ident, obs, name, seed }) {
     let k = botIdx.get(a);
     if (k === undefined) {
       const bot = ctx.bots[-1 - a] || { name: 'bot' + (-1 - a) };
-      k = b.node(`${prefix}:bot-${bot.name}`, { label: bot.label || bot.name, isBot: true, attrs: { kind: 'bot' } });
+      k = b.node(hooks.botKey?.(-1 - a) || `${prefix}:bot-${bot.name}`, { label: bot.label || bot.name, isBot: true, attrs: { kind: 'bot' } });
       botIdx.set(a, k);
     }
     return k;
@@ -62,18 +75,28 @@ export function makeDatasetSink({ world, medium, ident, obs, name, seed }) {
       const s = ctx.spaces[si];
       const kind = CONTEXT_KIND[s.kind] || s.kind;
       const label = s.name || s.subject || (s.kind === 'dm' || s.kind === 'chat' ? s.members.map(m => ident.label[m]).join(', ') : s.key);
-      c = b.context(`${prefix}:${s.key}`, { name: label, kind, visibility: s.visibility || 'unknown', medium, members: s.everyone || s.members.length > 2000 ? null : s.members.map(m => ident.key[m]) });
+      c = b.context(`${prefix}:${s.key}`, { name: label, kind, visibility: hooks.visibility?.(si) || s.visibility || 'unknown', medium, members: s.everyone || s.members.length > 2000 ? null : s.members.map(m => ident.key[m]) });
       ctxIdx.set(si, c);
     }
     return c;
   };
 
-  if (obs.view === 'full') for (let i = 0; i < world.n; i++) node(i);
-  if (obs.ego >= 0) node(obs.ego);
+  // People who exist before any event (in index order), created on first use
+  // so that hooks filled in after construction already apply to them.
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    const pre = allNodes ?? (obs.view === 'full' ? world.n : 0);
+    for (let i = 0; i < pre; i++) node(i);
+    if (obs.ego >= 0) node(obs.ego);
+  };
 
   let kept = 0;
   function sink(rec, ctx) {
-    if (!keep(rec, ctx)) return;
+    start();
+    // Native views (native.js) have already chosen what the export holds.
+    if (!rec.selected && !keep(rec, ctx)) return;
     kept++;
     const s = rec.space >= 0 ? ctx.spaces[rec.space] : null;
     const actor = actorNode(ctx, rec.actor);
@@ -84,7 +107,7 @@ export function makeDatasetSink({ world, medium, ident, obs, name, seed }) {
       case 'message': {
         if (s && s.list) {
           let li = listIdx.get(rec.space);
-          if (li === undefined) { li = b.node(`${prefix}:${s.address}`, { label: s.name, attrs: { is_list: true } }); listIdx.set(rec.space, li); }
+          if (li === undefined) { li = b.node(`${prefix}:list:${listId(s.address)}`, { label: s.name, attrs: { is_list: true } }); listIdx.set(rec.space, li); }
           targets.push([li, 'to']);
           break;
         }
@@ -100,8 +123,8 @@ export function makeDatasetSink({ world, medium, ident, obs, name, seed }) {
       case 'like': type = 'like'; if (rec.replyTo >= 0) targets.push([node(rec.replyTo), 'subject']); break;
       case 'repost': type = 'repost'; if (rec.replyTo >= 0) targets.push([node(rec.replyTo), 'subject']); break;
       case 'follow': type = 'follow'; add(rec.to, 'subject'); break;
-      case 'join': type = 'join'; break;
-      case 'leave': type = 'leave'; break;
+      case 'join': type = 'join'; add(rec.subjects, 'subject'); break;
+      case 'leave': type = 'leave'; add(rec.subjects, 'subject'); break;
       case 'meeting': type = 'copresence'; add(rec.present || rec.attendees, 'attendee'); weight = (rec.meta?.durMin || 30) / 60; break;
       case 'declared': type = 'declared'; add(rec.to, 'declared'); weight = rec.weight ?? 1; break;
       default: type = 'message';
@@ -110,8 +133,12 @@ export function makeDatasetSink({ world, medium, ident, obs, name, seed }) {
     // reactions, likes, reposts) in any simulator, so only they get event keys.
     // That spares millions of key strings and index entries at scale.
     const keyed = rec.kind === 'message' && !(s && DIRECT.has(s.kind));
+    // A native record may name its own context (e.g. an X thread, which is not
+    // a simulated space): { key, name, kind, visibility }.
+    const nc = rec.nativeCtx;
+    const ci = nc ? b.context(`${prefix}:${nc.key}`, { name: nc.name || nc.key, kind: nc.kind || 'thread', visibility: nc.visibility || 'unknown', medium }) : context(ctx, rec.space);
     b.event({
-      type, t: rec.t, actor, targets, context: context(ctx, rec.space),
+      type, t: rec.t, actor, targets, context: ci,
       key: keyed ? `${prefix}:e${rec.id}` : null, parentKey: rec.parent >= 0 ? `${prefix}:e${rec.parent}` : null,
       text: rec.text ?? null, weight,
     });
@@ -121,6 +148,6 @@ export function makeDatasetSink({ world, medium, ident, obs, name, seed }) {
   return {
     sink,
     get kept() { return kept; },
-    finish() { return b.build(); },
+    finish() { start(); return b.build(); },
   };
 }

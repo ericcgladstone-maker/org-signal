@@ -12,7 +12,7 @@
 import { zip, u8, groupBy } from './util.js';
 import { MON, pad, parts } from '../time.js';
 
-export function write({ world, ctx, records, ident, rng }) {
+export function write({ world, ctx, records, ident, rng, native = {} }) {
   const r = rng.fork('slack');
   const { span } = world;
   const wsOffset = world.locs?.[0]?.offset ?? 0;
@@ -24,15 +24,24 @@ export function write({ world, ctx, records, ident, rng }) {
   // Bots get user ids and bot ids.
   const bots = ctx.bots.map(b => ({ ...b, userId: 'U0' + r.b36(9), botId: 'B0' + r.b36(9) }));
   const actorId = a => (a >= 0 ? uid(a) : bots[-1 - a].userId);
+  // The importer keys a bot by its users.json id (bot_id -> profile.bot_id).
+  native.botKeys = bots.map(b => 'slack:' + b.userId);
 
   // ---- conversation ids and names
-  const conv = new Map(); // space index -> { id, folder, file: 'channels'|'groups'|'dms'|'mpims' }
+  const conv = new Map(); // space index -> { id, folder, name, file: 'channels'|'groups'|'dms'|'mpims' }
   const mpimNames = new Set();
+  // Public and private channels share one name space in a workspace, so two
+  // teams that would both be "marketing-weiss-team" get -2, -3 ... as Slack
+  // asks a user to do (folders are named after channels, so they must differ).
+  const channelNames = new Set();
   ctx.spaces.forEach((s, si) => {
     if (s.kind === 'channel') {
       const priv = s.visibility === 'private';
       const id = (priv && r.chance(0.3) ? 'G0' : 'C0') + r.b36(9);
-      conv.set(si, { id, folder: s.name, file: priv ? 'groups' : 'channels' });
+      let name = s.name;
+      for (let k = 2; channelNames.has(name); k++) name = `${s.name}-${k}`;
+      channelNames.add(name);
+      conv.set(si, { id, folder: name, name, file: priv ? 'groups' : 'channels' });
     } else if (s.kind === 'dm') {
       const id = 'D0' + r.b36(9);
       conv.set(si, { id, folder: id, file: 'dms' });
@@ -50,7 +59,9 @@ export function write({ world, ctx, records, ident, rng }) {
   for (const [, recs] of byConv) {
     const used = new Set();
     for (const rec of recs) {
-      let micro = (rec.t % 1000) * 1000 + r.int(1000);
+      // Sub-millisecond jitter stays below half a millisecond, so the ts
+      // rounds back to the record's own millisecond (importers round ts * 1000).
+      let micro = (rec.t % 1000) * 1000 + r.int(500);
       let s = sec(rec.t);
       let ts;
       for (;;) { ts = `${s}.${String(micro).padStart(6, '0')}`; if (!used.has(ts)) break; micro++; if (micro >= 1e6) { micro = 0; s++; } }
@@ -169,7 +180,7 @@ export function write({ world, ctx, records, ident, rng }) {
       const creator = s.key === 'general' || s.key === 'random' ? uid(0) : uid(s.members[0]);
       const cr = created();
       const obj = {
-        id: c.id, name: s.name, created: cr, creator, is_archived: false, is_general: s.key === 'general', members: rosterAtEnd(s),
+        id: c.id, name: c.name, created: cr, creator, is_archived: false, is_general: s.key === 'general', members: rosterAtEnd(s),
         topic: { value: '', creator: '', last_set: 0 }, purpose: { value: s.purpose || '', creator, last_set: cr },
       };
       (c.file === 'channels' ? channels : groups).push(obj);

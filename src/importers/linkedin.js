@@ -181,8 +181,16 @@ async function importLinkedIn(fs, { builder, progress, signal } = {}) {
     const ranked = [...seen].map(([k, s]) => [k, s.size]).sort((a, b) => b[1] - a[1]);
     // Prefer a candidate whose sender name equals the Profile.csv name.
     const byName = egoName && ranked.find(([k]) => nameKey(names.get(k)) === nameKey(egoName));
-    const top = byName || ranked[0];
-    if (top && (convIds.size === 1 ? !!byName : top[1] >= Math.max(2, 0.8 * convIds.size))) { egoUrlKey = top[0]; egoHow = 'messages'; }
+    let top = byName || ranked[0];
+    let found = !!top && (convIds.size === 1 ? !!byName : top[1] >= Math.max(2, 0.8 * convIds.size));
+    if (!found && egoName) {
+      // By elimination: a URL that sent under someone else's name is not the
+      // owner's. If exactly one URL in every conversation is left (e.g. one
+      // conversation in which only the other person wrote), it is the owner's.
+      const rest = ranked.filter(([k, n]) => n === convIds.size && (!names.has(k) || nameKey(names.get(k)) === nameKey(egoName)));
+      if (rest.length === 1) { top = rest[0]; found = true; }
+    }
+    if (found) { egoUrlKey = top[0]; egoHow = 'messages'; }
   }
   const egoKey = egoUrlKey || 'linkedin:me';
 

@@ -2,7 +2,7 @@
 
 Owner: importers-A. Workplace importers (Slack, Teams, email, calendar), network files, Network Canvas and survey importers, the spreadsheet column mapper, the profile (HR) join, identity matching, dataset merging, the import report, the import pipeline and worker, and all exporters.
 
-Tests: `node --test 'test/importers-a/**/*.test.js'` (106 tests). Fixtures: `test/fixtures/importers-a/<format>/`, all synthetic.
+Tests: `node --test 'test/importers-a/**/*.test.js'` (110 tests). Fixtures: `test/fixtures/importers-a/<format>/`, all synthetic.
 
 ## Import pipeline (`src/core/pipeline.js`)
 
@@ -48,7 +48,7 @@ toFileSet(input) / subsetFileSet(fs, rels) / rootedFileSet(fs, root)
 
 | Thing | Convention |
 |---|---|
-| Node keys | `slack:<U/W id>`, `slack:bot:<bot_id>`, `teams:<entra guid>`, `teams:app:<id>`, `teams:<mri>` (Teams Free), `teams:<upn>` (Purview), `email:<address>` (email **and** calendar, so mailbox and calendar people coincide), `email:list:<list-id>`, `net:<id>`, `nc:<egoUUID>` / `nc:<egoUUID>:<alterUUID>`, `survey:<egoID>` / `survey:<egoID>:<alterID>`, `survey:<normalised name>` (roster surveys), `csv:<value>` (spreadsheet; `mapping.namespace` changes the prefix) |
+| Node keys | `slack:<U/W id>`, `slack:bot:<bot_id>` (only when no users.json bot user has that `profile.bot_id`), `teams:<entra guid>`, `teams:app:<id>`, `teams:<mri>` (Teams Free), `teams:<upn>` (Purview), `email:<address>` (email **and** calendar, so mailbox and calendar people coincide), `email:list:<list-id>`, `net:<id>`, `nc:<egoUUID>` / `nc:<egoUUID>:<alterUUID>`, `survey:<egoID>` / `survey:<egoID>:<alterID>`, `survey:<normalised name>` (roster surveys), `csv:<value>` (spreadsheet; `mapping.namespace` changes the prefix) |
 | `platformIds` | `{ slack }`, `{ teams }`, `{ email }`, `{ net: originalId }` |
 | `attrs.email` | Set whenever an address is known. Identity matching uses it. |
 | Reply | Target role `reply` is the parent's author, even when the parent message is absent. `parentKey` is the parent's event key. |
@@ -247,6 +247,16 @@ exportCSV(ds, net, opts) -> { nodes, edges, metrics }; also exportNodesCSV, expo
 - **Node ids and labels:** node ids are the dataset keys. GML and Pajek de-duplicate labels with a suffix.
 - **Encoding:** XML-illegal control characters are stripped, and `\n`, `\r` and `\t` in attributes are written as character references. Non-ASCII text survives: UTF-8 in GraphML, GEXF and Pajek; `&#N;` entities in GML.
 - **Validation:** every format is read back by our importer and by networkx 3.2.1 (`read_graphml`, `read_gexf`, `read_gml`, `read_pajek`). UCINET has no networkx reader, so it is checked by round trip only.
+
+## Native round trips (generator exports)
+
+Every native export the generator writes is imported with automatic detection in `test/integration/digestion.test.js` and must match the generator's dataset one for one. Fixes made for it (regression tests in `test/importers-a/digestion-fixes.test.js`):
+
+- **Slack:** root files of a real export that hold no messages (`integration_logs.json`, `canvases.json`, `file_conversations.json`, `huddle_transcripts.json`, `lists.json`, `content_flags.json`) are claimed, not read, so they are no longer `unclaimed`. A `bot_message` with only `bot_id` is attributed to the users.json bot user whose `profile.bot_id` matches, instead of a second `slack:bot:<id>` node.
+- **Email:** a reply gets a `reply` target (the parent's sender) when the parent is in the mailbox, also when the parent comes later in the file (spec section 5). A reply whose parent is absent has none: the mailbox does not say who wrote it.
+- **Calendar:** ical.js relates every `RECURRENCE-ID` VEVENT in a calendar to every master unless told otherwise, so an override of one series replaced the occurrence at the same wall-clock time of any other series. Masters are now built with only their own UID's overrides. The size class (2 people = direct, more = group) counts everyone invited, declines included; co-presence still needs a non-declined attendee.
+
+Expected differences (not bugs): calendar copresence weight is 1 per meeting by default (`weightBy: 'duration'` gives minutes); the generator's dataset weights meetings in hours.
 
 ## Known limits (also in code comments)
 

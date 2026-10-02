@@ -177,6 +177,21 @@ async function importChat(entry, fs, { builder, options, progress, signal }) {
     }
   }
   const isGroup = groupEvidence || authors.size > 2;
+  // In a group, an @-mention names a member even if they never wrote: the
+  // name sits between U+2068/U+2069 isolates (or is a phone number), so its
+  // extent is exact, and people are keyed by name anyway (spec: "@⁨Name⁩
+  // spans can be used to extract mention edges"). Not in a 1:1 chat, where a
+  // third person would wrongly become a recipient.
+  if (isGroup) {
+    const known = new Set([...people.values()].map(p => nameKey(p.name)));
+    for (const m of msgs) {
+      if (!m.author) continue;
+      for (const mn of m.mentions) {
+        if (mn.phone) { if (![...people.values()].some(p => p.phone && p.phone.replace('+', '') === mn.phone.replace('+', ''))) addPerson(mn.name, mn.phone, null); continue; }
+        if (mn.name && !known.has(nameKey(mn.name))) { addPerson(mn.name, null, null); known.add(nameKey(mn.name)); }
+      }
+    }
+  }
   if (egoName && people.has(`whatsapp:${egoName}`)) builder.source.egoKey = `whatsapp:${egoName}`;
 
   // Direct chat where only one side wrote: the chat title names the other side.

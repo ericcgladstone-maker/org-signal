@@ -27,6 +27,7 @@ import { plantCascades } from './contexts/common.js';
 import { SEED_TERMS } from './vocab.js';
 import { CONTEXTS, SIMS, NATIVE_VIEW } from './registry.js';
 import { WRITERS } from './writers/index.js';
+import { nativeView, nativeAllNodes } from './native.js';
 
 export { recoveryCheck } from './recovery.js';
 
@@ -98,9 +99,11 @@ export function generate(specIn) {
   const acc = makeTruthAccumulator(world);
   report(0.15, `World: ${world.n} people, ${world.ties.count} true ties`);
   const name = spec.name || `Synthetic ${spec.context} (${spec.medium}, ${world.preset || 'default'}, seed ${spec.seed})`;
-  const ds = makeDatasetSink({ world, medium: spec.medium, ident, obs, name, seed: spec.seed });
-
   const native = spec.output === 'native';
+  const hooks = {};
+  const ds = makeDatasetSink({ world, medium: spec.medium, ident, obs, name, seed: spec.seed, hooks,
+    allNodes: native ? nativeAllNodes(spec.medium, world) : undefined });
+
   const records = native ? [] : null;
   const ctx = makeCtx(world, {
     rng: root.fork('sim:' + spec.medium), rhythm, content,
@@ -117,9 +120,14 @@ export function generate(specIn) {
   let files;
   if (native) {
     records.sort((a, b) => a.t - b.t || a.id - b.id);
-    for (const rec of records) ds.sink(rec, ctx);
     report(0.88, 'Writing export files');
-    files = WRITERS[spec.medium]({ world, ctx, records, ident, obs, spec, rng: root.fork('writer') });
+    // The writer reports values it draws (bot ids, invitation times, follow
+    // lists) in `seen`; the dataset is then what the export can show (native.js).
+    const seen = {};
+    files = WRITERS[spec.medium]({ world, ctx, records, ident, obs, spec, rng: root.fork('writer'), native: seen });
+    const view = nativeView(spec.medium, { world, ctx, records, ident, obs, spec, native: seen });
+    Object.assign(hooks, view.hooks);
+    for (const rec of view.records) ds.sink(rec, ctx);
   }
   report(0.93, 'Building the dataset');
   const dataset = ds.finish();
