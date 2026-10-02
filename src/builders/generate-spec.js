@@ -92,6 +92,7 @@ export function normalizeContexts(list) {
         native: o.native ?? (Array.isArray(c.nativeMedia) ? c.nativeMedia.includes(id) : null),
         files: o.files || hint.files || null,
         importer: o.importer || hint.importer || null,
+        nativeView: o.nativeView ?? null,
       };
     });
     const presets = Array.isArray(c.presets) ? c.presets : c.presets && typeof c.presets === 'object'
@@ -117,6 +118,14 @@ export function validObservations(ctx, mediumId) {
   const pref = m?.observations || allowed;
   const out = pref.filter(o => allowed.includes(o));
   return out.length ? out : allowed.slice(0, 1);
+}
+
+// The observation a form starts on, and falls back to: everyone when the
+// medium allows it, because only a whole-group view can show the planted
+// structure (a one-person export of a polarized world is a star).
+export function defaultObservation(ctx, mediumId) {
+  const obs = validObservations(ctx, mediumId);
+  return obs.includes('full') ? 'full' : obs[0];
 }
 
 export function sizeParam(ctx) {
@@ -154,7 +163,7 @@ export function defaultForm(contexts, contextId) {
     structure: ctx.presets[0]?.id ?? null,
     size: sizeParam(ctx).default ?? 100,
     content: 'light',
-    observation: validObservations(ctx, medium)[0] ?? 'full',
+    observation: defaultObservation(ctx, medium) ?? 'full',
     seed: 1,
     days: ctx.timespan?.days ?? 90,
     start: ctx.timespan?.start ?? null,
@@ -183,8 +192,9 @@ export function applyChange(contexts, form, patch) {
   }
   const obs = validObservations(ctx, f.medium);
   if (!obs.includes(f.observation)) {
-    notes.push(`Observation changed to "${OBSERVATIONS[obs[0]]?.label || obs[0]}" because ${ctx.media.find(m => m.id === f.medium)?.label || f.medium} exports do not show "${OBSERVATIONS[f.observation]?.label || f.observation}"`);
-    f.observation = obs[0];
+    const to = defaultObservation(ctx, f.medium);
+    notes.push(`What the export shows changed to "${OBSERVATIONS[to]?.label || to}" because ${ctx.media.find(m => m.id === f.medium)?.label || f.medium} exports do not show "${OBSERVATIONS[f.observation]?.label || f.observation}"`);
+    f.observation = to;
   }
   if (f.structure && !ctx.presets.some(p => p.id === f.structure)) { f.structure = ctx.presets[0]?.id ?? null; notes.push('Scenario reset'); }
   const s = sizeParam(ctx);
@@ -207,26 +217,60 @@ export function toSpec(form, { output = form.output || 'dataset' } = {}) {
 
 export function sizeNote(n) {
   if (n > COMFORT.hardNote) return { level: 'warn', text: `${n.toLocaleString('en-US')} people is far past what a browser tab handles comfortably (about ${COMFORT.nodes.toLocaleString('en-US')}). Expect long waits and approximate measures; consider native files and a smaller slice.` };
-  if (n > COMFORT.warnAbove) return { level: 'warn', text: `Above about ${COMFORT.nodes.toLocaleString('en-US')} people some measures switch to labelled approximations and generation takes longer.` };
+  if (n > COMFORT.warnAbove) return { level: 'warn', text: `Above about ${COMFORT.nodes.toLocaleString('en-US')} people some measures switch to labeled approximations and generation takes longer.` };
   return { level: 'info', text: `Up to about ${COMFORT.nodes.toLocaleString('en-US')} people and a few million interactions run comfortably in the browser.` };
 }
 
-// Plain-language description of what will be generated and what the export shows.
+// 2025-01-06 -> "6 Jan 2025" (the app's one date format).
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export function fmtDay(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : String(iso || '');
+}
+
+// Views that show one person's corner of the world: the planted groups and
+// brokers cannot appear as structure in them.
+const PARTIAL = new Set(['ego', 'authored', 'chat']);
+
+// Plain-language description of what will be generated and what the export
+// shows. `caution` (or null) warns when the chosen view cannot show the
+// planted structure; `nativeCaution` does the same for the native files,
+// whose view is fixed by the real export format.
 export function describe(contexts, form) {
   const ctx = contexts.find(c => c.id === form.context);
-  if (!ctx) return { what: '', export: '' };
+  if (!ctx) return { what: '', export: '', caution: null, native: '', nativeCaution: null, nativeAvailable: false };
   const m = ctx.media.find(x => x.id === form.medium) || { label: form.medium };
   const preset = ctx.presets.find(p => p.id === form.structure);
   const obs = OBSERVATIONS[form.observation];
   const content = CONTENT_LEVELS.find(c => c.id === form.content);
-  const span = form.days ? ` over ${form.days} days${form.start ? ` from ${form.start}` : ''}` : '';
+  const span = form.days ? ` over ${form.days} days${form.start ? ` from ${fmtDay(form.start)}` : ''}` : '';
   const what = `A synthetic ${ctx.label.toLowerCase()} world of ${Number(form.size).toLocaleString('en-US')} people${span}, interacting through ${m.label}`
     + `${preset ? `. Scenario: ${preset.label.replace(/\.$/, '')}` : ''}. ${content ? content.label + ': ' + content.help.charAt(0).toLowerCase() + content.help.slice(1) : ''}`
     + ` Seed ${form.seed}: the same settings and seed always give the same world.`;
   const exportText = `What you will see: ${obs ? obs.label.toLowerCase() + ' (' + obs.help.charAt(0).toLowerCase() + obs.help.slice(1).replace(/\.$/, '') + ')' : form.observation}.`
-    + ' The true network, planted communities, brokers, hierarchy and events are kept as ground truth for the recovery check.';
+    + ' The true network, planted groups, brokers, hierarchy and events are kept as ground truth for the recovery check.';
+  const everyone = validObservations(ctx, form.medium).includes('full');
+  const caution = PARTIAL.has(form.observation)
+    ? `${obs.label} shows only the people around one person, so the planted groups${preset ? ` of "${preset.label.replace(/[:.].*$/, '')}"` : ''} and the brokers between them cannot appear as structure.${everyone ? ' Choose Everyone to see them.' : ''}`
+    : null;
   const native = m.files
-    ? `Native files: ${m.files}${m.importer ? `, read back by the ${m.importer} importer` : ''}. The importer decides what slice the files show, so the observation may differ from the choice above.`
+    ? `Native files: ${m.files}${m.importer ? `, read back by the ${m.importer} importer` : ''}.`
     : 'Native files in the real export layout for this medium, read back by its importer.';
-  return { what, export: exportText, native, nativeAvailable: m.native !== false };
+  const nv = String(m.nativeView || '');
+  const nativeCaution = nv && !/^full/.test(nv)
+    ? `A real ${m.label} export is one person's view (${nv}), so the files show only that person's ties, whatever you chose above; the planted groups will not show as communities.`
+    : null;
+  return { what, export: exportText, caution, native, nativeCaution, nativeAvailable: m.native !== false };
+}
+
+// Error text from a failed run -> what to tell the user. Out-of-memory
+// failures surface from the worker as clone or allocation errors; they get a
+// plain explanation and a way forward instead of the raw message.
+export function friendlyError(message, { size } = {}) {
+  const msg = String(message || '');
+  if (/out of memory|could not be cloned|allocation failed|invalid array length|invalid typed array length|maximum call stack|RangeError/i.test(msg)) {
+    const n = Number(size);
+    return `The browser ran out of memory${Number.isFinite(n) ? ` generating ${n.toLocaleString('en-US')} people` : ''}. Try a smaller world (up to about ${COMFORT.nodes.toLocaleString('en-US')} people runs comfortably), fewer days, or No text under Message text. Nothing was loaded and the data you had is unchanged.`;
+  }
+  return msg || 'Generation failed.';
 }

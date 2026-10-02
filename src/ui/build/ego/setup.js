@@ -14,38 +14,38 @@ export function GeneratorsStep({ s, update }) {
     <fieldset class="ob-fieldset">
       <legend>Respondent</legend>
       <div class="ob-grid-form">
-        <div class="ob-field"><label for="ego-label">Name or pseudonym</label>
-          <input id="ego-label" class="ob-input" value=${s.egoLabel} onInput=${e => update(x => ({ ...x, egoLabel: e.target.value }))} /></div>
-        <div class="ob-field"><label for="ego-case">Case id</label>
-          <input id="ego-case" class="ob-input" value=${s.caseId} placeholder="P014" onInput=${e => update(x => ({ ...x, caseId: e.target.value }))} /></div>
+        <div class="field"><label class="field__label" for="ego-label">Name or pseudonym</label>
+          <input id="ego-label" class="input" value=${s.egoLabel} onInput=${e => update(x => ({ ...x, egoLabel: e.target.value }))} /></div>
+        <div class="field"><label class="field__label" for="ego-case">Case id</label>
+          <input id="ego-case" class="input" value=${s.caseId} placeholder="for example P014" onInput=${e => update(x => ({ ...x, caseId: e.target.value }))} /></div>
       </div>
     </fieldset>
     <fieldset class="ob-fieldset">
       <legend>Questions that elicit names</legend>
       <p class="ob-note">Pick one or more. Each question has a cap on how many names it accepts; caps shape network size, so record them in your methods.</p>
       <div class="ob-stack" style="gap:.35rem">
-        ${E.GENERATOR_PRESETS.map(p => html`<label class="ob-check ego-preset">
+        ${E.GENERATOR_PRESETS.map(p => html`<label class="check ego-preset">
           <input type="checkbox" checked=${has(p.id)} onChange=${e => togglePreset(p, e.target.checked)} />
           <span><strong>${p.name}</strong> <span class="ob-note">${p.prompt}</span></span></label>`)}
       </div>
-      <div class="ob-row"><button type="button" class="ob-btn" onClick=${() => update(x => E.addGenerator(x, { name: 'Custom question', prompt: '' }))}>Add a custom question</button></div>
+      <div class="ob-row"><button type="button" class="btn" onClick=${() => update(x => E.addGenerator(x, { name: 'Custom question', prompt: '' }))}>Add a custom question</button></div>
     </fieldset>
     ${s.generators.length ? html`<fieldset class="ob-fieldset">
       <legend>In this interview, in order</legend>
       ${s.generators.map((g, i) => html`<div class="ego-item" key=${g.id}>
         <div class="ego-item-head">
-          <span class="ob-meta">Question ${i + 1}</span>
-          <button type="button" class="ob-btn quiet sm" onClick=${() => update(x => E.removeGenerator(x, g.id))} aria-label=${'Remove ' + g.name}>Remove</button>
+          <span class="meta">Question ${i + 1}</span>
+          <button type="button" class="btn btn--sm btn--quiet" onClick=${() => update(x => E.removeGenerator(x, g.id))} aria-label=${'Remove ' + g.name}>Remove</button>
         </div>
         <div class="ego-gen-grid">
-          <div class="ob-field"><label for=${'gn-' + g.id}>Short name</label>
-            <input id=${'gn-' + g.id} class="ob-input" value=${g.name} onInput=${e => update(x => E.updateGenerator(x, g.id, { name: e.target.value }))} /></div>
-          <div class="ob-field"><label for=${'gc-' + g.id}>Most names</label>
-            <input id=${'gc-' + g.id} class="ob-input" type="number" min="1" max="100" value=${g.cap}
+          <div class="field"><label class="field__label" for=${'gn-' + g.id}>Short name</label>
+            <input id=${'gn-' + g.id} class="input" value=${g.name} onInput=${e => update(x => E.updateGenerator(x, g.id, { name: e.target.value }))} /></div>
+          <div class="field"><label class="field__label" for=${'gc-' + g.id}>Most names</label>
+            <input id=${'gc-' + g.id} class="input" type="number" min="1" max="100" value=${g.cap}
               onInput=${e => update(x => E.updateGenerator(x, g.id, { cap: Math.max(1, Math.floor(Number(e.target.value) || 1)) }))} /></div>
         </div>
-        <div class="ob-field"><label for=${'gp-' + g.id}>Prompt read to the respondent</label>
-          <textarea id=${'gp-' + g.id} class="ob-textarea ego-prompt" rows="2" value=${g.prompt}
+        <div class="field"><label class="field__label" for=${'gp-' + g.id}>Prompt read to the respondent</label>
+          <textarea id=${'gp-' + g.id} class="input ego-prompt" rows="2" value=${g.prompt}
             onInput=${e => update(x => E.updateGenerator(x, g.id, { prompt: e.target.value }))}></textarea></div>
       </div>`)}
     </fieldset>` : html`<p class="ob-empty">No questions yet. Pick at least one above.</p>`}
@@ -69,38 +69,38 @@ export function InterpretersStep({ s, update }) {
     <fieldset class="ob-fieldset">
       <legend>Questions about each person named</legend>
       <div class="ob-stack" style="gap:.35rem">
-        ${E.INTERPRETER_PRESETS.map(p => html`<label class="ob-check">
+        ${E.INTERPRETER_PRESETS.map(p => html`<label class="check">
           <input type="checkbox" checked=${has(p.id)} onChange=${e => togglePreset(p, e.target.checked)} />
           <span><strong>${p.label}</strong> <span class="ob-note">${p.options ? p.options.map(o => o.label).join(', ') : 'a number'}</span></span></label>`)}
       </div>
-      <div class="ob-row"><button type="button" class="ob-btn" onClick=${() => update(x => E.addInterpreter(x, { label: 'Custom question', type: 'text' }))}>Add a custom question</button></div>
+      <div class="ob-row"><button type="button" class="btn" onClick=${() => update(x => E.addInterpreter(x, { label: 'Custom question', type: 'text' }))}>Add a custom question</button></div>
     </fieldset>
     ${s.interpreters.length ? html`<fieldset class="ob-fieldset">
       <legend>Asked about every person</legend>
       ${s.interpreters.map(it => html`<div class="ego-item" key=${it.id}>
         <div class="ego-item-head">
-          <span class="ob-meta">${it.name}</span>
-          <button type="button" class="ob-btn quiet sm" onClick=${() => update(x => E.removeInterpreter(x, it.id))} aria-label=${'Remove ' + it.label}>Remove</button>
+          <span class="meta">${it.name}</span>
+          <button type="button" class="btn btn--sm btn--quiet" onClick=${() => update(x => E.removeInterpreter(x, it.id))} aria-label=${'Remove ' + it.label}>Remove</button>
         </div>
         <div class="ego-int-grid">
-          <div class="ob-field"><label for=${'il-' + it.id}>Question</label>
-            <input id=${'il-' + it.id} class="ob-input" value=${it.label} onInput=${e => update(x => E.updateInterpreter(x, it.id, { label: e.target.value }))} /></div>
-          <div class="ob-field"><label for=${'iv-' + it.id}>Variable</label>
-            <input id=${'iv-' + it.id} class="ob-input" value=${it.name} onChange=${e => update(x => E.updateInterpreter(x, it.id, { name: e.target.value }))} /></div>
-          <div class="ob-field"><label for=${'it-' + it.id}>Answer type</label>
-            <select id=${'it-' + it.id} class="ob-select" value=${it.type}
+          <div class="field"><label class="field__label" for=${'il-' + it.id}>Question</label>
+            <input id=${'il-' + it.id} class="input" value=${it.label} onInput=${e => update(x => E.updateInterpreter(x, it.id, { label: e.target.value }))} /></div>
+          <div class="field"><label class="field__label" for=${'iv-' + it.id}>Variable</label>
+            <input id=${'iv-' + it.id} class="input" value=${it.name} onChange=${e => update(x => E.updateInterpreter(x, it.id, { name: e.target.value }))} /></div>
+          <div class="field"><label class="field__label" for=${'it-' + it.id}>Answer type</label>
+            <select id=${'it-' + it.id} class="select" value=${it.type}
               onChange=${e => update(x => E.updateInterpreter(x, it.id, { type: e.target.value, options: it.options || [] }))}>
               ${TYPES.map(([v, l]) => html`<option value=${v}>${l}</option>`)}
             </select></div>
         </div>
-        ${it.type === 'categorical' || it.type === 'ordinal' ? html`<div class="ob-field">
-          <label for=${'io-' + it.id}>Options, one per line (value = label${it.type === 'ordinal' ? '; values in order' : ''})</label>
-          <textarea id=${'io-' + it.id} class="ob-textarea ego-opts" rows="4" value=${optionsToText(it.options)}
+        ${it.type === 'categorical' || it.type === 'ordinal' ? html`<div class="field">
+          <label class="field__label" for=${'io-' + it.id}>Options, one per line (value = label${it.type === 'ordinal' ? '; values in order' : ''})</label>
+          <textarea id=${'io-' + it.id} class="input ego-opts" rows="4" value=${optionsToText(it.options)}
             onChange=${e => update(x => E.updateInterpreter(x, it.id, { options: textToOptions(e.target.value) }))}></textarea></div>` : null}
       </div>`)}
     </fieldset>` : html`<p class="ob-empty">No questions about alters yet. You can still collect names and ties without them.</p>`}
-    ${weighable.length ? html`<div class="ob-field" style="max-width:22rem"><label for="ego-weight">Weight ego's ties by</label>
-      <select id="ego-weight" class="ob-select" value=${s.weightBy || ''} onChange=${e => update(x => ({ ...x, weightBy: e.target.value || null }))}>
+    ${weighable.length ? html`<div class="field" style="max-width:22rem"><label class="field__label" for="ego-weight">Weight ego's ties by</label>
+      <select id="ego-weight" class="select" value=${s.weightBy || ''} onChange=${e => update(x => ({ ...x, weightBy: e.target.value || null }))}>
         <option value="">Nothing (every tie counts 1)</option>
         ${weighable.map(i => html`<option value=${i.name}>${i.label}</option>`)}
       </select></div>` : null}

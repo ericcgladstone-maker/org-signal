@@ -21,6 +21,8 @@ export function ReviewStep({ s, update, replace }) {
   const ties = E.tieList(s);
   const p = E.progress(s);
   const prefix = E.ncPrefix(s);
+  // What is left, in words (rather than a percentage that jumps between steps).
+  const todo = E.todo(s);
   const build = () => {
     const done = s.finishedAt ? s : { ...s, finishedAt: new Date().toISOString() };
     if (!s.finishedAt) update(() => done);
@@ -48,18 +50,18 @@ export function ReviewStep({ s, update, replace }) {
       <dt>Respondent</dt><dd>${s.egoLabel || 'unnamed'}${s.caseId ? ` (case ${s.caseId})` : ''}</dd>
       <dt>People named</dt><dd>${s.alters.length}</dd>
       <dt>Questions</dt><dd>${s.generators.map(g => `${g.name}: ${E.generatorCount(s, g.id)}`).join(', ') || 'none'}</dd>
-      <dt>Answers</dt><dd>${p.answered} of ${p.cells}</dd>
-      <dt>Alter ties</dt><dd>${ties.filter(t => t.on).length} of ${ties.length} pairs; ${Object.keys(s.ties).length} set by hand</dd>
-      <dt>Complete</dt><dd>${Math.round(p.fraction * 100)}%</dd>
+      <dt>Answers</dt><dd>${p.answered} of ${p.cells} descriptions filled in</dd>
+      <dt>Who knows whom</dt><dd>${ties.filter(t => t.on).length} of ${ties.length} pairs know each other; ${Object.keys(s.ties).length} set by hand</dd>
+      <dt>Still to do</dt><dd>${todo.length ? todo.join('; ') : 'nothing: every step is complete'}</dd>
     </dl>
     <p class="ob-note">The network is ego's view: ties from the respondent to each person named (one per question that elicited them) and ties between those people as the respondent perceives them, not as observed.</p>
     <${HandOffBar} build=${build} disabled=${!s.alters.length} note=${s.alters.length ? null : 'Name at least one person first.'} />
     <div class="ob-section">
       <h3>Save and move data</h3>
-      <div class="ob-row">
-        <button type="button" class="ob-btn" onClick=${saveJSON}>Save session (JSON)</button>
-        <button type="button" class="ob-btn" disabled=${!s.alters.length} onClick=${saveNC}>Network Canvas CSVs (zip)</button>
-        <button type="button" class="ob-btn" onClick=${resume}>Resume from a file</button>
+      <div class="ob-row" style="gap:.5rem 1.5rem">
+        <button type="button" class="tlink tlink--down" onClick=${saveJSON}>Save session (JSON)</button>
+        <button type="button" class="tlink tlink--down" disabled=${!s.alters.length} onClick=${saveNC}>Network Canvas CSVs (zip)</button>
+        <button type="button" class="tlink" onClick=${resume}>Resume from a file</button>
       </div>
       <p class="ob-note">The CSVs follow Network Canvas's export columns (ego file, attribute list, edge list), so they open in egor, ideanet or anything that reads Network Canvas. Resume accepts a saved session or those three CSVs.</p>
       ${msg ? html`<p class=${msg.ok ? 'ob-good' : 'ob-err'} role="status">${msg.text}</p>` : null}

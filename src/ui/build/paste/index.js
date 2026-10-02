@@ -23,24 +23,23 @@ export function PasteTies() {
   return html`<div class="ob-stack">
     <div class="ob-cols">
       <div class="ob-stack">
-        <div class="ob-field">
-          <label for="ob-paste-text">Ties</label>
-          <textarea id="ob-paste-text" class="ob-textarea" rows="14" spellcheck="false"
+        <div class="field">
+          <label class="field__label" for="ob-paste-text">Ties</label>
+          <textarea id="ob-paste-text" class="input" rows="14" spellcheck="false"
             aria-describedby="ob-paste-help ob-paste-summary"
-            placeholder="Avery - Jordan" value=${text} onInput=${e => setText(e.currentTarget.value)}></textarea>
+            placeholder="for example: Avery - Jordan" value=${text} onInput=${e => setText(e.currentTarget.value)}></textarea>
           <span id="ob-paste-help" class="ob-help">
             ${HELP}
           </span>
         </div>
-        <div class="ob-row">
-          <button type="button" class="ob-btn quiet" onClick=${() => setText(EXAMPLE)}>Load example</button>
-          <button type="button" class="ob-btn quiet" disabled=${!text} onClick=${() => setText('')}>Clear</button>
+        <div class="ob-row" style="gap:.5rem 1.5rem">
+          <button type="button" class="tlink" onClick=${() => setText(EXAMPLE)}>Load example</button>
+          <button type="button" class="tlink tlink--quiet" disabled=${!text} onClick=${() => setText('')}>Clear</button>
         </div>
       </div>
       <div class="ob-stack">
-        <div class="ob-row">
-          <span class="ob-label">Preview</span>
-          <span class="ob-spacer"></span>
+        <div class="ob-previewhead">
+          <h3 class="label">Preview</h3>
           <span id="ob-paste-summary" class="ob-note" aria-live="polite">
             ${nTies} ${nTies === 1 ? 'tie' : 'ties'} among ${parsed.nodes.length} people${parsed.directed ? ', directed' : ''}${nErr ? html`, <span class="ob-err">${nErr} ${nErr === 1 ? 'line' : 'lines'} not read</span>` : ''}
           </span>
@@ -56,9 +55,9 @@ export function PasteTies() {
       </div>
     </div>
     <div class="ob-section">
-      <div class="ob-field" style="max-width:24rem">
-        <label for="ob-paste-name">Network name</label>
-        <input id="ob-paste-name" class="ob-input" value=${name} onInput=${e => setName(e.currentTarget.value)} />
+      <div class="field" style="max-width:24rem">
+        <label class="field__label" for="ob-paste-name">Network name</label>
+        <input id="ob-paste-name" class="input" value=${name} onInput=${e => setName(e.currentTarget.value)} />
       </div>
       <${HandOffBar} disabled=${!nTies} build=${() => toDataset(parsed, { name: name || 'Pasted ties' })}
         note=${nErr ? 'Lines that could not be read are left out.' : null} />

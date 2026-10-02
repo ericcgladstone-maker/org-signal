@@ -12,7 +12,7 @@ export async function run({ page, open, shot, assert, step }) {
     }, sel, text);
     assert.ok(ok, `no ${sel} with text "${text}"`);
   };
-  const next = async () => { await clickText('.ego-nav .ob-btn.primary', 'Next'); // the step change moves focus to the step heading on the next frame; let it land before typing
+  const next = async () => { await clickText('.ob-navrow .btn--primary', 'Next'); // the step change moves focus to the step heading on the next frame; let it land before typing
     await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))); };
 
   step('open');
@@ -20,7 +20,7 @@ export async function run({ page, open, shot, assert, step }) {
   await page.waitForSelector('.ego');
 
   step('generators');
-  await clickText('.ob-check', 'Advice');
+  await clickText('.check', 'Advice');
   await page.waitForFunction(() => document.querySelectorAll('.ego .ego-item').length === 2);
   await shot('1-generators');
   await next();
@@ -54,8 +54,8 @@ export async function run({ page, open, shot, assert, step }) {
   await next();
 
   step('ties: contexts');
-  await clickText('.ego .ob-btn', 'Add Work');
-  await clickText('.ego .ob-btn', 'Add Family');
+  await clickText('.ego .btn', 'Add Work');
+  await clickText('.ego .btn', 'Add Family');
   await page.waitForSelector('.ego-ctx');
   const boxes = await page.$$('.ego-ctx tbody tr');
   // Avery, Jordan, Sam at work; Kim and Rui family
@@ -77,7 +77,7 @@ export async function run({ page, open, shot, assert, step }) {
   step('review');
   await page.waitForSelector('.ob-kv');
   await shot('6-review');
-  await clickText('.ob-btn.primary', 'Analyze this network');
+  await clickText('.btn--primary', 'Analyze this network');
   await page.waitForFunction(() => window.__harness.loaded.length === 1, { timeout: 5000 });
   const r = await page.evaluate(() => {
     const ds = window.__harness.loaded[0].ds;
@@ -88,6 +88,16 @@ export async function run({ page, open, shot, assert, step }) {
   assert.equal(r.nodes, 6);
   // 3 + 3 ego->alter (Avery twice) + 4 implied + 1 exception
   assert.equal(r.events, 11);
+
+  step('Network Canvas export names the respondent and the settings');
+  const nc = await page.evaluate(async () => {
+    const E = await import('/src/builders/ego.js');
+    const s = E.sessionFromJSON(localStorage.getItem('orgsignal.build.ego.session'));
+    const files = E.toNetworkCanvasCSV(s);
+    return { ego: files[0].text.split('\n')[0], alt: files[1].text.split('\n')[0] };
+  });
+  assert.match(nc.ego, /,name\r?$/);
+  assert.match(nc.alt, /setting_work,setting_family/);
 
   step('resume after reload');
   await page.goto(page.url().replace('clear=1', 'clear=0'), { waitUntil: 'networkidle0' });

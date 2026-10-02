@@ -89,6 +89,7 @@ export function generate(specIn) {
   const root = new Rng(spec.seed);
   const span = normalizeTimespan(spec.timespan, C.timespanDefaults);
   const world = C.build(spec, root.fork('world'), span);
+  labelPlantedGroups(world);
   plantDiffusion(world, spec, root.fork('diffusion'));
   world.topics ||= {};
   const rhythm = makeRhythm(world.rhythmKind || 'flat', span, root.fork('rhythm'));
@@ -131,10 +132,37 @@ export function generate(specIn) {
   }
   report(0.93, 'Building the dataset');
   const dataset = ds.finish();
+  // Display name for the ground-truth attribute (readers may ignore it).
+  dataset.meta.attrLabels = { ...(dataset.meta.attrLabels || {}), [PLANTED_GROUP_ATTR]: PLANTED_GROUP_LABEL };
   const groundTruth = buildGroundTruth({ world, spec, ident, obs, ctx, acc, rhythm, keptEvents: ds.kept });
   if (files) groundTruth.files = files.map(f => ({ path: f.path, size: f.bytes.length }));
   report(1, 'Done');
   return files ? { dataset, groundTruth, files } : { dataset, groundTruth };
+}
+
+// The planted groups go on every person under one key, `planted_group`, so
+// the analysis views can tell ground truth from detected communities and say
+// so ("Planted group (ground truth)"; see PLANTED_GROUP_LABEL). A context's
+// own key is dropped when it only ever existed to carry the planted group
+// (online `community` read as "Community" next to the detected communities);
+// keys a real export or HR file would also carry (department, company) stay.
+export const PLANTED_GROUP_ATTR = 'planted_group';
+export const PLANTED_GROUP_LABEL = 'Planted group (ground truth)';
+const SYNTHETIC_GROUP_KEYS = new Set(['community', 'home_space', 'cluster', 'friend_group']);
+
+function labelPlantedGroups(world) {
+  const key = world.groupAttr;
+  const names = world.groups.map(g => g.name);
+  for (let i = 0; i < world.n; i++) {
+    const a = world.people.attrs[i];
+    if (!a) continue;
+    // Membership decides; the context's own value only names people outside
+    // every group (survey names beyond the roster).
+    const v = world.group[i] >= 0 ? names[world.group[i]] : key ? a[key] : undefined;
+    if (SYNTHETIC_GROUP_KEYS.has(key)) delete a[key];
+    if (v !== undefined && v !== '') a[PLANTED_GROUP_ATTR] = v;
+  }
+  world.groupAttr = PLANTED_GROUP_ATTR;
 }
 
 // Planted diffusion: seed terms introduced by chosen people early in the span

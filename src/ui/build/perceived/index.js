@@ -29,7 +29,7 @@ export function PerceivedBuilder() {
     <div class="ob-row">
       <${Steps} steps=${STEPS} value=${step} onChange=${setStep} done=${done} />
       <span class="ob-spacer"></span>
-      <button type="button" class="ob-btn quiet sm" onClick=${() => { if (confirm('Start over? Reports entered so far will be cleared.')) { setCss(newCSS()); setStep('people'); } }}>Start over</button>
+      <button type="button" class="tlink tlink--quiet" onClick=${() => { if (confirm('Start over? Reports entered so far will be cleared.')) { setCss(newCSS()); setStep('people'); } }}>Start over</button>
     </div>
     ${step === 'people' ? html`<${PeopleEditor} people=${css.people} withAttrs=${false} idPrefix="ob-css"
         onChange=${people => patch(c => ({ people, informants: c.informants.filter(i => !i.personId || people.some(p => p.id === i.personId)) }))} />`
@@ -37,9 +37,9 @@ export function PerceivedBuilder() {
     : step === 'reports' ? html`<${Reports} css=${css} patch=${patch} />`
     : html`<${Results} css=${css} />`}
     <div class="ob-navrow">
-      <button type="button" class="ob-btn" disabled=${idx === 0} onClick=${() => setStep(STEPS[idx - 1].id)}>Back</button>
+      ${idx > 0 ? html`<button type="button" class="tlink tlink--quiet" onClick=${() => setStep(STEPS[idx - 1].id)}>Back: ${STEPS[idx - 1].label}</button>` : html`<span></span>`}
       <span class="ob-spacer"></span>
-      ${idx < STEPS.length - 1 ? html`<button type="button" class="ob-btn primary" onClick=${() => setStep(STEPS[idx + 1].id)}>Next: ${STEPS[idx + 1].label}</button>` : null}
+      ${idx < STEPS.length - 1 ? html`<button type="button" class="btn btn--primary" onClick=${() => setStep(STEPS[idx + 1].id)}>Next: ${STEPS[idx + 1].label}</button>` : null}
     </div>
   </div>`;
 }
@@ -49,29 +49,29 @@ function Informants({ css, patch }) {
   const toggle = id => patch(c => (isInf(id) ? { informants: c.informants.filter(i => i.personId !== id) } : addInformant(c, id)));
   return html`<div class="ob-stack">
     <div class="ob-grid-form">
-      <div class="ob-field"><label for="ob-css-rel">Relation</label>
-        <input id="ob-css-rel" class="ob-input" value=${css.relation.name} onInput=${e => patch(c => ({ relation: { ...c.relation, name: e.currentTarget.value } }))} /></div>
-      <div class="ob-field" style="grid-column:span 2"><label for="ob-css-q">Question each informant answers about every pair</label>
-        <input id="ob-css-q" class="ob-input" value=${css.relation.question} onInput=${e => patch(c => ({ relation: { ...c.relation, question: e.currentTarget.value } }))} /></div>
+      <div class="field"><label class="field__label" for="ob-css-rel">Relation</label>
+        <input id="ob-css-rel" class="input" value=${css.relation.name} onInput=${e => patch(c => ({ relation: { ...c.relation, name: e.currentTarget.value } }))} /></div>
+      <div class="field" style="grid-column:span 2"><label class="field__label" for="ob-css-q">Question each informant answers about every pair</label>
+        <input id="ob-css-q" class="input" value=${css.relation.question} onInput=${e => patch(c => ({ relation: { ...c.relation, question: e.currentTarget.value } }))} /></div>
     </div>
     <p class="ob-note">Informants are usually the roster members themselves, which is what the locally aggregated structures need: the tie from i to j is judged by i and j. Outside observers can be added too; they count toward the consensus only.</p>
     <fieldset class="ob-fieldset">
       <legend>Roster members who report</legend>
       <div class="ob-row">
-        <button type="button" class="ob-btn sm" onClick=${() => patch(c => css.people.reduce((acc, p) => (acc.informants.some(i => i.personId === p.id) ? acc : addInformant(acc, p.id)), c))}>Everyone</button>
-        <button type="button" class="ob-btn sm" onClick=${() => patch(c => ({ informants: c.informants.filter(i => !i.personId) }))}>No one</button>
+        <button type="button" class="btn btn--sm" onClick=${() => patch(c => css.people.reduce((acc, p) => (acc.informants.some(i => i.personId === p.id) ? acc : addInformant(acc, p.id)), c))}>Everyone</button>
+        <button type="button" class="btn btn--sm" onClick=${() => patch(c => ({ informants: c.informants.filter(i => !i.personId) }))}>No one</button>
       </div>
-      <div class="ob-row">${css.people.map(p => html`<label class="ob-check"><input type="checkbox" checked=${isInf(p.id)} onChange=${() => toggle(p.id)} />${p.label}</label>`)}</div>
+      <div class="ob-row">${css.people.map(p => html`<label class="check"><input type="checkbox" checked=${isInf(p.id)} onChange=${() => toggle(p.id)} />${p.label}</label>`)}</div>
     </fieldset>
     <div class="ob-row">
-      <button type="button" class="ob-btn" onClick=${() => patch(c => addInformant(c, null))}>Add an outside observer</button>
-      <span class="ob-meta">${css.informants.length} informants</span>
+      <button type="button" class="btn" onClick=${() => patch(c => addInformant(c, null))}>Add an outside observer</button>
+      <span class="meta">${css.informants.length} informants</span>
     </div>
     ${css.informants.filter(i => !i.personId).map(i => html`<div class="ob-row">
       <label class="visually-hidden" for=${'ob-obs-' + i.id}>Observer name</label>
-      <input id=${'ob-obs-' + i.id} class="ob-input" style="max-width:16rem" value=${i.label}
+      <input id=${'ob-obs-' + i.id} class="input" style="max-width:16rem" value=${i.label}
         onInput=${e => patch(c => ({ informants: c.informants.map(x => (x.id === i.id ? { ...x, label: e.currentTarget.value } : x)) }))} />
-      <button type="button" class="ob-btn quiet sm" onClick=${() => patch(c => ({ informants: c.informants.filter(x => x.id !== i.id) }))}>Remove</button>
+      <button type="button" class="btn btn--sm btn--quiet" onClick=${() => patch(c => ({ informants: c.informants.filter(x => x.id !== i.id) }))}>Remove</button>
     </div>`)}
   </div>`;
 }
@@ -93,13 +93,13 @@ function Reports({ css, patch }) {
   };
   return html`<div class="ob-stack">
     <div class="ob-row">
-      <div class="ob-field"><label for="ob-css-inf">Informant</label>
-        <select id="ob-css-inf" class="ob-select" value=${inf.id} onChange=${e => { setCur(e.currentTarget.value); setMsg(null); }}>
+      <div class="field"><label class="field__label" for="ob-css-inf">Informant</label>
+        <select id="ob-css-inf" class="select" value=${inf.id} onChange=${e => { setCur(e.currentTarget.value); setMsg(null); }}>
           ${css.informants.map(i => html`<option value=${i.id}>${i.label} (${Object.keys(i.ties).length} ties)</option>`)}</select></div>
       <span class="ob-spacer"></span>
-      <button type="button" class="ob-btn sm" onClick=${importCsv}>Import matrix CSV</button>
-      <button type="button" class="ob-btn sm" onClick=${() => downloadText(`perceived-${inf.label}.csv`, adjacencyCSV(css.people, inf.ties), 'text/csv')}>Download as CSV</button>
-      <button type="button" class="ob-btn quiet sm" disabled=${!Object.keys(inf.ties).length} onClick=${() => setInf({})}>Clear</button>
+      <button type="button" class="btn btn--sm" onClick=${importCsv}>Import matrix CSV</button>
+      <button type="button" class="btn btn--sm" onClick=${() => downloadText(`perceived-${inf.label}.csv`, adjacencyCSV(css.people, inf.ties), 'text/csv')}>Download as CSV</button>
+      <button type="button" class="btn btn--sm btn--quiet" disabled=${!Object.keys(inf.ties).length} onClick=${() => setInf({})}>Clear</button>
     </div>
     ${msg ? html`<p class=${msg.err ? 'ob-note ob-err' : 'ob-note'} role="status">${msg.text}</p>` : null}
     <p class="ob-note">${css.relation.question || css.relation.name}: the network as ${inf.label} sees it. A row is the person who ${css.relation.name ? `has the ${css.relation.name.toLowerCase()} tie` : 'sends the tie'}, a column the person it goes to.</p>
@@ -126,8 +126,8 @@ function Results({ css }) {
     ...css.informants.map(i => ({ id: i.id, label: i.label })),
   ];
   return html`<div class="ob-stack">
-    <div class="ob-field">
-      <label for="ob-css-th">Consensus threshold: ${Math.round(threshold * 100)}% of informants</label>
+    <div class="field">
+      <label class="field__label" for="ob-css-th">Consensus threshold: ${Math.round(threshold * 100)}% of informants</label>
       <input id="ob-css-th" class="ob-range" type="range" min="0.1" max="1" step="0.05" value=${threshold} onInput=${e => setThreshold(Number(e.currentTarget.value))} />
       <span class="ob-help">A tie is in the consensus structure when at least this share of informants report it.</span>
     </div>
@@ -135,7 +135,7 @@ function Results({ css }) {
     <div class="ob-section">
       <h3>How each informant compares</h3>
       <p class="ob-note">Hits are ties the informant reported that are also in the ${refTies ? 'criterion' : 'consensus'}; false alarms are ties they reported that are not. Jaccard is hits divided by the ties in either. ${refTies ? `The reference is the loaded network (${ref.matched} roster members matched by name).` : 'Load an observed network for this group to also score against it.'}</p>
-      <div class="ob-tablewrap"><table class="ob-table">
+      <div class="table-wrap"><table class="tbl">
         <thead><tr><th>Informant</th><th class="num">Ties reported</th><th class="num">Hits</th><th class="num">False alarms</th><th class="num">Hit rate</th><th>Jaccard vs consensus</th>
           ${refTies ? html`<th class="num">Hits vs reference</th><th class="num">False alarms vs reference</th><th class="num">Jaccard vs reference</th>` : null}</tr></thead>
         <tbody>${acc.map(a => html`<tr>
@@ -148,7 +148,7 @@ function Results({ css }) {
 
     <div class="ob-section">
       <h3>Ties informants disagree about most</h3>
-      ${dis.length ? html`<div class="ob-tablewrap"><table class="ob-table">
+      ${dis.length ? html`<div class="table-wrap"><table class="tbl">
         <thead><tr><th>Tie</th><th class="num">Share reporting it</th><th>Disagreement</th></tr></thead>
         <tbody>${dis.map(d => html`<tr><td>${d.fromLabel} → ${d.toLabel}</td><td class="num">${pct(d.share)}</td>
           <td style="white-space:nowrap"><span class="ob-mono">${num(d.score)}</span><span class="ob-bartrack" aria-hidden="true"><span class="ob-bar" style=${`width:${d.score * 100}%`}></span></span></td></tr>`)}
@@ -161,8 +161,8 @@ function Results({ css }) {
       <h3>Network to analyze</h3>
       <div class="ob-cols">
         <div class="ob-stack">
-          <div class="ob-field"><label for="ob-css-view">View</label>
-            <select id="ob-css-view" class="ob-select" value=${view} onChange=${e => setView(e.currentTarget.value)}>
+          <div class="field"><label class="field__label" for="ob-css-view">View</label>
+            <select id="ob-css-view" class="select" value=${view} onChange=${e => setView(e.currentTarget.value)}>
               ${views.map(v => html`<option value=${v.id}>${v.label}</option>`)}</select></div>
           <p class="ob-note">${viewLabel(css, view, threshold)}: ${Object.keys(ties).length} ${Object.keys(ties).length === 1 ? "tie" : "ties"}.
             ${view.startsWith('las') && missing.length ? html` <span class="ob-warn">Without their own report: ${missing.join(', ')}.</span>` : null}</p>

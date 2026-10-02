@@ -8,19 +8,19 @@ const mod = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator
 
 export const SHORTCUTS = [
   ['Canvas', [
-    ['V', 'Select mode'], ['B', 'Add-node mode (click to place)'], ['C', 'Connect mode (drag from one node to another, or click two nodes)'], ['H', 'Pan mode'],
+    ['V', 'Select mode'], ['B', 'Add-person mode (click to place)'], ['C', 'Connect mode (drag from one person to another, or click two people)'], ['H', 'Pan mode'],
     ['Space + drag', 'Pan in any mode'], ['Wheel or pinch', 'Zoom around the pointer'], ['+ / -', 'Zoom in / out'], ['0', 'Fit the drawing to the view'],
   ]],
-  ['Nodes and ties', [
-    ['N', 'New node at the centre of the view'], ['Tab / Shift+Tab', 'Move to the next / previous node and select it (leaves the canvas after the last)'],
-    ['Space', 'Keep the selection while moving with Tab; again to add or remove the focused node'], ['Enter or F2', 'Rename the focused or selected node'],
-    ['E', 'Connect the selected nodes in the order selected (or the selected node to the focused one)'],
+  ['People and ties', [
+    ['N', 'New person near the center of the view, ready to name'], ['Tab / Shift+Tab', 'Move to the next / previous person and select them (leaves the canvas after the last)'],
+    ['Space', 'Keep the selection while moving with Tab; again to add or remove the focused person'], ['Enter or F2', 'Rename the focused or selected person'],
+    ['E', 'Connect the selected people in the order selected (or the selected person to the focused one)'],
     ['Arrow keys', 'Nudge the selection by one grid step (Shift: five); with nothing selected, pan'],
-    ['Delete / Backspace', 'Delete the selection'], [`${mod}+A`, 'Select all nodes'], ['Esc', 'Clear selection, cancel, close'],
+    ['Delete / Backspace', 'Delete the selection'], [`${mod}+A`, 'Select everyone'], ['Esc', 'Clear selection, cancel, close'],
   ]],
   ['Edit', [
     [`${mod}+Z`, 'Undo'], [`${mod}+Shift+Z or ${mod}+Y`, 'Redo'], [`${mod}+C / ${mod}+V`, 'Copy / paste the selection'], [`${mod}+D`, 'Duplicate the selection'],
-    ['G', 'Snap to grid on or off'], ['L', 'Go to the layout menu'], ['T', 'Switch between canvas and table view'], ['?', 'This help'],
+    ['G', 'Snap to grid on or off'], ['L', 'Go to the layout menu'], ['T', 'Switch between the canvas and the table'], ['?', 'This help'],
   ]],
 ];
 
@@ -33,13 +33,13 @@ export function HelpOverlay({ onClose }) {
     document.addEventListener('keydown', onKey, true);
     return () => { document.removeEventListener('keydown', onKey, true); prev?.focus?.(); };
   }, []);
-  return html`<div class="ob-overlay" onClick=${e => e.target === e.currentTarget && onClose()}>
-    <div class="ob-dialog ob-draw-help" role="dialog" aria-modal="true" aria-labelledby="ob-draw-help-title">
-      <div class="ob-row"><h3 id="ob-draw-help-title">Keyboard shortcuts</h3><span class="ob-spacer"></span>
-        <button type="button" class="ob-btn sm" ref=${btn} onClick=${onClose}>Close</button></div>
-      <p class="ob-note">Every action is also a button in the toolbar or the panel beside the canvas, and the table view edits the same drawing as rows.</p>
+  return html`<div class="dialog-backdrop" onClick=${e => e.target === e.currentTarget && onClose()}>
+    <div class="dialog ob ob-draw-help" role="dialog" aria-modal="true" aria-labelledby="ob-draw-help-title">
+      <div class="dialog__head"><h2 id="ob-draw-help-title">Keyboard shortcuts</h2>
+        <button type="button" class="btn btn--sm" ref=${btn} onClick=${onClose}>Close</button></div>
+      <p class="ob-note">Every action is also a button in the toolbar or the panel beside the canvas, and the table edits the same drawing as rows. Double-click the canvas to add a person.</p>
       ${SHORTCUTS.map(([title, rows]) => html`<section class="ob-stack" style="gap:.4rem">
-        <span class="ob-meta">${title}</span>
+        <h4 class="label">${title}</h4>
         <dl class="ob-keys">${rows.map(([k, d]) => html`<dt><kbd>${k}</kbd></dt><dd>${d}</dd>`)}</dl>
       </section>`)}
     </div>

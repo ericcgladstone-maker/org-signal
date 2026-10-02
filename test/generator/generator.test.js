@@ -299,3 +299,24 @@ test('spec validation: unknown context or unfit medium throws a clear error', ()
   const { groundTruth } = generate({ context: 'workplace', size: 20, departments: 30, seed: 1 });
   assert.ok(groundTruth.notes.some(n => /departments/.test(n)));
 });
+
+test('planted groups are one attribute, planted_group, never "community"', () => {
+  for (const [context, medium, own] of [['online', 'x', 'community'], ['workplace', 'slack', null], ['personal', 'whatsapp', 'cluster'], ['survey', 'survey', 'friend_group'], ['community', 'reddit', 'home_space']]) {
+    const { dataset, groundTruth } = generate({ context, medium, size: 40, seed: 3, content: 'none', timespan: { days: 14 } });
+    assert.equal(groundTruth.communities.attr, 'planted_group', context);
+    assert.equal(dataset.meta.attrLabels.planted_group, 'Planted group (ground truth)');
+    const names = new Set(groundTruth.communities.names);
+    let labelled = 0;
+    for (let i = 0; i < dataset.nodes.count; i++) {
+      const a = dataset.nodes.attrs[i] || {};
+      if (own) assert.equal(a[own], undefined, `${context}: the context's own group key is gone`);
+      if (a.planted_group !== undefined) labelled++;
+    }
+    assert.ok(labelled > 0, context);
+    // every member of a planted group carries that group's name
+    groundTruth.communities.membership.forEach((g, i) => { if (g >= 0) assert.ok(names.has(groundTruth.people.attrs[i].planted_group), `${context} person ${i}`); });
+  }
+  // keys that real exports or HR files carry stay beside it
+  const { dataset } = generate({ context: 'workplace', medium: 'slack', size: 30, seed: 1, content: 'none', timespan: { days: 7 } });
+  assert.ok(dataset.nodes.attrs.some(a => a && a.department));
+});

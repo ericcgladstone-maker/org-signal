@@ -48,7 +48,7 @@ test('changing upstream resets invalid downstream choices', () => {
   assert.equal(r.form.observation, 'full'); // still valid for email
   r = applyChange(C, { ...r.form, observation: 'ego' }, { medium: 'slack' });
   assert.equal(r.form.observation, 'full');
-  assert.match(r.notes[0], /Observation changed/);
+  assert.match(r.notes[0], /What the export shows changed/);
   r = applyChange(C, r.form, { context: 'personal' });
   assert.equal(r.form.medium, 'whatsapp');
   assert.equal(r.form.observation, 'ego');
@@ -76,4 +76,21 @@ test('fallback schema is flagged dev-only', () => {
   const fb = normalizeContexts(FALLBACK_CONTEXTS);
   assert.ok(fb.every(c => c.devFallback));
   assert.deepEqual(fb.map(c => c.id), ['workplace', 'online', 'professional', 'personal', 'community', 'survey']);
+});
+
+test('a one-person view warns that the planted structure cannot show; everyone is the default (P3)', async () => {
+  const { describe: d, defaultForm: df, friendlyError } = await import('../../src/builders/generate-spec.js');
+  const X = normalizeContexts([{ id: 'online', label: 'Online public', media: [{ id: 'x', label: 'X', observations: ['ego', 'authored', 'sample', 'full'], nativeView: 'ego' }],
+    presets: [{ id: 'polarized', label: 'Polarized: two camps' }], observations: ['full', 'ego', 'authored', 'chat', 'sample'], nativeMedia: ['x'] }]);
+  const f = df(X);
+  assert.equal(f.observation, 'full');
+  assert.equal(d(X, f).caution, null);
+  assert.match(d(X, { ...f, observation: 'ego' }).caution, /cannot appear as structure.*Choose Everyone/);
+  assert.match(d(X, f).nativeCaution, /one person's view/);
+  assert.match(d(X, { ...f, start: '2025-01-06' }).what, /from 6 Jan 2025/);
+  // A6: out of memory reads as a plain message with a way forward
+  const m = friendlyError("Failed to execute 'postMessage' on 'DedicatedWorkerGlobalScope': Data cannot be cloned, out of memory.", { size: 50000 });
+  assert.match(m, /ran out of memory generating 50,000 people/);
+  assert.match(m, /smaller world/);
+  assert.equal(friendlyError('Unknown context "x"'), 'Unknown context "x"');
 });

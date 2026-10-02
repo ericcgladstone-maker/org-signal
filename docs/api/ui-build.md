@@ -11,8 +11,10 @@ import { BuildView } from './build/index.js';      // <BuildView tab?="draw|ego|
 import { GenerateView } from './generate/index.js'; // <GenerateView />
 ```
 
-- Neither component needs props. They load `assets/build.css` themselves: `ensureBuildCss()` adds one `<link data-owner="ui-build">`. All styles are scoped under `.ob`.
-- They use `store.actions.loadDataset(ds, { mode: 'replace' | 'add' })`, then `store.actions.setView('network')` if it exists, then `store.actions.notify(level, text)`.
+- Neither component needs props. They load `assets/build.css` themselves: `ensureBuildCss()` adds one `<link data-owner="ui-build">`. Controls, labels, tabs, `.seg`, tables, dialogs, the view head (`ViewHead`, re-exported as `ViewHeader` from `build/shared.js`) and the `--cat-*` palette are the shared ones from `assets/app.css`; `build.css` holds only builder-specific layout (canvas, matrix, ego canvas, recovery list), scoped under `.ob`.
+- Each view renders its own visible `h1` view head ("Build", "Generate"); each builder's title is a section heading under the tabs.
+- They use `store.actions.loadDataset(ds, { mode: 'replace' | 'add' })`, then `store.actions.setView('network')` if it exists, then `store.actions.notify(level, text)`. With data already loaded, the hand-off bar says the main action replaces it and offers "Add to the data already loaded".
+- Generate writes `store.generated = { datasetName, spec, groundTruth, recovery, runId, people, events }` after "Generate and analyze" (`datasetName === dataset.meta.name`), then runs the recovery check and stores its report in `generated.recovery` (`{ summary, checks[] }`). The full panel (`#ob-recovery`) lives in Generate and survives navigation.
 - If `loadDataset` is not registered, the views say so through `notify` and do not crash.
 - The perceived builder reads `store.get().dataset` and uses it as an optional reference network.
 - Local storage keys are all wrapped in try/catch, and the views work without storage:
@@ -52,7 +54,7 @@ import { GenerateView } from './generate/index.js'; // <GenerateView />
 
 **Document.** `{ version, name, nodes[{id,label,x,y,group,attrs}], edges[{id,source,target,type,weight,directed}], groups[{id,name}], attrColumns[{key,type}], edgeTypes[] }`. Every operation is pure (doc in, new doc out).
 
-- Create and look up: `emptyDoc(name)`, `nodeById`, `edgeById`, `groupById`, `nextLabel`, `bounds(nodes)`.
+- Create and look up: `emptyDoc(name)`, `nodeById`, `edgeById`, `groupById`, `nextLabel`, `bounds(nodes)`, `freeSpot(nodes, p, { r, clearX, clearY })` (a place for a new person clear of others and their labels).
 - History (undo/redo keeps earlier versions of the drawing, which share unchanged parts):
   - `createHistory(doc)`, `commit(h, doc, label)`
   - `undo`, `redo`, `canUndo`, `canRedo`, `undoLabel`, `redoLabel`
@@ -73,7 +75,7 @@ import { GenerateView } from './generate/index.js'; // <GenerateView />
   - `LAYOUTS`, `runLayout(doc, id, ids, { all, root, key, seed, box })`, which returns positions.
   - `circleLayout`, `gridLayout`, `treeLayout` (breadth-first from a root), `forceLayout` (seeded and deterministic), `concentricLayout` (rings by degree, group or an attribute).
   - `layoutBox` (a selection is laid out inside its own bounding box), `fitInto`, `concentricKeys`.
-- UI: `DrawEditor()`.
+- UI: `DrawEditor()`. One toolbar (mode `.seg`, undo/redo, Canvas | Table, File menu, shortcuts, the primary "Analyze this network"); layout and snapping live in the panel beside the canvas. The canvas fills the window height below it. New people open for naming. Tie types are drawn with dashes, plus a key, only when more than one is used. Undo history, zoom and panels survive leaving the view (module memory).
   - SVG canvas with pan and zoom, grid snap, alignment guides, group outlines, marquee and shift-click selection, and inline renaming.
   - Inspector, an equivalent table view for screen readers, and autosave.
   - Layout changes animate, except under `prefers-reduced-motion`.
@@ -105,12 +107,13 @@ import { GenerateView } from './generate/index.js'; // <GenerateView />
 - `tieList(s)` returns pairs with their source: `context`, `added`, `removed` or `none`.
 
 **Progress, output and files**
-- `progress(s)` returns completeness per step and overall.
+- `progress(s)` returns completeness per step and overall; `todo(s)` lists what is left in words (the UI shows "Step n of 6", not a percentage).
+- `addContext(s, name, { fromAnswers = true })` starts a setting with the people whose categorical answers name it (`suggestedMembers(s, name)`; How met "School", relationship "Coworker" for Work, ...). `placeLabels(items, { lineH, midY })` keeps setting labels on the who-knows-whom canvas from overlapping.
 - `toDataset(s)`
 - Save and resume: `sessionToJSON`, `sessionFromJSON` (validated).
 - Network Canvas export: `toNetworkCanvasCSV(s)` returns `[{ name, text }]`:
-  - `<case>_<session>_ego.csv`: `networkCanvasEgoUUID, networkCanvasCaseID, networkCanvasSessionID, networkCanvasProtocolName, sessionStart, sessionFinish, sessionExported, APP_VERSION, COMMIT_HASH, ...`
-  - `_attributeList_Person.csv`: `nodeID, networkCanvasEgoUUID, networkCanvasUUID, name, ...`. Multi-select answers become `<name>_<option>` columns with true/false, and a `gen_<generator>` column per generator records which question elicited each person.
+  - `<case>_<session>_ego.csv`: `networkCanvasEgoUUID, networkCanvasCaseID, networkCanvasSessionID, networkCanvasProtocolName, sessionStart, sessionFinish, sessionExported, APP_VERSION, COMMIT_HASH, name, ...` (`name` = the respondent; `sessionFinish` is the export time for an unfinished session)
+  - `_attributeList_Person.csv`: `nodeID, networkCanvasEgoUUID, networkCanvasUUID, name, ...`. Multi-select answers become `<name>_<option>` columns with true/false, a `gen_<generator>` column per generator records which question elicited each person, and a `setting_<name>` column per who-knows-whom setting records its members. `fromNetworkCanvasCSV` restores the respondent's name, the settings, and the hand-made exceptions.
   - `_edgeList_knows.csv`: `edgeID, from, to, networkCanvasEgoUUID, networkCanvasUUID, networkCanvasSourceUUID, networkCanvasTargetUUID`
 - Network Canvas import: `fromNetworkCanvasCSV(files, { template })` reads those files back into a session.
 - Helpers: `NC`, `ncPrefix`, `generatorColumn`.
@@ -132,7 +135,8 @@ import { GenerateView } from './generate/index.js'; // <GenerateView />
 - `newRoster()`, `makeRelation(preset)`
 - `RELATION_PRESETS`: knows, works with, advice, trust, friendship.
 - `MERGE_RULES`: `union`, `intersection`, `respondent`.
-- `parseRosterText(text)` reads one name per line, or a CSV with a name column plus attribute columns. Duplicate names are reported.
+- `parseRosterText(text, { nameColumn })` reads one name per line, or a CSV with a name column plus attribute columns. Duplicate names are reported. A survey responses export returns `{ survey: true }`; a table without a name column returns `{ needsColumn: true, headers, sample }` and is read again with the column the user picks (`''` = each whole line is a name).
+- `rosterFromResponses(text, { file })`: a Google Forms or Qualtrics responses export -> a whole roster model (people from the grid rows plus respondents, one relation per question, survey mode, responses parsed, default rule Union), or null. Roster step 1 offers "Import survey responses"; a responses file pasted or imported as names goes the same way.
 
 **Survey forms (multi-respondent)**
 - `formTemplate(model)` returns `{ googleCsv, qualtricsCsv, instructions }`.
@@ -201,13 +205,16 @@ import { GenerateView } from './generate/index.js'; // <GenerateView />
 - Constants: `CONTENT_LEVELS`, `OBSERVATIONS`, `MEDIUM_INFO`, `COMFORT`.
 - `FALLBACK_CONTEXTS` is for development only. It is used only when the generator cannot be imported, and the generate buttons are disabled while it is in use.
 
+Also `defaultObservation(ctx, medium)` (Everyone whenever the medium allows it), `describe()` returning `caution` / `nativeCaution` when the chosen view or the native format cannot show the planted structure, `friendlyError(message, { size })` (out-of-memory failures become a plain message with a way forward), `fmtDay(iso)`.
+
 **Services**
 - `src/ui/generate/service.js`:
   - `loadContexts()`
-  - `startGenerate(spec, { onProgress })` returns `{ promise, cancel }`. It uses a module worker, falling back to the main thread.
-  - `startRecovery({ seed })`
-- `src/ui/generate/run.js`: `runGenerate(spec, progress)`, `runRecovery(groundTruth, ds, { seed })`, `zipFiles(files)` (uses fflate).
-- `src/ui/generate/generate.worker.js`: takes `{ type: 'generate' | 'recovery', id, ... }` and posts `progress`, `done`, `recovery` and `error` messages. It keeps the last dataset and ground truth for the recovery check.
+  - `startGenerate(spec, { onProgress })` returns `{ promise, cancel, runId }`. It uses a module worker, falling back to the main thread; a failed run restarts the worker.
+  - `startRecovery({ seed, runId, groundTruth, dataset })`: the worker answers from its copy of run `runId`, or from the ground truth and dataset sent along.
+- `src/ui/generate/run.js`: `runGenerate(spec, progress)` (native runs return `download`), `runRecovery(groundTruth, ds, { seed })` (passes `membership`, `nodeMetrics` and detected `shifts` to `recoveryCheck`).
+- `src/ui/generate/pack.js`: `packNative(files, { name })` hands one file over as it is (the Slack, Takeout or X zip itself) and puts several files in one zip with any inner zip unpacked into a folder, so the download loads in Data as it is; `groundTruthJSON(gt)`, `readmeText(...)` for the README and ground-truth downloads offered after a native download.
+- `src/ui/generate/generate.worker.js`: takes `{ type: 'generate' | 'recovery', id, ... }` and posts `progress`, `done`, `recovery` and `error` messages. It keeps the last "Generate and analyze" run for the recovery check.
 
 **What the UI offers**
 - Setting, medium, scenario (the generator's presets), size (number plus a logarithmic slider, with a note on what the browser handles comfortably), message text, what the export shows, days, start, seed, and advanced parameters taken from the generator's own schema.
@@ -221,6 +228,6 @@ import { GenerateView } from './generate/index.js'; // <GenerateView />
 
 - `node --test 'test/ui-build/**/*.test.js'` runs the unit tests for draw, ego, roster, perceived, paste and generate. The perceived tests check LAS, consensus, accuracy and disagreement against hand-computed numbers.
 - `node test/ui-build/qa.mjs [--only=draw,ego,...] [--port=8791]` runs browser QA.
-  - It serves the app, mounts `test/ui-build/harness.html` (BuildView and GenerateView standalone, with stubbed `store.actions`) in the cached Chromium through puppeteer-core, and runs `test/ui-build/qa/*.mjs` at 1440px and 390px.
+  - It serves the app, mounts `test/ui-build/harness.html` (BuildView and GenerateView standalone inside the shell's `.view.view--bare` frame with theme.css and app.css, and stubbed `store.actions`) in the cached Chromium through puppeteer-core, and runs `test/ui-build/qa/*.mjs` at 1440px and 390px.
   - A run fails on console errors, page errors, failed requests or horizontal overflow.
   - Screenshots are saved to the session scratchpad (`QA_OUT` overrides the location).

@@ -1,7 +1,7 @@
 // Roster (bounded network) builder UI: roster -> relations -> collect -> review.
 
 import { html, useState, useMemo } from '../../../../vendor/preact.js';
-import { newRoster, makeRelation, RELATION_PRESETS, MERGE_RULES, formTemplate, parseRosterResponses, responsesFromDataset, tiesFor, toDataset, coverage } from '../../../builders/roster.js';
+import { newRoster, makeRelation, RELATION_PRESETS, MERGE_RULES, formTemplate, parseRosterResponses, responsesFromDataset, tiesFor, toDataset, coverage, rosterFromResponses } from '../../../builders/roster.js';
 import { setTie } from '../../../builders/matrix.js';
 import { Steps, HandOffBar, usePersistentState, downloadText, pickFile, readFileText } from '../shared.js';
 import { importRosterResponses } from '../service.js';
@@ -23,23 +23,64 @@ export function RosterBuilder() {
   const done = [model.people.length > 1 && 'roster', model.relations.length && 'relations',
     model.relations.some(r => Object.keys(tiesFor(model, r.id).ties).length) && 'collect'].filter(Boolean);
   const idx = STEPS.findIndex(s => s.id === step);
+  const [surveyMsg, setSurveyMsg] = useState(null);
+  // A responses file is a whole roster: people, questions and answers. It
+  // replaces the current roster (after asking, if there is one) and opens
+  // the collect step, where coverage and the combine rule are shown.
+  const fromSurvey = (text, file) => {
+    const m = rosterFromResponses(text, { file });
+    if (!m) { setSurveyMsg({ err: true, text: 'This file does not look like survey responses (no grid columns such as "Question [Name]").' }); return false; }
+    if (model.people.length && !confirm(`Replace the current roster (${model.people.length} people) with the one in ${file || 'this file'}?`)) return false;
+    setModel(m);
+    const rule = MERGE_RULES.find(r => r.id === m.mergeRule);
+    setSurveyMsg({ text: `Read ${m.people.length} people, ${m.relations.length} ${m.relations.length === 1 ? 'question' : 'questions'} and ${m.responses.respondents.length} responses from ${file || 'the file'}. The answers are combined with ${rule.label} (${rule.help.split('.')[0].toLowerCase()}); change it under Combine the self-reports.` });
+    setStep('collect');
+    return true;
+  };
 
   return html`<div class="ob-stack">
     <div class="ob-row">
       <${Steps} steps=${STEPS} value=${step} onChange=${setStep} done=${done} />
       <span class="ob-spacer"></span>
-      <button type="button" class="ob-btn quiet sm" onClick=${() => { if (confirm('Start a new roster? The current one will be cleared.')) { setModel(newRoster()); setStep('roster'); } }}>New roster</button>
+      <button type="button" class="tlink tlink--quiet" onClick=${() => { if (confirm('Start a new roster? The current one will be cleared.')) { setModel(newRoster()); setStep('roster'); setSurveyMsg(null); } }}>New roster</button>
     </div>
-    ${step === 'roster' ? html`<${PeopleEditor} people=${model.people} attrColumns=${model.attrColumns} idPrefix="ob-roster"
-        onChange=${(people, attrColumns) => patch({ people, attrColumns })} />`
+    ${surveyMsg && step !== 'roster' ? html`<p class=${surveyMsg.err ? 'ob-note ob-err' : 'ob-note ob-good'} role="status">${surveyMsg.text}</p>` : null}
+    ${step === 'roster' ? html`<div class="ob-stack">
+        <${FromSurvey} model=${model} onModel=${fromSurvey} />
+        <div class="ob-section">
+          <h3>Or list the people yourself</h3>
+          <${PeopleEditor} people=${model.people} attrColumns=${model.attrColumns} idPrefix="ob-roster"
+            onChange=${(people, attrColumns) => patch({ people, attrColumns })} onSurvey=${(text, file) => fromSurvey(text, file)} />
+        </div>
+      </div>`
     : step === 'relations' ? html`<${Relations} model=${model} patch=${patch} />`
     : step === 'collect' ? html`<${Collect} model=${model} patch=${patch} />`
     : html`<${Review} model=${model} patch=${patch} />`}
     <div class="ob-navrow">
-      <button type="button" class="ob-btn" disabled=${idx === 0} onClick=${() => setStep(STEPS[idx - 1].id)}>Back</button>
-      <span class="ob-spacer"></span>
-      ${idx < STEPS.length - 1 ? html`<button type="button" class="ob-btn primary" onClick=${() => setStep(STEPS[idx + 1].id)}>Next: ${STEPS[idx + 1].label}</button>` : null}
+      ${idx > 0 ? html`<button type="button" class="tlink tlink--quiet" onClick=${() => setStep(STEPS[idx - 1].id)}>Back: ${STEPS[idx - 1].label}</button>` : html`<span></span>`}
+      ${idx < STEPS.length - 1 ? html`<button type="button" class="btn btn--primary" onClick=${() => setStep(STEPS[idx + 1].id)}>Next: ${STEPS[idx + 1].label}</button>` : null}
     </div>
+  </div>`;
+}
+
+// Step 1's shortcut for a survey that has already run: the responses file
+// lists everyone, so it is the roster.
+function FromSurvey({ onModel }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const go = async () => {
+    const f = await pickFile('.csv,.tsv,text/csv');
+    if (!f) return;
+    setBusy(true); setErr(null);
+    try { if (onModel(await readFileText(f), f.name) === false) setErr(`${f.name} was not used.`); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  return html`<div class="ob-stack" style="gap:.5rem">
+    <h3>Start from survey responses</h3>
+    <p class="ob-note">Already ran the survey? A Google Forms or Qualtrics responses export (grid questions like "Who do you spend free time with? [Name]") holds the whole roster: the people, the questions and every answer. Dropping the same file on Data, Import also reads it.</p>
+    <div class="ob-row"><button type="button" class="btn" disabled=${busy} onClick=${go}>${busy ? 'Reading...' : 'Import survey responses'}</button></div>
+    ${err ? html`<p class="ob-note ob-err" role="alert">${err}</p>` : null}
   </div>`;
 }
 
@@ -52,23 +93,23 @@ function Relations({ model, patch }) {
   return html`<div class="ob-stack">
     <fieldset class="ob-fieldset">
       <legend>Common relations</legend>
-      <div class="ob-row">${RELATION_PRESETS.map(p => html`<label class="ob-check"><input type="checkbox" checked=${has(p)} onChange=${() => togglePreset(p)} />${p.name}</label>`)}</div>
+      <div class="ob-row">${RELATION_PRESETS.map(p => html`<label class="check"><input type="checkbox" checked=${has(p)} onChange=${() => togglePreset(p)} />${p.name}</label>`)}</div>
     </fieldset>
     <form class="ob-row" onSubmit=${e => { e.preventDefault(); if (custom.trim()) { patch(m => ({ relations: [...m.relations, makeRelation({ name: custom.trim(), question: '' })] })); setCustom(''); } }}>
       <label class="visually-hidden" for="ob-rel-custom">Custom relation</label>
-      <input id="ob-rel-custom" class="ob-input" style="max-width:18rem" placeholder="Custom relation, e.g. Shares information" value=${custom} onInput=${e => setCustom(e.currentTarget.value)} />
-      <button type="submit" class="ob-btn" disabled=${!custom.trim()}>Add relation</button>
+      <input id="ob-rel-custom" class="input" style="max-width:18rem" placeholder="Custom relation, e.g. Shares information" value=${custom} onInput=${e => setCustom(e.currentTarget.value)} />
+      <button type="submit" class="btn" disabled=${!custom.trim()}>Add relation</button>
     </form>
-    ${model.relations.length ? html`<div class="ob-tablewrap"><table class="ob-table">
+    ${model.relations.length ? html`<div class="table-wrap"><table class="tbl">
       <thead><tr><th>Relation</th><th>Question asked</th><th>Answer</th><th class="num">Top of scale</th><th><span class="visually-hidden">Remove</span></th></tr></thead>
       <tbody>${model.relations.map(r => html`<tr>
-        <td><input class="ob-input" aria-label="Relation name" value=${r.name} onChange=${e => update(r.id, { name: e.currentTarget.value || r.name })} /></td>
-        <td style="min-width:16rem"><input class="ob-input" aria-label=${`Question for ${r.name}`} value=${r.question} placeholder="Question text" onChange=${e => update(r.id, { question: e.currentTarget.value })} /></td>
-        <td><select class="ob-select" aria-label=${`Answer type for ${r.name}`} value=${r.scale} onChange=${e => update(r.id, { scale: e.currentTarget.value })}>
+        <td><input class="input" aria-label="Relation name" value=${r.name} onChange=${e => update(r.id, { name: e.currentTarget.value || r.name })} /></td>
+        <td style="min-width:16rem"><input class="input" aria-label=${`Question for ${r.name}`} value=${r.question} placeholder="Question text" onChange=${e => update(r.id, { question: e.currentTarget.value })} /></td>
+        <td><select class="select" aria-label=${`Answer type for ${r.name}`} value=${r.scale} onChange=${e => update(r.id, { scale: e.currentTarget.value })}>
           <option value="binary">Yes or no</option><option value="valued">Rating</option></select></td>
-        <td class="num">${r.scale === 'valued' ? html`<input class="ob-input" type="number" min="2" max="10" style="width:4.5rem" aria-label=${`Top of scale for ${r.name}`} value=${r.max}
+        <td class="num">${r.scale === 'valued' ? html`<input class="input" type="number" min="2" max="10" style="width:4.5rem" aria-label=${`Top of scale for ${r.name}`} value=${r.max}
           onChange=${e => update(r.id, { max: Math.max(2, Math.min(10, Number(e.currentTarget.value) || 5)) })} />` : html`<span class="muted">—</span>`}</td>
-        <td><button type="button" class="ob-btn quiet sm" aria-label=${`Remove ${r.name}`} onClick=${() => remove(r.id)}>Remove</button></td>
+        <td><button type="button" class="btn btn--sm btn--quiet" aria-label=${`Remove ${r.name}`} onClick=${() => remove(r.id)}>Remove</button></td>
       </tr>`)}</tbody></table></div>` : html`<p class="ob-empty">Choose at least one relation.</p>`}
   </div>`;
 }
@@ -82,21 +123,21 @@ function Collect({ model, patch }) {
   const onSet = (from, to, v) => patch(m => ({ ties: { ...m.ties, [rel.id]: setTie(m.ties[rel.id] || {}, from, to, v) } }));
   return html`<div class="ob-stack">
     <fieldset class="ob-fieldset">
-      <legend>Who answers</legend>
-      <div class="ob-choices">
-        <label class="ob-choice"><input type="radio" name="ob-roster-mode" checked=${model.mode === 'single'} onChange=${() => patch({ mode: 'single' })} /><span>One informant fills the grid</span></label>
-        <label class="ob-choice"><input type="radio" name="ob-roster-mode" checked=${model.mode === 'multi'} onChange=${() => patch({ mode: 'multi' })} /><span>Each member answers a survey</span></label>
+      <legend id="ob-roster-mode">Who answers</legend>
+      <div class="seg" role="group" aria-labelledby="ob-roster-mode">
+        <button type="button" aria-pressed=${String(model.mode === 'single')} onClick=${() => patch({ mode: 'single' })}>One informant fills the grid</button>
+        <button type="button" aria-pressed=${String(model.mode === 'multi')} onClick=${() => patch({ mode: 'multi' })}>Each member answers a survey</button>
       </div>
     </fieldset>
     ${model.mode === 'single' ? html`
       <div class="ob-row">
-        ${model.relations.length > 1 ? html`<div class="ob-field"><label for="ob-roster-rel">Relation</label>
-          <select id="ob-roster-rel" class="ob-select" value=${rel.id} onChange=${e => setRelId(e.currentTarget.value)}>
-            ${model.relations.map(r => html`<option value=${r.id}>${r.name}</option>`)}</select></div>` : html`<span class="ob-label">${rel.name}</span>`}
+        ${model.relations.length > 1 ? html`<div class="field"><label class="field__label" for="ob-roster-rel">Relation</label>
+          <select id="ob-roster-rel" class="select" value=${rel.id} onChange=${e => setRelId(e.currentTarget.value)}>
+            ${model.relations.map(r => html`<option value=${r.id}>${r.name}</option>`)}</select></div>` : html`<h3>${rel.name}</h3>`}
         <span class="ob-spacer"></span>
-        <div class="ob-row" role="group" aria-label="Entry method">
-          <button type="button" class="ob-btn sm" aria-pressed=${entry === 'grid'} onClick=${() => setEntry('grid')}>Grid</button>
-          <button type="button" class="ob-btn sm" aria-pressed=${entry === 'pairs'} onClick=${() => setEntry('pairs')}>Pairs</button>
+        <div class="seg" role="group" aria-label="Entry method">
+          <button type="button" aria-pressed=${String(entry === 'grid')} onClick=${() => setEntry('grid')}>Grid</button>
+          <button type="button" aria-pressed=${String(entry === 'pairs')} onClick=${() => setEntry('pairs')}>Pairs</button>
         </div>
       </div>
       ${rel.question ? html`<p class="ob-note">${rel.question}</p>` : null}
@@ -135,18 +176,18 @@ function MultiCollect({ model, patch }) {
       <h3>1. Build the form</h3>
       ${tplErr ? html`<p class="ob-err">${tplErr}</p>` : html`
         <p class="ob-note">Download a template and the written instructions. The template's columns are exactly what Google Forms or Qualtrics will export, so it also works for typing in paper questionnaires.</p>
-        <div class="ob-row">
-          <button type="button" class="ob-btn" onClick=${() => downloadText('roster-template-google-forms.csv', tpl.googleCsv, 'text/csv')}>Template, Google Forms shape</button>
-          <button type="button" class="ob-btn" onClick=${() => downloadText('roster-template-qualtrics.csv', tpl.qualtricsCsv, 'text/csv')}>Template, Qualtrics shape</button>
-          <button type="button" class="ob-btn" onClick=${() => downloadText('roster-form-instructions.txt', tpl.instructions)}>Instructions</button>
+        <div class="ob-row" style="gap:.5rem 1.5rem">
+          <button type="button" class="tlink tlink--down" onClick=${() => downloadText('roster-template-google-forms.csv', tpl.googleCsv, 'text/csv')}>Template, Google Forms shape</button>
+          <button type="button" class="tlink tlink--down" onClick=${() => downloadText('roster-template-qualtrics.csv', tpl.qualtricsCsv, 'text/csv')}>Template, Qualtrics shape</button>
+          <button type="button" class="tlink tlink--down" onClick=${() => downloadText('roster-form-instructions.txt', tpl.instructions)}>Instructions</button>
         </div>
-        <details><summary class="ob-linkbtn">Read the instructions here</summary>
+        <details><summary class="tlink">Read the instructions here</summary>
           <pre class="ob-instructions">${tpl.instructions}</pre></details>`}
     </div>
     <div class="ob-section">
       <h3>2. Import the responses</h3>
       <div class="ob-row">
-        <button type="button" class="ob-btn primary" disabled=${busy || !!tplErr} onClick=${importResponses}>${busy ? 'Reading...' : 'Import responses CSV'}</button>
+        <button type="button" class="btn" disabled=${busy || !!tplErr} onClick=${importResponses}>${busy ? 'Reading...' : 'Import responses CSV'}</button>
         ${resp?.file ? html`<span class="ob-note">${resp.file}${resp.format ? ` (${resp.format})` : ''}</span>` : null}
       </div>
       ${err ? html`<p class="ob-err" role="alert">${err}</p>` : null}
@@ -160,9 +201,11 @@ function MultiCollect({ model, patch }) {
     </div>
     <fieldset class="ob-fieldset">
       <legend>3. Combine the self-reports</legend>
-      ${MERGE_RULES.map(r => html`<label class="ob-check" style="align-items:flex-start">
+      <div class="radios">
+      ${MERGE_RULES.map(r => html`<label class="radio">
         <input type="radio" name="ob-merge" checked=${model.mergeRule === r.id} onChange=${() => patch({ mergeRule: r.id })} />
-        <span><strong>${r.label}</strong>. <span class="muted">${r.help}</span></span></label>`)}
+        <span>${r.label}${r.id === 'union' ? ' (default)' : ''}</span><span class="radio__desc">${r.help}</span></label>`)}
+      </div>
     </fieldset>
   </div>`;
 }
@@ -172,18 +215,18 @@ function Review({ model, patch }) {
   const rows = useMemo(() => model.relations.map(r => ({ r, ...tiesFor(model, r.id) })), [model]);
   const nTies = rows.filter(x => sel.includes(x.r.id)).reduce((s, x) => s + Object.keys(x.ties).length, 0);
   return html`<div class="ob-stack">
-    <div class="ob-field" style="max-width:24rem">
-      <label for="ob-roster-name">Network name</label>
-      <input id="ob-roster-name" class="ob-input" value=${model.name} onInput=${e => patch({ name: e.currentTarget.value })} />
+    <div class="field" style="max-width:24rem">
+      <label class="field__label" for="ob-roster-name">Network name</label>
+      <input id="ob-roster-name" class="input" value=${model.name} onInput=${e => patch({ name: e.currentTarget.value })} />
     </div>
-    <div class="ob-tablewrap"><table class="ob-table">
-      <thead><tr><th>Include</th><th>Relation</th><th class="num">Ties</th><th>Direction</th>${model.mode === 'multi' ? html`<th class="num">Reciprocated</th>` : null}</tr></thead>
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr><th>Include</th><th>Relation</th><th class="num">Ties</th><th>Direction</th>${model.mode === 'multi' ? html`<th class="num">Reciprocated pairs</th><th class="num">One-sided pairs</th>` : null}</tr></thead>
       <tbody>${rows.map(x => html`<tr>
         <td><input type="checkbox" aria-label=${`Include ${x.r.name}`} checked=${sel.includes(x.r.id)}
           onChange=${e => setSel(s => (e.currentTarget.checked ? [...s, x.r.id] : s.filter(i => i !== x.r.id)))} /></td>
         <td>${x.r.name}</td><td class="num">${Object.keys(x.ties).length}</td>
         <td>${x.directed ? 'directed' : 'undirected'}</td>
-        ${model.mode === 'multi' ? html`<td class="num">${x.stats.reciprocated ?? '—'}</td>` : null}
+        ${model.mode === 'multi' ? html`<td class="num">${x.stats.reciprocated ?? '—'}</td><td class="num">${x.stats.oneSided ?? '—'}</td>` : null}
       </tr>`)}</tbody></table></div>
     <dl class="ob-kv">
       <dt>People</dt><dd>${model.people.length}</dd>

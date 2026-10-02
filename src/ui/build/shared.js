@@ -2,6 +2,12 @@
 // Browser-only (DOM); pure logic lives in src/builders/.
 
 import { html, useState, useEffect, useRef } from '../../../vendor/preact.js';
+import { ViewHead } from '../components/common.js';
+import { useStore } from '../store.js';
+
+// The shell's view head (title, intro, focus on view change), so Build and
+// Generate open like every other view.
+export const ViewHeader = ViewHead;
 
 // Load assets/build.css once. The shell owns index.html, so the views bring
 // their own stylesheet. Resolved from this module's URL so it works wherever
@@ -83,8 +89,8 @@ export function Tabs({ tabs, value, onChange, label }) {
     onChange(tabs[j].id);
     refs.current[j]?.focus();
   };
-  return html`<div class="ob-tabs" role="tablist" aria-label=${label}>
-    ${tabs.map((t, i) => html`<button type="button" role="tab" class="ob-tab" id=${'obtab-' + t.id}
+  return html`<div class="tabs" role="tablist" aria-label=${label}>
+    ${tabs.map((t, i) => html`<button type="button" role="tab" id=${'obtab-' + t.id}
       aria-selected=${t.id === value ? 'true' : 'false'} aria-controls=${'obpanel-' + t.id}
       tabindex=${t.id === value ? 0 : -1} ref=${el => (refs.current[i] = el)}
       onClick=${() => onChange(t.id)} onKeyDown=${e => onKey(e, i)}>${t.label}</button>`)}
@@ -108,7 +114,7 @@ export function Steps({ steps, value, onChange, done = [] }) {
 // Neutral placeholder for a dependency that is not in the build yet.
 export function Unavailable({ title, children }) {
   return html`<div class="ob-unavailable" role="status">
-    <span class="ob-meta">Not available yet</span>
+    <span class="label">Not available yet</span>
     <strong>${title}</strong>
     ${children ? html`<p class="ob-note">${children}</p>` : null}
   </div>`;
@@ -121,15 +127,17 @@ export function usePersistentState(key, initial) {
   return [v, setV];
 }
 
-// Group colour by index: fixed order, never cycled (9th+ fold to neutral).
+// Group colour by index: the app's one categorical palette (--cat-*), so a
+// group drawn here keeps its colour in the analysis views. Fixed order, never
+// cycled; the 9th group on folds to --cat-other.
 export function groupColor(i) {
-  return i >= 0 && i < 8 ? `var(--grp-${i + 1})` : 'var(--grp-other)';
+  return i >= 0 && i < 8 ? `var(--cat-${i + 1})` : 'var(--cat-other)';
 }
 
 // The closing action of every builder: turn what was built into a Dataset and
 // hand it to the analysis views. build() returns a Dataset or throws an Error
 // whose message is shown to the user.
-export function HandOffBar({ build, disabled, note, label = 'Analyze this network' }) {
+export function useHandOff(build) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const run = async mode => {
@@ -141,12 +149,23 @@ export function HandOffBar({ build, disabled, note, label = 'Analyze this networ
     } catch (e) { setErr(e.message || String(e)); }
     finally { setBusy(false); }
   };
-  return html`<div class="ob-stack" style="gap:.4rem">
-    <div class="ob-row">
-      <button type="button" class="ob-btn primary" disabled=${disabled || busy} onClick=${() => run('replace')}>${label}</button>
-      <button type="button" class="ob-btn" disabled=${disabled || busy} onClick=${() => run('add')}>Add to current data</button>
-      ${note ? html`<span class="ob-note">${note}</span>` : null}
+  return { run, busy, err };
+}
+
+// With data already loaded, the bar says the main action replaces it and
+// offers adding to it instead (nothing replaces data silently). `compact`
+// leaves out the primary button for editors that put it in their toolbar.
+export function HandOffBar({ build, disabled, note, label = 'Analyze this network', compact = false, handoff }) {
+  const loaded = useStore(s => s.dataset);
+  const own = useHandOff(build);
+  const { run, busy, err } = handoff || own;
+  return html`<div class="ob-stack ob-handoff" style="gap:.4rem">
+    <div class="ob-row" style="gap:.5rem 1.25rem">
+      ${compact ? null : html`<button type="button" class="btn btn--primary" disabled=${disabled || busy} onClick=${() => run('replace')}>${label}</button>`}
+      ${loaded ? html`<button type="button" class="tlink" disabled=${disabled || busy} onClick=${() => run('add')}>Add to the data already loaded</button>` : null}
     </div>
+    ${loaded ? html`<p class="ob-note">${label} replaces the data now loaded (${loaded.meta?.name || 'unnamed'}).</p>` : null}
+    ${note ? html`<p class="ob-note">${note}</p>` : null}
     ${err ? html`<p class="ob-err" role="alert">${err}</p>` : null}
   </div>`;
 }

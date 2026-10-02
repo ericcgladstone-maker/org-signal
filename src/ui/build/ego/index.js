@@ -34,7 +34,7 @@ export function EgoBuilder() {
     requestAnimationFrame(() => document.getElementById('ego-step-title')?.focus());
   };
   const p = E.progress(s);
-  const i = E.STEPS.findIndex(x => x.id === s.step);
+  const i = Math.max(0, E.STEPS.findIndex(x => x.id === s.step));
   const done = E.STEPS.filter(x => p.steps[x.id] >= 1).map(x => x.id);
   const V = VIEWS[s.step] || GeneratorsStep;
   const reset = () => {
@@ -44,17 +44,16 @@ export function EgoBuilder() {
   };
   return html`<div class="ob-stack ego">
     <div class="ob-row">
-      <span class="ob-meta">${Math.round(p.fraction * 100)}% complete</span>
+      <span class="meta">Step ${i + 1} of ${E.STEPS.length}</span>
       <span class="ob-spacer"></span>
-      <button type="button" class="ob-btn quiet sm" onClick=${reset}>New interview</button>
+      <button type="button" class="tlink tlink--quiet" onClick=${reset}>New interview</button>
     </div>
     <${Steps} steps=${E.STEPS} value=${s.step} onChange=${go} done=${done} />
-    <h3 id="ego-step-title" tabindex="-1" class="ego-step-title">${i + 1}. ${E.STEPS[i]?.label}</h3>
+    <h3 id="ego-step-title" tabindex="-1" class="ob-h ego-step-title">${i + 1}. ${E.STEPS[i]?.label}</h3>
     <${V} s=${s} update=${update} replace=${next => setS(next)} />
-    <div class="ob-row ego-nav">
-      <button type="button" class="ob-btn" disabled=${i <= 0} onClick=${() => go(E.STEPS[i - 1].id)}>Back</button>
-      <span class="ob-spacer"></span>
-      ${i < E.STEPS.length - 1 ? html`<button type="button" class="ob-btn primary" onClick=${() => go(E.STEPS[i + 1].id)}>Next: ${E.STEPS[i + 1].label}</button>` : null}
+    <div class="ob-navrow">
+      ${i > 0 ? html`<button type="button" class="tlink tlink--quiet" onClick=${() => go(E.STEPS[i - 1].id)}>Back: ${E.STEPS[i - 1].label}</button>` : html`<span></span>`}
+      ${i < E.STEPS.length - 1 ? html`<button type="button" class="btn btn--primary" onClick=${() => go(E.STEPS[i + 1].id)}>Next: ${E.STEPS[i + 1].label}</button>` : null}
     </div>
   </div>`;
 }

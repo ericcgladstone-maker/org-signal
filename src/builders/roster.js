@@ -46,32 +46,103 @@ export function makeRelation(preset = {}) {
 }
 
 // Roster text -> people. Either one name per line, or a CSV/TSV whose header
-// has a name column (name, full name, label, person) plus attribute columns.
-export function parseRosterText(text) {
-  const t = String(text ?? '').replace(/^﻿/, '').trim();
-  if (!t) return { people: [], attrColumns: [], duplicates: [] };
-  const first = t.split(/\r?\n/)[0];
-  const looksTabular = /[,\t;]/.test(first) && /(^|[,\t;]\s*"?)(name|full name|label|person|member)("?\s*)([,\t;]|$)/i.test(first);
+// has a name column (name, full name, label, person, member) plus attribute
+// columns. Two shapes are not rosters and say so instead of turning every
+// line into a "person":
+//   survey: true       a survey responses export (grid columns "Question [Name]"
+//                      or a Qualtrics export); use rosterFromResponses
+//   needsColumn: true  a table with no recognisable name column; `headers`
+//                      lists its columns, and parseRosterText(text, { nameColumn })
+//                      reads it with the one the user picks
+// options.nameColumn: a header to read names from, or '' for "each whole line
+// is one name".
+const NAME_HEADER = /^(name|full name|full_name|label|person|member|student|participant|your name)$/i;
+
+export function parseRosterText(text, { nameColumn } = {}) {
+  const t = String(text ?? '').replace(/^\ufeff/, '').trim();
+  const empty = { people: [], attrColumns: [], duplicates: [] };
+  if (!t) return empty;
+  const lines = t.split(/\r?\n/);
+  const first = lines[0];
+  const delimited = /[,\t;]/.test(first);
   let people = [], attrColumns = [];
-  if (looksTabular) {
-    const { headers, records } = rowsToObjects(parseCSV(t).rows);
-    const nameCol = headers.find(h => /^(name|full name|label|person|member)$/i.test(h.trim()));
-    const attrKeys = headers.filter(h => h !== nameCol && h);
-    for (const r of records) {
-      const label = String(r[nameCol] ?? '').trim();
-      if (!label) continue;
-      const attrs = {};
-      for (const k of attrKeys) if (r[k] !== '') attrs[k] = r[k];
-      people.push({ id: uid('p'), label, attrs });
+  if (delimited && nameColumn !== '') {
+    const rows = parseCSV(t).rows;
+    if (looksLikeResponses(rows)) return { ...empty, survey: true };
+    const head = (rows[0] || []).map(h => String(h).trim());
+    const nameCol = nameColumn ? head.find(h => h === nameColumn) : head.find(h => NAME_HEADER.test(h));
+    // A table: most rows have the header's column count.
+    const tabular = head.length >= 2 && rows.slice(1).filter(r => r.length === head.length).length >= Math.max(1, (rows.length - 1) * 0.8);
+    if (!nameCol && tabular) return { ...empty, needsColumn: true, headers: head.filter(Boolean), sample: rows.slice(1, 4) };
+    if (nameCol) {
+      const { headers, records } = rowsToObjects(rows);
+      const attrKeys = headers.filter(h => h !== nameCol && h);
+      for (const r of records) {
+        const label = String(r[nameCol] ?? '').trim();
+        if (!label) continue;
+        const attrs = {};
+        for (const k of attrKeys) if (r[k] !== '') attrs[k] = r[k];
+        people.push({ id: uid('p'), label, attrs });
+      }
+      attrColumns = attrKeys.map(key => ({ key, type: people.every(p => p.attrs[key] === undefined || Number.isFinite(Number(p.attrs[key]))) ? 'number' : 'text' }));
     }
-    attrColumns = attrKeys.map(key => ({ key, type: people.every(p => p.attrs[key] === undefined || Number.isFinite(Number(p.attrs[key]))) ? 'number' : 'text' }));
-  } else {
-    people = t.split(/\r?\n/).map(s => s.trim()).filter(Boolean).map(label => ({ id: uid('p'), label, attrs: {} }));
+  }
+  if (!people.length && !attrColumns.length) {
+    people = lines.map(x => x.trim()).filter(Boolean).map(label => ({ id: uid('p'), label, attrs: {} }));
   }
   // Duplicate names make the matrix ambiguous; keep the first and report the rest.
   const seen = new Set(), duplicates = [];
   people = people.filter(p => { const k = normName(p.label); if (seen.has(k)) { duplicates.push(p.label); return false; } seen.add(k); return true; });
   return { people, attrColumns, duplicates };
+}
+
+// A survey export: Google Forms grid columns `Question [Row]` (at least two),
+// or Qualtrics' third header row of {"ImportId":...}.
+function looksLikeResponses(rows) {
+  if (rows.length >= 3 && (rows[2] || []).some(c => /^\{"ImportId":/.test(String(c).trim()))) return true;
+  return (rows[0] || []).filter(h => /^.*\S\s*\[.+\]\s*$/.test(String(h))).length >= 2;
+}
+
+// A survey responses export -> a whole roster model, so the file can be the
+// starting point: people from the grid's row labels (in form order) plus any
+// respondent the grid does not list, one relation per question, survey mode,
+// the responses read, and the default combine rule. Returns null when the
+// text is not a responses export.
+export function rosterFromResponses(text, { file = null, name = null } = {}) {
+  const { rows } = parseCSV(String(text ?? '').replace(/^\ufeff/, ''));
+  if (!looksLikeResponses(rows)) return null;
+  const qualtrics = rows.length >= 3 && rows[2].some(c => /^\{"ImportId":/.test(String(c).trim()));
+  const header = qualtrics ? rows[1] : rows[0];
+  const ids = qualtrics ? rows[0] : null;
+  const stems = [], labels = [];
+  header.forEach((h, j) => {
+    let m = String(h).match(/^(.*\S)\s*\[(.+)\]\s*$/);
+    if (!m && qualtrics && /^Q\d+_\d+$/i.test(String(ids[j]).trim())) m = String(h).match(/^(.*\S)\s+-\s+(.+)$/);
+    if (!m) return;
+    if (!stems.includes(m[1].trim())) stems.push(m[1].trim());
+    labels.push(m[2].trim());
+  });
+  const model = newRoster();
+  model.name = name || (file ? file.replace(/\.[^.]+$/, '') : 'Survey roster');
+  const seen = new Set();
+  const addPerson = label => { const k = normName(label); if (!k || seen.has(k)) return; seen.add(k); model.people.push({ id: uid('p'), label, attrs: {} }); };
+  for (const l of labels) addPerson(l);
+  model.relations = stems.map(q => makeRelation({ name: relationName(q), question: q }));
+  model.mode = 'multi';
+  // Respondents the grid does not list still belong on the roster.
+  const data = rows.slice(qualtrics ? 3 : 1);
+  const respCol = header.findIndex(h => /^(your name|name|what is your name\??|who are you\??|respondent|respondent name)$/i.test(String(h).trim()));
+  if (respCol >= 0) for (const r of data) addPerson(String(r[respCol] ?? '').trim());
+  model.responses = { ...parseRosterResponses(text, model), file };
+  return model;
+}
+
+// "Who do you spend free time with?" -> "Spend free time with", short enough
+// to label a relation; the full question stays as the relation's question.
+function relationName(q) {
+  const t = String(q).replace(/[?:.]+\s*$/, '').replace(/^(who|whom)\s+(do|would|did)\s+you\s+/i, '').trim();
+  const out = t.charAt(0).toUpperCase() + t.slice(1);
+  return out.length > 40 ? out.slice(0, 38).replace(/\s+\S*$/, '') + '...' : out || 'Relation';
 }
 
 // ---- survey form template (multi-respondent) ---------------------------------

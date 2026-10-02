@@ -21,6 +21,23 @@ async function clickButton(page, text) {
   await sleep(60);
 }
 
+// Icon buttons (undo, redo) are found by the start of their accessible name.
+async function clickAria(page, text) {
+  const ok = await page.evaluate(t => {
+    const b = [...document.querySelectorAll('.ob-draw button[aria-label]')].find(x => x.getAttribute('aria-label').startsWith(t) && !x.disabled);
+    if (b) b.click();
+    return !!b;
+  }, text);
+  if (!ok) throw new Error(`button "${text}..." not found or disabled`);
+  await sleep(60);
+}
+
+// File menu entries live in a disclosure.
+async function fileMenu(page, text) {
+  await page.$eval('.ob-menu', d => { d.open = true; });
+  await clickButton(page, text);
+}
+
 export async function run({ page, width, open, shot, assert, step }) {
   step('open');
   await open('view=build&tab=draw');
@@ -28,17 +45,24 @@ export async function run({ page, width, open, shot, assert, step }) {
   await page.$eval('.ob-canvas', el => el.scrollIntoView({ block: 'center' }));
   const box = await page.$eval('.ob-canvas', el => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
 
-  step('add nodes by mouse');
-  await clickButton(page, 'Add node');
+  step('add people by mouse (each opens for naming)');
+  await clickButton(page, 'Add person');
   const spots = [[0.25, 0.3], [0.6, 0.3], [0.45, 0.7]];
   for (const [fx, fy] of spots) { await page.mouse.click(box.x + box.w * fx, box.y + box.h * fy); await sleep(40); }
+  assert.ok(await page.$('.ob-label-edit'), 'a new person starts in rename mode');
+  await page.keyboard.type('Cy');
+  await page.keyboard.press('Enter');
+  await sleep(40);
   let ns = await nodeCentres(page);
   assert.equal(ns.length, 3);
+  assert.ok((await page.$$eval('[data-node] text', t => t.map(x => x.textContent))).includes('Cy'));
 
   step('add node by keyboard');
   await page.$eval('.ob-canvas svg', el => el.focus());
   await page.keyboard.press('n');
   await sleep(50);
+  await page.keyboard.press('Enter'); // keep the suggested name
+  await sleep(40);
   ns = await nodeCentres(page);
   assert.equal(ns.length, 4);
 
@@ -67,8 +91,9 @@ export async function run({ page, width, open, shot, assert, step }) {
 
   step('snap to grid');
   await clickButton(page, 'Select');
-  await clickButton(page, 'Snap to grid');
-  assert.equal(await page.$eval('.ob-toolbar button[title="Snap to grid (G)"]', b => b.getAttribute('aria-pressed')), 'true');
+  await page.$$eval('.ob-arrange label.check', ls => ls.find(l => /Snap to grid/.test(l.textContent)).querySelector('input').click());
+  await sleep(40);
+  assert.equal(await page.$$eval('.ob-arrange label.check', ls => ls.find(l => /Snap to grid/.test(l.textContent)).querySelector('input').checked), true);
 
   step('drag a node with snapping');
   ns = await nodeCentres(page);
@@ -86,7 +111,7 @@ export async function run({ page, width, open, shot, assert, step }) {
 
   step('layout');
   const before = (await nodeCentres(page)).map(n => n.t).join('|');
-  await page.select('select[aria-label="Layout (L)"]', 'circle');
+  await page.select('#ob-draw-layout', 'circle');
   await page.keyboard.press('Escape');
   await clickButton(page, 'Apply layout');
   await sleep(700);
@@ -94,13 +119,13 @@ export async function run({ page, width, open, shot, assert, step }) {
   assert.notEqual(after, before, 'layout moved nodes');
 
   step('undo layout');
-  await clickButton(page, 'Undo');
+  await clickAria(page, 'Undo');
   await sleep(60);
   assert.equal((await nodeCentres(page)).map(n => n.t).join('|'), before);
-  await clickButton(page, 'Redo');
+  await clickAria(page, 'Redo');
 
   step('example and hulls');
-  await clickButton(page, 'Load example');
+  await fileMenu(page, 'Load example');
   await sleep(100);
   assert.equal(await page.$$eval('[data-node]', e => e.length), 8);
   assert.ok(await page.$$eval('.hull', e => e.length) === 2, 'two group hulls');
@@ -110,18 +135,25 @@ export async function run({ page, width, open, shot, assert, step }) {
   step('help overlay');
   await page.$eval('.ob-canvas svg', el => el.focus());
   await page.keyboard.type('?');
-  await page.waitForSelector('.ob-dialog');
+  await page.waitForSelector('.dialog');
   await shot('help');
   await page.keyboard.press('Escape');
   await sleep(50);
-  assert.equal(await page.$('.ob-dialog'), null);
+  assert.equal(await page.$('.dialog'), null);
 
   step('table view');
-  await clickButton(page, 'Table view');
+  await clickButton(page, 'Table');
   await page.waitForSelector('.ob-drawtable');
   assert.equal(await page.$$eval('.ob-drawtable section:first-child tbody tr', r => r.length), 8);
+  step('table: remove a row, undo with the keyboard');
+  await page.click('.ob-rm-node');
+  await sleep(80);
+  assert.equal(await page.$$eval('.ob-drawtable section:first-child tbody tr', r => r.length), 7);
+  await page.keyboard.down('Meta'); await page.keyboard.press('z'); await page.keyboard.up('Meta');
+  await sleep(80);
+  assert.equal(await page.$$eval('.ob-drawtable section:first-child tbody tr', r => r.length), 8);
   await shot('table');
-  await clickButton(page, 'Table view');
+  await clickButton(page, 'Canvas');
 
   step('analyze');
   await clickButton(page, 'Analyze this network');

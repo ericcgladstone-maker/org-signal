@@ -110,8 +110,11 @@ test('Network Canvas CSV columns and categorical expansion', () => {
   assert.deepEqual(files.map(f => f.name.replace(s.id, 'SID')), ['P014_SID_ego.csv', 'P014_SID_attributeList_Person.csv', 'P014_SID_edgeList_knows.csv']);
   const [ego, alt, edge] = files.map(f => parseCSV(f.text).rows);
   assert.deepEqual(ego[0], ['networkCanvasEgoUUID', 'networkCanvasCaseID', 'networkCanvasSessionID', 'networkCanvasProtocolName',
-    'sessionStart', 'sessionFinish', 'sessionExported', 'APP_VERSION', 'COMMIT_HASH']);
+    'sessionStart', 'sessionFinish', 'sessionExported', 'APP_VERSION', 'COMMIT_HASH', 'name']);
   assert.equal(ego[1][0], s.egoId);
+  // the respondent's name is exported, and an exported session is finished
+  assert.equal(ego[1][9], s.egoLabel);
+  assert.equal(ego[1][5], '2026-04-10T09:00:00.000Z');
   assert.deepEqual(alt[0].slice(0, 4), ['nodeID', 'networkCanvasEgoUUID', 'networkCanvasUUID', 'name']);
   const rel = E.INTERPRETER_PRESETS[0].options.map(o => `relationship_${o.value}`);
   assert.deepEqual(alt[0].slice(4, 4 + rel.length), rel);
@@ -176,4 +179,59 @@ test('removing a generator drops alters only it elicited', () => {
   assert.equal(s.interpreters.length, 2);
   assert.equal(E.varName('How met?'), 'how_met');
   assert.equal(E.varName('1st'), 'v_1st');
+});
+
+test('a new setting starts with the people whose answers name it', () => {
+  let s = sample();
+  s = E.addInterpreter(s, { preset: 'how_met' });
+  const [a, b, c, d] = s.alters.map(x => x.id);
+  s = E.setInterpreter(s, a, 'how_met', 'school');
+  s = E.setInterpreter(s, b, 'how_met', 'work');
+  s = E.setInterpreter(s, c, 'relationship', 'coworker');
+  s = E.setInterpreter(s, d, 'how_met', 'neighborhood');
+  s = E.addContext(s, 'School');
+  assert.deepEqual(s.contexts[0].members, [a]);
+  s = E.addContext(s, 'Work');
+  assert.deepEqual(s.contexts[1].members.sort(), [b, c].sort());
+  s = E.addContext(s, 'Neighborhood');
+  assert.deepEqual(s.contexts[2].members, [d]);
+  s = E.addContext(s, 'Other');
+  assert.deepEqual(s.contexts[3].members, []);
+  s = E.addContext(s, 'School', { fromAnswers: false });
+  assert.deepEqual(s.contexts[4].members, []);
+});
+
+test('Network Canvas round trip keeps the respondent, the settings and hand-made exceptions', () => {
+  let s = sample();
+  const [a, b, c, d] = s.alters.map(x => x.id);
+  s = E.addContext(s, 'Work', { fromAnswers: false });
+  for (const x of [a, b, c]) s = E.assignContext(s, x, s.contexts[0].id);
+  s = E.toggleTie(s, a, b); // removed by hand inside Work
+  s = E.toggleTie(s, c, d); // added by hand across settings
+  const r = E.fromNetworkCanvasCSV(E.toNetworkCanvasCSV(s), { template: s });
+  assert.equal(r.egoLabel, 'Ego One');
+  assert.equal(r.egoAttrs.name, undefined);
+  assert.deepEqual(r.contexts.map(x => x.name), ['Work']);
+  assert.equal(r.contexts[0].members.length, 3);
+  const src = new Map(E.tieList(r).map(p => [[p.a, p.b].map(id => r.alters.find(x => x.id === id).label).sort().join('+'), p.source]));
+  assert.equal(src.get('Avery Lee+Jordan Park'), 'removed');
+  assert.equal(src.get('Kim Ng+Sam Ortiz'), 'added');
+  assert.equal(src.get('Avery Lee+Sam Ortiz'), 'context');
+});
+
+test('todo names what is left instead of a percentage', () => {
+  let s = sample();
+  const t = E.todo(s);
+  assert.ok(t.some(x => /descriptions still blank/.test(x)));
+  assert.ok(t.some(x => /not in any setting/.test(x)));
+});
+
+test('setting labels never overlap', () => {
+  const items = [{ x: 400, y: 380, w: 100, anchor: 'middle' }, { x: 410, y: 380, w: 60, anchor: 'middle' }, { x: 100, y: 50, w: 50, anchor: 'start' }];
+  const ys = E.placeLabels(items, { lineH: 15, midY: 220 });
+  assert.equal(ys[0], 380);
+  assert.equal(ys[1], 395); // below the middle line: moves down
+  assert.equal(ys[2], 50);
+  const up = E.placeLabels([{ x: 300, y: 40, w: 80, anchor: 'end' }, { x: 290, y: 40, w: 80, anchor: 'end' }], { lineH: 15, midY: 220 });
+  assert.deepEqual(up, [40, 25]); // above it: moves up
 });

@@ -68,7 +68,7 @@ export function Matrix({ people, values, onSet, scale = 'binary', max = 5, capti
       <table class="ob-matrix" role="grid" aria-label=${caption} aria-describedby="ob-matrix-help" ref=${tableRef}
         onKeyDown=${onKey} onFocusOut=${e => { if (!tableRef.current?.contains(e.relatedTarget)) setHl(null); }}>
         <thead><tr>
-          <th scope="col" class="corner"><div class="ob-meta">${rowHeading} ↓<br />${colHeading} →</div></th>
+          <th scope="col" class="corner"><div class="meta">${rowHeading} ↓<br />${colHeading} →</div></th>
           ${people.map((p, c) => html`<th scope="col" class=${hl && hl.c === c ? 'hl' : ''} title=${p.label}><span>${p.label}</span></th>`)}
         </tr></thead>
         <tbody>
@@ -105,21 +105,21 @@ export function PairEntry({ people, values, onSet, scale = 'binary', max = 5 }) 
   const add = e => { e.preventDefault(); if (from && to && from !== to) onSet(from, to, scale === 'binary' ? 1 : Number(val)); };
   return html`<div class="ob-stack">
     <form class="ob-row" onSubmit=${add} aria-label="Add a tie">
-      <div class="ob-field"><label for="ob-pe-from">From</label>
-        <select id="ob-pe-from" class="ob-select" value=${from} onChange=${e => setFrom(e.currentTarget.value)}>
+      <div class="field"><label class="field__label" for="ob-pe-from">From</label>
+        <select id="ob-pe-from" class="select" value=${from} onChange=${e => setFrom(e.currentTarget.value)}>
           ${people.map(p => html`<option value=${p.id}>${p.label}</option>`)}</select></div>
-      <div class="ob-field"><label for="ob-pe-to">To</label>
-        <select id="ob-pe-to" class="ob-select" value=${to} onChange=${e => setTo(e.currentTarget.value)}>
+      <div class="field"><label class="field__label" for="ob-pe-to">To</label>
+        <select id="ob-pe-to" class="select" value=${to} onChange=${e => setTo(e.currentTarget.value)}>
           ${people.map(p => html`<option value=${p.id}>${p.label}</option>`)}</select></div>
-      ${scale === 'valued' ? html`<div class="ob-field" style="width:5rem"><label for="ob-pe-val">Value</label>
-        <input id="ob-pe-val" class="ob-input" type="number" min="1" max=${max} value=${val} onInput=${e => setVal(e.currentTarget.value)} /></div>` : null}
-      <button class="ob-btn" type="submit" style="align-self:flex-end" disabled=${!from || from === to}>Add tie</button>
+      ${scale === 'valued' ? html`<div class="field" style="width:5rem"><label class="field__label" for="ob-pe-val">Value</label>
+        <input id="ob-pe-val" class="input" type="number" min="1" max=${max} value=${val} onInput=${e => setVal(e.currentTarget.value)} /></div>` : null}
+      <button class="btn" type="submit" style="align-self:flex-end" disabled=${!from || from === to}>Add tie</button>
     </form>
-    ${list.length ? html`<div class="ob-tablewrap"><table class="ob-table">
+    ${list.length ? html`<div class="table-wrap"><table class="tbl">
       <thead><tr><th>From</th><th>To</th>${scale === 'valued' ? html`<th class="num">Value</th>` : null}<th><span class="visually-hidden">Remove</span></th></tr></thead>
       <tbody>${list.map(t => html`<tr><td>${label.get(t.from)}</td><td>${label.get(t.to)}</td>
         ${scale === 'valued' ? html`<td class="num">${t.v}</td>` : null}
-        <td><button type="button" class="ob-btn quiet sm" onClick=${() => onSet(t.from, t.to, 0)} aria-label=${`Remove ${label.get(t.from)} to ${label.get(t.to)}`}>Remove</button></td></tr>`)}
+        <td><button type="button" class="btn btn--sm btn--quiet" onClick=${() => onSet(t.from, t.to, 0)} aria-label=${`Remove ${label.get(t.from)} to ${label.get(t.to)}`}>Remove</button></td></tr>`)}
       </tbody></table></div>` : html`<p class="ob-note">No ties yet.</p>`}
   </div>`;
 }

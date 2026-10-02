@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Build harness</title>
 <link rel="stylesheet" href="../../assets/theme.css">
+<link rel="stylesheet" href="../../assets/app.css">
 <link rel="stylesheet" href="../../assets/build.css">
 <style>
   body{overflow-x:hidden}
@@ -19,7 +20,8 @@
      Stubs store.actions.loadDataset / notify / setView and records calls on
      window.__harness for the QA script. -->
 <nav id="h-nav"><a href="?view=build">Build</a><a href="?view=generate">Generate</a></nav>
-<main id="app"></main>
+<!-- The shell's frame for mounted views (src/ui/views/external.js). -->
+<main><div class="view view--bare" id="app"></div></main>
 <div id="h-log" aria-live="polite"></div>
 <script type="module">
   import { html, render } from '../../vendor/preact.js';

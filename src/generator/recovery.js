@@ -140,7 +140,7 @@ function communities(ctx) {
   const mem = perDsNode(ctx, results.membership);
   const planted = truth.communities?.membership;
   if (!mem || !planted) {
-    add(ctx, { id: 'communities', name: 'Planted communities', area: 'structure', planted: `${truth.communities?.names?.length ?? 0} groups`, recovered: null, metric: 'NMI', value: null, verdict: 'not checked', says: 'No community membership was given.' });
+    add(ctx, { id: 'communities', name: 'Planted groups vs detected communities', area: 'structure', planted: `${truth.communities?.names?.length ?? 0} groups`, recovered: null, metric: 'NMI', value: null, verdict: 'not checked', says: 'No community membership was given.' });
     return;
   }
   const xs = [], ys = [];
@@ -152,12 +152,16 @@ function communities(ctx) {
   const nmi = NMI(xs, ys), ari = ARI(xs, ys);
   const kFound = new Set(ys).size, kPlanted = new Set(xs).size;
   ctx.details.communities = { nmi, ari, compared: xs.length, found: kFound, planted: kPlanted };
+  // Name the groups by what they are (departments, interest communities...),
+  // never by the attribute key.
+  const kinds = [...new Set((truth.communities.kinds || []).filter(Boolean))];
+  const what = kinds.length === 1 ? `${kinds[0]}s` : 'groups';
   add(ctx, {
-    id: 'communities', name: `Planted communities (${truth.communities.attr})`, area: 'structure',
+    id: 'communities', name: `Planted ${what} vs detected communities`, area: 'structure',
     planted: `${kPlanted} groups`, recovered: `${kFound} communities over ${xs.length} people`,
     metric: 'NMI (ARI)', value: r3(nmi), baseline: 0,
     verdict: xs.length < 5 ? 'not checked' : nmi >= 0.6 ? 'recovered' : nmi >= 0.3 ? 'partly' : 'missed',
-    says: `Detected communities match the planted ${truth.communities.attr} groups with NMI ${r3(nmi)} and ARI ${r3(ari)} (1 = identical, 0 = unrelated).`,
+    says: `Detected communities match the planted ${what} with NMI ${r3(nmi)} and ARI ${r3(ari)} (1 = identical, 0 = unrelated).`,
   });
 }
 
@@ -467,7 +471,7 @@ function diffusionChecks(ctx) {
     add(ctx, {
       id: 'diffusion-' + c.term, name: `Spread of "${c.term}" along true ties`, area: 'diffusion',
       planted: `${planted.size} adopters from seed ${truth.people.labels[c.seed]}`, recovered: `${detected.size} users found (${src}), ${tp} of them planted adopters`,
-      metric: 'share of later users with an earlier-using true neighbour', value: r3(obsShare), baseline: r3(nullShare),
+      metric: 'share of later users with an earlier-using true neighbor', value: r3(obsShare), baseline: r3(nullShare),
       verdict: precision >= 0.8 && along && seedEarly ? 'recovered' : precision >= 0.5 && (along || seedEarly) ? 'partly' : 'missed',
       says: `${seedFirst ? 'The seed is the first user' : seedEarly ? `The seed is user number ${seedRank + 1}` : 'The planted seed is not among the first users found'}; ${pct(obsShare)} of later users had a tied earlier user (${pct(nullShare)} expected if timing were random). Precision ${r3(precision)}, recall of writers ${r3(recall)}${Number.isFinite(rho) ? `, adoption-time rank correlation ${r3(rho)}` : ''}.`,
     });

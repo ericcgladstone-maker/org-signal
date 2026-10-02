@@ -54,7 +54,7 @@ spec = {
 - `files` (native only): `[{ path, bytes: Uint8Array }]`, usually one zip in the real layout (WhatsApp: one file per chat; Discord: one JSON per channel; Reddit: two NDJSON per subreddit). Writers follow `docs/formats/*.md`; see each writer's header comment.
 - `groundTruth` (structured-cloneable):
   - `people { count, keys, labels, attrs, isBot, leftAt, platformIds }` (person index = position)
-  - `communities { attr, membership Int32Array, names, kinds }` (planted groups: departments, communities, clusters, employers, spaces, friend groups; -1 = none)
+  - `communities { attr, membership Int32Array, names, kinds }` (planted groups: departments, communities, clusters, employers, spaces, friend groups; -1 = none). `attr` is always `planted_group`: every person carries the group's name in `attrs.planted_group`, and `dataset.meta.attrLabels.planted_group = 'Planted group (ground truth)'` (`PLANTED_GROUP_ATTR`, `PLANTED_GROUP_LABEL`) so views never show it as "Community". Keys a real export or HR file would carry stay beside it (workplace `department`, professional `company`); keys that only carried the planted group (online `community`, personal `cluster`, community `home_space`, survey `friend_group`) are gone.
   - `ties { directed, count, a, b, w, kind, kinds, from, until }` (the true network before observation; NaN window ends = whole span)
   - `hierarchy { root, manager, managerAfter }` (workplace; `managerAfter` after a reorg)
   - `bridges { brokers, brokerKeys, ties }`
@@ -74,7 +74,7 @@ Report: `{ summary, checks: [{ id, name, area, planted, recovered, metric, value
 | id | What | Metric |
 |---|---|---|
 | tie-coverage | how much of the true network the observed data shows | share of true ties seen (verdict only for full views) |
-| communities | detected communities vs planted groups | NMI (ARI in text) |
+| communities | detected communities vs planted groups (named "Planted <kind>s vs detected communities") | NMI (ARI in text) |
 | bridges | planted brokers in the betweenness ranking | precision@k (k = brokers), chance baseline |
 | affect-groups / affect-visibility / affect-shift | planted affect differences | mean VADER compound difference with Welch test; measured here from the text unless `results.affect` is given |
 | shift-<type> | planted events near a detected shift | days to nearest detected shift (tolerance max(7 days, 10% of span)) |

@@ -6,14 +6,14 @@
 // apply(fn, label). The document model and all geometry are pure functions
 // in src/builders/draw*.js, tested in Node.
 
-import { html, useState, useEffect, useRef, useMemo } from '../../../../vendor/preact.js';
+import { html, useState, useEffect, useRef, useMemo, useLayoutEffect } from '../../../../vendor/preact.js';
 import * as D from '../../../builders/draw.js';
 import { runLayout, LAYOUTS, concentricKeys } from '../../../builders/draw-layout.js';
 import { snapPoint } from '../../../builders/draw-snap.js';
 import { uid, slug } from '../../../builders/common.js';
-import { HandOffBar, storage, downloadText, pickFile, readFileText, prefersReducedMotion } from '../shared.js';
+import { storage, downloadText, pickFile, readFileText, prefersReducedMotion, useHandOff, HandOffBar } from '../shared.js';
 import { notify } from '../service.js';
-import { Canvas, clampK, NODE_R } from './canvas.js';
+import { Canvas, clampK, NODE_R, DASHES } from './canvas.js';
 import { Inspector } from './inspector.js';
 import { TableEditor } from './table.js';
 import { HelpOverlay } from './help.js';
@@ -22,7 +22,13 @@ import { exampleDoc } from './example.js';
 const DRAFT_KEY = 'orgsignal.build.draw.draft';
 const SETTINGS_KEY = 'orgsignal.build.draw.settings';
 const ANIM_MS = 400;
-const MODES = [['select', 'Select', 'V'], ['node', 'Add node', 'B'], ['edge', 'Connect', 'C'], ['pan', 'Pan', 'H']];
+const MODES = [['select', 'Select', 'V'], ['node', 'Add person', 'B'], ['edge', 'Connect', 'C'], ['pan', 'Pan', 'H']];
+
+// The editor's working state outside the drawing itself (undo history, zoom
+// and pan, mode, panels) is kept here when the editor unmounts, so leaving
+// the Build view and coming back resumes where you were. The drawing is also
+// autosaved to storage; this only lives as long as the page.
+let kept = null;
 
 function loadDraft() {
   const raw = storage.get(DRAFT_KEY, null);
@@ -32,12 +38,12 @@ function loadDraft() {
 }
 
 export function DrawEditor() {
-  const [hist, setHist] = useState(() => D.createHistory(loadDraft() || D.emptyDoc()));
+  const [hist, setHist] = useState(() => kept?.hist || D.createHistory(loadDraft() || D.emptyDoc()));
   const doc = hist.present;
-  const [sel, setSel] = useState({ nodes: [], edges: [] });
+  const [sel, setSel] = useState(() => kept?.sel || { nodes: [], edges: [] });
   const [focusId, setFocus] = useState(null);
-  const [mode, setMode] = useState('select');
-  const [view, setView] = useState({ x: 0, y: 0, k: 1 });
+  const [mode, setMode] = useState(() => kept?.mode || 'select');
+  const [view, setView] = useState(() => kept?.view || { x: 0, y: 0, k: 1 });
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [settings, setSettings] = useState(() => ({ grid: false, gridSize: 20, guides: true, showGrid: true, ...storage.get(SETTINGS_KEY, {}) }));
   const [live, setLive] = useState(null);
@@ -46,10 +52,10 @@ export function DrawEditor() {
   const [rubber, setRubber] = useState(null);
   const [pending, setPending] = useState(null);
   const [editing, setEditing] = useState(null);
-  const [table, setTable] = useState(false);
+  const [table, setTable] = useState(() => kept?.table || false);
   const [help, setHelp] = useState(false);
-  const [layout, setLayout] = useState({ id: 'force', root: '', key: 'degree', scope: 'auto' });
-  const [edgeDefaults, setEdgeDefaults] = useState({ type: D.DEFAULT_EDGE_TYPE, directed: false });
+  const [layout, setLayout] = useState(() => kept?.layout || { id: 'force', root: '', key: 'degree', scope: 'auto' });
+  const [edgeDefaults, setEdgeDefaults] = useState(() => kept?.edgeDefaults || { type: D.DEFAULT_EDGE_TYPE, directed: false });
   const [announce, setAnnounce] = useState('');
   const [saved, setSaved] = useState(null);
   const [spaceDown, setSpaceDown] = useState(false);
@@ -64,6 +70,7 @@ export function DrawEditor() {
 
   const apply = (fn, label) => setHist(h => D.commit(h, fn(h.present), label));
   const say = t => setAnnounce(t);
+  useEffect(() => { kept = { hist, sel, mode, view, table, layout, edgeDefaults }; });
 
   // ---- autosave ----
   useEffect(() => {
@@ -94,10 +101,30 @@ export function DrawEditor() {
     ro.observe(el);
     return () => ro.disconnect();
   }, [table]);
-  const fitted = useRef(false);
+  const fitted = useRef(!!kept?.view);
   useEffect(() => {
     if (!fitted.current && size.w) { fitted.current = true; fit(); }
   }, [size.w]);
+
+  // The canvas fills the window below its own top edge (P10: the whole
+  // drawing, its zoom controls and the toolbar fit on a laptop screen).
+  useLayoutEffect(() => {
+    const el = canvasRef.current;
+    if (table) el?.parentElement?.style.removeProperty('--ob-canvas-h');
+    if (!el || table) return;
+    const size = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const statusH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--status-h')) || 0;
+      const min = window.innerWidth < 600 ? 300 : 360;
+      const h = Math.max(min, Math.round(window.innerHeight - top - statusH - 16));
+      el.style.height = `${h}px`;
+      // The inspector beside it scrolls within the same height.
+      el.parentElement?.style.setProperty('--ob-canvas-h', `${h}px`);
+    };
+    size();
+    window.addEventListener('resize', size);
+    return () => window.removeEventListener('resize', size);
+  }, [table]);
 
   function fit(d = st.current.doc) {
     const { w, h } = st.current.size.w ? st.current.size : size;
@@ -121,21 +148,22 @@ export function DrawEditor() {
   }
 
   // ---- commands ----
-  function addNodeAt(p, { rename = false } = {}) {
+  // New people start in rename mode (type the name, Enter), and never land on
+  // another person or their label.
+  function addNodeAt(p, { rename = true } = {}) {
     const s = st.current;
     let q = s.settings.grid || s.settings.guides
       ? snapPoint(p, s.doc.nodes, { grid: s.settings.grid, gridSize: s.settings.gridSize, guides: s.settings.guides, threshold: 6 / s.view.k }) : p;
-    q = { x: q.x, y: q.y };
-    // Never stack a new node exactly on another one.
-    const step = s.settings.grid ? s.settings.gridSize * 2 : 40;
-    while (s.doc.nodes.some(n => Math.abs(n.x - q.x) < NODE_R * 2 && Math.abs(n.y - q.y) < NODE_R * 2)) q.x += step;
+    const g = s.settings.grid ? s.settings.gridSize : 0;
+    const up = v => (g ? Math.ceil(v / g) * g : v);
+    q = D.freeSpot(s.doc.nodes, { x: q.x, y: q.y }, { r: NODE_R, clearX: up(56), clearY: up(44) });
     const id = uid('n');
     const label = D.nextLabel(s.doc);
-    apply(d => D.addNode(d, { id, x: q.x, y: q.y, label }), 'Add node');
+    apply(d => D.addNode(d, { id, x: q.x, y: q.y, label }), 'Add person');
     setSel({ nodes: [id], edges: [] });
     setFocus(id);
-    say(`Added ${label}.`);
-    if (rename) setTimeout(() => startRename(id), 0);
+    say(`Added ${label}. Type a name and press Enter.`);
+    if (rename && !table) setTimeout(() => setEditing({ id, value: label }), 0);
     return id;
   }
 
@@ -157,7 +185,7 @@ export function DrawEditor() {
     if (!nodes.length && !edges.length) return;
     apply(d => D.removeEdges(D.removeNodes(d, nodes), edges), 'Delete');
     setSel({ nodes: [], edges: [] });
-    say(`Deleted ${nodes.length} node${nodes.length === 1 ? '' : 's'}${edges.length ? ` and ${edges.length} tie${edges.length === 1 ? '' : 's'}` : ''}.`);
+    say(`Deleted ${nodes.length} ${nodes.length === 1 ? 'person' : 'people'}${edges.length ? ` and ${edges.length} tie${edges.length === 1 ? '' : 's'}` : ''}.`);
   }
 
   function startRename(id) {
@@ -181,7 +209,7 @@ export function DrawEditor() {
     if (!s.sel.nodes.length) return;
     clip.current = D.copySelection(s.doc, s.sel.nodes);
     pasteCount.current = 0;
-    say(`Copied ${s.sel.nodes.length} node${s.sel.nodes.length === 1 ? '' : 's'}.`);
+    say(`Copied ${s.sel.nodes.length} ${s.sel.nodes.length === 1 ? 'person' : 'people'}.`);
   }
 
   function pasteClip(c = clip.current) {
@@ -191,7 +219,7 @@ export function DrawEditor() {
     // Re-run paste inside apply on the same ids so history gets exactly this result.
     apply(() => res.doc, 'Paste');
     setSel({ nodes: res.ids, edges: [] });
-    say(`Pasted ${res.ids.length} node${res.ids.length === 1 ? '' : 's'}.`);
+    say(`Pasted ${res.ids.length} ${res.ids.length === 1 ? 'person' : 'people'}.`);
   }
 
   function nudge(dx, dy) {
@@ -232,7 +260,7 @@ export function DrawEditor() {
     if (s.settings.grid) for (const [id, p] of target) target.set(id, { x: Math.round(p.x / s.settings.gridSize) * s.settings.gridSize, y: Math.round(p.y / s.settings.gridSize) * s.settings.gridSize });
     const name = LAYOUTS.find(l => l.id === layout.id).label;
     animateTo(target, `Layout: ${name}`);
-    say(`${name} layout applied to ${all ? 'the whole drawing' : `${ids.length} selected nodes`}.`);
+    say(`${name} layout applied to ${all ? 'the whole drawing' : `${ids.length} selected people`}.`);
   }
 
   function doUndo() { setHist(h => { if (D.canUndo(h)) say(`Undid ${D.undoLabel(h)}.`); return D.undo(h); }); }
@@ -252,7 +280,7 @@ export function DrawEditor() {
     if (!d) { notify('error', `Could not import ${f.name}: ${errors.join(' ')}`); return; }
     loadDoc(d, 'Import drawing');
     const extra = [...errors, ...warnings];
-    notify(extra.length ? 'warn' : 'info', `Imported ${f.name}: ${d.nodes.length} nodes, ${d.edges.length} ties.${extra.length ? ' ' + extra.slice(0, 3).join(' ') + (extra.length > 3 ? ` (+${extra.length - 3} more)` : '') : ''}`);
+    notify(extra.length ? 'warn' : 'info', `Imported ${f.name}: ${d.nodes.length} people, ${d.edges.length} ties.${extra.length ? ' ' + extra.slice(0, 3).join(' ') + (extra.length > 3 ? ` (+${extra.length - 3} more)` : '') : ''}`);
   }
 
   // ---- keyboard ----
@@ -272,7 +300,7 @@ export function DrawEditor() {
       else if (k === 'c' && onCanvas) { handled(); copy(); }
       else if (k === 'v' && onCanvas) { handled(); pasteClip(); }
       else if (k === 'd' && onCanvas) { handled(); if (s.sel.nodes.length) { pasteCount.current = 0; pasteClip(D.copySelection(s.doc, s.sel.nodes)); } }
-      else if (k === 'a' && onCanvas) { handled(); setSel({ nodes: s.doc.nodes.map(n => n.id), edges: [] }); say(`Selected all ${s.doc.nodes.length} nodes.`); }
+      else if (k === 'a' && onCanvas) { handled(); setSel({ nodes: s.doc.nodes.map(n => n.id), edges: [] }); say(`Selected all ${s.doc.nodes.length} people.`); }
       return;
     }
     if (key === '?') { handled(); setHelp(true); return; }
@@ -281,8 +309,8 @@ export function DrawEditor() {
     if (!onCanvas) return;
     switch (key) {
       case 'v': case 'V': handled(); setMode('select'); say('Select mode.'); break;
-      case 'b': case 'B': handled(); setMode('node'); say('Add-node mode: click the canvas to place a node.'); break;
-      case 'c': case 'C': handled(); setMode('edge'); say('Connect mode: drag from one node to another.'); break;
+      case 'b': case 'B': handled(); setMode('node'); say('Add-person mode: click the canvas to place a person.'); break;
+      case 'c': case 'C': handled(); setMode('edge'); say('Connect mode: drag from one person to another.'); break;
       case 'h': case 'H': handled(); setMode('pan'); say('Pan mode.'); break;
       case 'n': case 'N': handled(); addNodeAt(viewCentre()); break;
       case 'g': case 'G': handled(); setSettings(x => ({ ...x, grid: !x.grid })); say(`Snap to grid ${s.settings.grid ? 'off' : 'on'}.`); break;
@@ -296,9 +324,9 @@ export function DrawEditor() {
         handled();
         let ids = s.sel.nodes;
         if (ids.length === 1 && s.focusId && s.focusId !== ids[0]) ids = [ids[0], s.focusId];
-        if (ids.length < 2) { say('Select two or more nodes to connect (Space adds the focused node).'); break; }
+        if (ids.length < 2) { say('Select two or more people to connect (Space adds the focused person).'); break; }
         if (ids.length === 2) addEdge(ids[0], ids[1]);
-        else { apply(d => D.connectPath(d, ids, { type: s.edgeDefaults.type, directed: s.edgeDefaults.directed }), 'Connect'); say(`Connected ${ids.length} nodes in order.`); }
+        else { apply(d => D.connectPath(d, ids, { type: s.edgeDefaults.type, directed: s.edgeDefaults.directed }), 'Connect'); say(`Connected ${ids.length} people in order.`); }
         break;
       }
       case ' ': {
@@ -328,7 +356,7 @@ export function DrawEditor() {
         setFocus(n.id);
         if (!pinned.current) setSel({ nodes: [n.id], edges: [] });
         ensureVisible(n);
-        say(`${n.label}, node ${j + 1} of ${ns.length}${n.group ? ', group ' + (D.groupById(s.doc, n.group)?.name ?? '') : ''}, ${s.doc.edges.filter(x => x.source === n.id || x.target === n.id).length} ties.`);
+        say(`${n.label}, person ${j + 1} of ${ns.length}${n.group ? ', group ' + (D.groupById(s.doc, n.group)?.name ?? '') : ''}, ${s.doc.edges.filter(x => x.source === n.id || x.target === n.id).length} ties.`);
         break;
       }
       case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown': {
@@ -351,7 +379,18 @@ export function DrawEditor() {
   // Space held = temporary pan (like design tools). Tracked on the window so
   // releasing outside the canvas still clears it.
   useEffect(() => {
-    const down = e => { if (e.key === ' ' && e.target.closest?.('.ob-canvas') && !st.current.focusId) setSpaceDown(true); };
+    const down = e => {
+      if (e.key === ' ' && e.target.closest?.('.ob-canvas') && !st.current.focusId) setSpaceDown(true);
+      // Undo and redo also work when focus has fallen back to the page or the
+      // view heading (after a row or a button that had focus was removed), as
+      // long as the editor is on screen.
+      const ae = document.activeElement;
+      if ((e.metaKey || e.ctrlKey) && (!ae || ae === document.body || ae.classList?.contains('view__title'))) {
+        const k = e.key.toLowerCase();
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); }
+        else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); doRedo(); }
+      }
+    };
     const up = e => { if (e.key === ' ') setSpaceDown(false); };
     window.addEventListener('keydown', down); window.addEventListener('keyup', up);
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); cancelAnimationFrame(anim.current); };
@@ -371,82 +410,110 @@ export function DrawEditor() {
   const keys = concentricKeys(doc);
   const editPos = editing && (() => { const n = D.nodeById(doc, editing.id); return n ? { left: n.x * view.k + view.x - 64, top: n.y * view.k + view.y + 12 } : null; })();
   const modeLabel = MODES.find(m => m[0] === mode)[1];
+  const handoff = useHandOff(() => D.toDataset(doc, { name: doc.name }));
+  // Tie types are drawn with dashes only when there is more than one in use,
+  // and then the key below names them (V17).
+  const usedTypes = doc.edgeTypes.filter(t => doc.edges.some(e => e.type === t));
+  const fileMenu = useRef(null);
+  const fileAction = fn => () => { if (fileMenu.current) fileMenu.current.open = false; fn(); };
+
+  const arrange = html`<div class="ob-stack ob-arrange" style="gap:.6rem">
+    <h3 class="label">Arrange</h3>
+    <div class="ob-row" role="group" aria-label="Layout" style="gap:.4rem">
+      <label class="visually-hidden" for="ob-draw-layout">Layout (L)</label>
+      <select id="ob-draw-layout" class="select select--sm" style="width:auto" ref=${layoutSel} value=${layout.id} onChange=${e => setLayout({ ...layout, id: e.currentTarget.value })}>
+        ${LAYOUTS.map(l => html`<option value=${l.id}>${l.label}</option>`)}</select>
+      ${layout.id === 'tree' ? html`<select class="select select--sm" style="width:auto;max-width:9rem" aria-label="Tree root" value=${layout.root} onChange=${e => setLayout({ ...layout, root: e.currentTarget.value })}>
+        <option value="">Root: first selected</option>${doc.nodes.map(n => html`<option value=${n.id}>${n.label}</option>`)}</select>` : null}
+      ${layout.id === 'concentric' ? html`<select class="select select--sm" style="width:auto" aria-label="Rings by" value=${layout.key} onChange=${e => setLayout({ ...layout, key: e.currentTarget.value })}>
+        ${keys.map(k => html`<option value=${k}>By ${k}</option>`)}</select>` : null}
+      ${sel.nodes.length >= 2 ? html`<select class="select select--sm" style="width:auto" aria-label="Apply layout to" value=${layout.scope === 'all' ? 'all' : 'auto'} onChange=${e => setLayout({ ...layout, scope: e.currentTarget.value })}>
+        <option value="auto">Selection (${sel.nodes.length})</option><option value="all">Whole drawing</option></select>` : null}
+      <button type="button" class="btn btn--sm" disabled=${!doc.nodes.length} onClick=${applyLayout}>Apply layout</button>
+    </div>
+    <div class="ob-row" style="gap:.4rem 1rem">
+      <label class="check"><input type="checkbox" checked=${settings.grid} onChange=${e => setSettings(x => ({ ...x, grid: e.currentTarget.checked }))} /> Snap to grid (G)</label>
+      <label class="visually-hidden" for="ob-draw-gridsize">Grid size</label>
+      <select id="ob-draw-gridsize" class="select select--sm" style="width:auto" value=${settings.gridSize} onChange=${e => setSettings(x => ({ ...x, gridSize: +e.currentTarget.value }))}>
+        ${[10, 20, 25, 40, 50].map(v => html`<option value=${v}>${v} px</option>`)}</select>
+      <label class="check"><input type="checkbox" checked=${settings.guides} onChange=${e => setSettings(x => ({ ...x, guides: e.currentTarget.checked }))} /> Snap to other people</label>
+    </div>
+  </div>`;
 
   return html`<div class="ob-stack ob-draw" ref=${wrapRef} onKeyDown=${onKeyDown}>
-    <div class="ob-row ob-draw-file">
-      <button type="button" class="ob-btn sm" onClick=${() => loadDoc(D.emptyDoc(), 'New drawing')}>New</button>
-      <button type="button" class="ob-btn sm" onClick=${() => loadDoc(exampleDoc(), 'Load example')}>Load example</button>
-      <button type="button" class="ob-btn sm" onClick=${importFile}>Import JSON</button>
-      <button type="button" class="ob-btn sm" disabled=${!doc.nodes.length} onClick=${() => downloadText(`${slug(doc.name)}.drawing.json`, D.exportJSON(doc), 'application/json')}>Export JSON</button>
-      <span class="ob-spacer"></span>
-      <button type="button" class="ob-btn sm" aria-pressed=${table ? 'true' : 'false'} onClick=${() => setTable(x => !x)}>Table view</button>
-      <button type="button" class="ob-btn sm" onClick=${() => setHelp(true)} aria-label="Keyboard shortcuts">Shortcuts ?</button>
-    </div>
-
-    ${table ? null : html`<div class="ob-toolbar" role="toolbar" aria-label="Drawing tools">
-      <div class="ob-row" role="group" aria-label="Mode" style="gap:.3rem">
-        ${MODES.map(([id, label, k]) => html`<button type="button" class="ob-btn sm" aria-pressed=${mode === id ? 'true' : 'false'} title=${`${label} (${k})`}
+    <div class="ob-toolbar" role="toolbar" aria-label="Drawing tools">
+      ${table ? null : html`<div class="seg" role="group" aria-label="Mode">
+        ${MODES.map(([id, label, k]) => html`<button type="button" aria-pressed=${String(mode === id)} title=${`${label} (${k})`}
           onClick=${() => { setMode(id); setPending(null); }}>${label}</button>`)}
+      </div>`}
+      <div class="ob-row ob-iconrow" style="gap:.25rem">
+        <button type="button" class="btn btn--sm ob-icon" disabled=${!D.canUndo(hist)} onClick=${doUndo}
+          aria-label=${D.undoLabel(hist) ? 'Undo ' + D.undoLabel(hist) : 'Undo'} title=${(D.undoLabel(hist) ? 'Undo ' + D.undoLabel(hist) : 'Undo') + ' (Cmd/Ctrl+Z)'}>${ICON.undo}</button>
+        <button type="button" class="btn btn--sm ob-icon" disabled=${!D.canRedo(hist)} onClick=${doRedo}
+          aria-label=${D.redoLabel(hist) ? 'Redo ' + D.redoLabel(hist) : 'Redo'} title=${(D.redoLabel(hist) ? 'Redo ' + D.redoLabel(hist) : 'Redo') + ' (Cmd/Ctrl+Shift+Z)'}>${ICON.redo}</button>
+        ${table ? null : html`<button type="button" class="btn btn--sm" disabled=${!sel.nodes.length && !sel.edges.length} onClick=${deleteSelection}>Delete</button>`}
       </div>
-      <span class="ob-sep" aria-hidden="true"></span>
-      <button type="button" class="ob-btn sm" disabled=${!D.canUndo(hist)} onClick=${doUndo} title=${D.undoLabel(hist) ? 'Undo ' + D.undoLabel(hist) : 'Undo'}>Undo</button>
-      <button type="button" class="ob-btn sm" disabled=${!D.canRedo(hist)} onClick=${doRedo} title=${D.redoLabel(hist) ? 'Redo ' + D.redoLabel(hist) : 'Redo'}>Redo</button>
-      <button type="button" class="ob-btn sm" disabled=${!sel.nodes.length && !sel.edges.length} onClick=${deleteSelection}>Delete</button>
-      <span class="ob-sep" aria-hidden="true"></span>
-      <button type="button" class="ob-btn sm" aria-pressed=${settings.grid ? 'true' : 'false'} onClick=${() => setSettings(x => ({ ...x, grid: !x.grid }))} title="Snap to grid (G)">Snap to grid</button>
-      <select class="ob-select sm" style="width:auto" aria-label="Grid size" value=${settings.gridSize} onChange=${e => setSettings(x => ({ ...x, gridSize: +e.currentTarget.value }))}>
-        ${[10, 20, 25, 40, 50].map(v => html`<option value=${v}>${v} px</option>`)}</select>
-      <button type="button" class="ob-btn sm" aria-pressed=${settings.guides ? 'true' : 'false'} onClick=${() => setSettings(x => ({ ...x, guides: !x.guides }))} title="Snap to other nodes">Guides</button>
-      <span class="ob-sep" aria-hidden="true"></span>
-      <div class="ob-row ob-draw-layout" role="group" aria-label="Layout" style="gap:.3rem">
-        <select class="ob-select sm" style="width:auto" ref=${layoutSel} aria-label="Layout (L)" value=${layout.id} onChange=${e => setLayout({ ...layout, id: e.currentTarget.value })}>
-          ${LAYOUTS.map(l => html`<option value=${l.id}>${l.label}</option>`)}</select>
-        ${layout.id === 'tree' ? html`<select class="ob-select sm" style="width:auto;max-width:9rem" aria-label="Tree root" value=${layout.root} onChange=${e => setLayout({ ...layout, root: e.currentTarget.value })}>
-          <option value="">Root: first selected</option>${doc.nodes.map(n => html`<option value=${n.id}>${n.label}</option>`)}</select>` : null}
-        ${layout.id === 'concentric' ? html`<select class="ob-select sm" style="width:auto" aria-label="Rings by" value=${layout.key} onChange=${e => setLayout({ ...layout, key: e.currentTarget.value })}>
-          ${keys.map(k => html`<option value=${k}>By ${k}</option>`)}</select>` : null}
-        ${sel.nodes.length >= 2 ? html`<select class="ob-select sm" style="width:auto" aria-label="Apply layout to" value=${layout.scope === 'all' ? 'all' : 'auto'} onChange=${e => setLayout({ ...layout, scope: e.currentTarget.value })}>
-          <option value="auto">Selection (${sel.nodes.length})</option><option value="all">Whole drawing</option></select>` : null}
-        <button type="button" class="ob-btn sm" disabled=${!doc.nodes.length} onClick=${applyLayout}>Apply layout</button>
+      <span class="ob-spacer"></span>
+      <div class="seg" role="group" aria-label="Edit as">
+        <button type="button" aria-pressed=${String(!table)} onClick=${() => setTable(false)}>Canvas</button>
+        <button type="button" aria-pressed=${String(table)} onClick=${() => setTable(true)} title="Table (T)">Table</button>
       </div>
-      ${mode === 'edge' ? html`<span class="ob-sep" aria-hidden="true"></span>
-        <div class="ob-row" style="gap:.4rem"><span class="ob-label">New ties</span>
-          <select class="ob-select sm" style="width:auto" aria-label="Type of new ties" value=${edgeDefaults.type} onChange=${e => setEdgeDefaults({ ...edgeDefaults, type: e.currentTarget.value })}>
-            ${doc.edgeTypes.map(t => html`<option value=${t}>${t}</option>`)}</select>
-          <label class="ob-check"><input type="checkbox" checked=${edgeDefaults.directed} onChange=${e => setEdgeDefaults({ ...edgeDefaults, directed: e.currentTarget.checked })} /> Directed</label></div>` : null}
-    </div>`}
+      <details class="ob-menu" ref=${fileMenu}>
+        <summary class="btn btn--sm">File</summary>
+        <div class="ob-menu__list" role="group" aria-label="File">
+          <button type="button" class="tlink" onClick=${fileAction(() => loadDoc(D.emptyDoc(), 'New drawing'))}>New drawing</button>
+          <button type="button" class="tlink" onClick=${fileAction(() => loadDoc(exampleDoc(), 'Load example'))}>Load example</button>
+          <button type="button" class="tlink" onClick=${fileAction(importFile)}>Import JSON</button>
+          <button type="button" class="tlink" disabled=${!doc.nodes.length} onClick=${fileAction(() => downloadText(`${slug(doc.name)}.drawing.json`, D.exportJSON(doc), 'application/json'))}>Export JSON</button>
+        </div>
+      </details>
+      <button type="button" class="btn btn--sm btn--quiet" onClick=${() => setHelp(true)} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
+      <button type="button" class="btn btn--primary" disabled=${!nodeIds.length || handoff.busy} onClick=${() => handoff.run('replace')}>Analyze this network</button>
+    </div>
 
     <div class="ob-editor">
       ${table
-        ? html`<div class="ob-draw-tablecol"><${TableEditor} doc=${doc} apply=${apply} edgeDefaults=${edgeDefaults} /></div>`
-        : html`<div class=${'ob-canvas mode-' + mode + (spaceDown ? ' panning' : '')} ref=${canvasRef}>
+        ? html`<div class="ob-draw-tablecol" key="table" ref=${canvasRef}><${TableEditor} doc=${doc} apply=${apply} edgeDefaults=${edgeDefaults} /></div>`
+        : html`<div class=${'ob-canvas mode-' + mode + (spaceDown ? ' panning' : '')} key="canvas" ref=${canvasRef}>
           <${Canvas} doc=${doc} live=${live} sel=${sel} focusId=${focusId} pending=${pending} view=${view} size=${size}
-            settings=${settings} guides=${guides} marquee=${marquee} rubber=${rubber} ctl=${ctl} mode=${mode} />
-          ${doc.nodes.length ? null : html`<div class="ob-hint"><p>Press N, double-click, or choose Add node and click here to place a node.<br />Or load the example above.</p></div>`}
-          ${editPos ? html`<input class="ob-input ob-label-edit" style=${`left:${Math.max(4, editPos.left)}px;top:${editPos.top}px;width:8rem`} aria-label="Node label"
+            settings=${settings} guides=${guides} marquee=${marquee} rubber=${rubber} ctl=${ctl} mode=${mode} dashed=${usedTypes.length > 1} />
+          ${doc.nodes.length ? null : html`<div class="ob-hint"><p>Press N, double-click, or choose Add person and click here to place a person.<br />Or open File, Load example.</p></div>`}
+          ${editPos ? html`<input class="input ob-label-edit" style=${`left:${Math.max(4, editPos.left)}px;top:${editPos.top}px;width:8rem`} aria-label="Name"
             value=${editing.value} ref=${el => el && document.activeElement !== el && (el.focus(), el.select())}
             onInput=${e => setEditing({ ...editing, value: e.currentTarget.value })}
             onKeyDown=${e => { if (e.key === 'Enter') { e.preventDefault(); commitRename(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); commitRename(false); } }}
             onBlur=${() => commitRename(true)} />` : null}
+          ${usedTypes.length > 1 ? html`<${TypeKey} types=${doc.edgeTypes} used=${usedTypes} />` : null}
           <div class="ob-status" aria-hidden="true">${modeLabel}${pending ? ' · from ' + (D.nodeById(doc, pending)?.label ?? '') : ''} · ${Math.round(view.k * 100)}%${settings.grid ? ' · grid ' + settings.gridSize : ''}</div>
           <div class="ob-zoom">
-            <button type="button" class="ob-btn sm" aria-label="Zoom out" onClick=${() => zoomBy(0.8)}>−</button>
-            <button type="button" class="ob-btn sm" aria-label="Zoom in" onClick=${() => zoomBy(1.25)}>+</button>
-            <button type="button" class="ob-btn sm" onClick=${() => fit()}>Fit</button>
+            <button type="button" class="btn btn--sm" aria-label="Zoom out" onClick=${() => zoomBy(0.8)}>−</button>
+            <button type="button" class="btn btn--sm" aria-label="Zoom in" onClick=${() => zoomBy(1.25)}>+</button>
+            <button type="button" class="btn btn--sm" onClick=${() => fit()}>Fit</button>
           </div>
         </div>`}
       <aside class="ob-inspector" aria-label="Selection details">
         <${Inspector} doc=${doc} sel=${sel} apply=${apply} setSel=${setSel} edgeDefaults=${edgeDefaults} setEdgeDefaults=${setEdgeDefaults} onRename=${startRename} />
+        ${table ? null : arrange}
       </aside>
     </div>
 
     <p id="ob-draw-live" class="visually-hidden" aria-live="polite">${announce}</p>
-    <div class="ob-row">
-      <span class="ob-note">${doc.nodes.length} nodes, ${doc.edges.length} ties. ${saved === false ? 'Autosave is not available in this browser; export the drawing to keep it.' : 'Draft saved in this browser.'}</span>
-    </div>
-    <${HandOffBar} disabled=${!nodeIds.length} build=${() => D.toDataset(doc, { name: doc.name })}
-      note=${doc.nodes.length ? 'Becomes a full network of declared ties (context: custom).' : 'Add nodes first.'} />
+    <p class="ob-note">${doc.nodes.length} ${doc.nodes.length === 1 ? 'person' : 'people'}, ${doc.edges.length} ${doc.edges.length === 1 ? 'tie' : 'ties'}. ${saved === false ? 'Autosave is not available in this browser; export the drawing to keep it.' : 'Draft saved in this browser.'}
+      ${doc.nodes.length ? ' Analyzing makes a full network of declared ties.' : ''}</p>
+    <${HandOffBar} compact=${true} handoff=${handoff} disabled=${!nodeIds.length} build=${() => D.toDataset(doc, { name: doc.name })} />
     ${help ? html`<${HelpOverlay} onClose=${() => setHelp(false)} />` : null}
+  </div>`;
+}
+
+const ICON = {
+  undo: html`<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M5.5 4 L2.5 7 L5.5 10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 7 H10 a3.5 3.5 0 0 1 0 7 H7" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`,
+  redo: html`<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M10.5 4 L13.5 7 L10.5 10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13.5 7 H6 a3.5 3.5 0 0 0 0 7 H9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`,
+};
+
+// Key for tie types, shown on the canvas when more than one type is in use.
+function TypeKey({ types, used }) {
+  return html`<div class="ob-typekey">
+    ${used.map(t => html`<span><svg width="26" height="8" aria-hidden="true"><line x1="1" y1="4" x2="25" y2="4" stroke-dasharray=${DASHES[types.indexOf(t) % DASHES.length] || undefined} /></svg>${t}</span>`)}
   </div>`;
 }
 

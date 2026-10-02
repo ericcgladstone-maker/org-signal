@@ -11,7 +11,7 @@
 // passed to open a given builder.
 
 import { html, useState, useEffect } from '../../../vendor/preact.js';
-import { ensureBuildCss, Tabs, storage } from './shared.js';
+import { ensureBuildCss, Tabs, storage, ViewHeader } from './shared.js';
 import { DrawEditor } from './draw/index.js';
 import { EgoBuilder } from './ego/index.js';
 import { RosterBuilder } from './roster/index.js';
@@ -34,14 +34,14 @@ export function BuildView({ tab: initialTab } = {}) {
   useEffect(() => { storage.set(TAB_KEY, tab); }, [tab]);
   const cur = TABS.find(t => t.id === tab) || TABS[0];
   const C = cur.C;
-  return html`<section class="ob ob-view" aria-labelledby="ob-build-title">
-    <header class="ob-head">
-      <span class="ob-meta">Build</span>
-      <h2 id="ob-build-title">${cur.title}</h2>
-      <p class="ob-lede">${cur.lede}</p>
-    </header>
+  return html`<section class="ob ob-view">
+    <${ViewHeader} title="Build" intro="Make a network by hand: draw it, interview one person about the people around them, record a roster, collect perceived networks, or paste a list of ties." />
     <${Tabs} tabs=${TABS} value=${cur.id} onChange=${setTab} label="Ways to build a network" />
-    <div role="tabpanel" id=${'obpanel-' + cur.id} aria-labelledby=${'obtab-' + cur.id}>
+    <div role="tabpanel" class="ob-stack" id=${'obpanel-' + cur.id} aria-labelledby=${'obtab-' + cur.id}>
+      <div class="ob-subhead">
+        <h2 class="ob-h">${cur.title}</h2>
+        <p class="ob-text">${cur.lede}</p>
+      </div>
       <${C} />
     </div>
   </section>`;

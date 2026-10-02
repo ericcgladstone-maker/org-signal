@@ -31,21 +31,21 @@ function GeneratorBox({ s, g, update }) {
   return html`<section class="ego-gen" aria-labelledby=${'gq-' + g.id}>
     <div class="ego-item-head">
       <h3 id=${'gq-' + g.id}>${g.name}</h3>
-      <span class="ob-meta">${named.length} of ${g.cap}</span>
+      <span class="meta">${named.length} of ${g.cap}</span>
     </div>
     ${g.prompt ? html`<p class="ego-prompt-text">${g.prompt}</p>` : null}
     <form class="ob-row ego-addname" onSubmit=${add}>
       <label class="visually-hidden" for=${'an-' + g.id}>Add a name for ${g.name}</label>
-      <input id=${'an-' + g.id} class="ob-input" value=${text} autocomplete="off" disabled=${full}
+      <input id=${'an-' + g.id} class="input" value=${text} autocomplete="off" disabled=${full}
         placeholder=${full ? 'This question is full' : 'Type a name and press Enter'} onInput=${e => setText(e.target.value)} />
-      <button type="submit" class="ob-btn" disabled=${full || !text.trim()}>Add</button>
+      <button type="submit" class="btn" disabled=${full || !text.trim()}>Add</button>
     </form>
     <div aria-live="polite">${msg ? msg.map(m => html`<p class=${'ob-note ' + (m.level === 'warn' ? 'ob-warn' : '')}>${m.text}</p>`) : null}</div>
     ${named.length ? html`<ul class="ego-names">
       ${named.map(a => html`<li key=${a.id}>
         <span>${a.label}</span>
         ${a.generators.length > 1 ? html`<span class="ob-note">also ${a.generators.filter(x => x !== g.id).map(id => s.generators.find(q => q.id === id)?.name).join(', ')}</span>` : null}
-        <button type="button" class="ob-btn quiet sm" aria-label=${`Remove ${a.label} from ${g.name}`} onClick=${() => update(x => E.removeAlter(x, a.id, g.id))}>Remove</button>
+        <button type="button" class="btn btn--sm btn--quiet" aria-label=${`Remove ${a.label} from ${g.name}`} onClick=${() => update(x => E.removeAlter(x, a.id, g.id))}>Remove</button>
       </li>`)}
     </ul>` : null}
   </section>`;
@@ -56,12 +56,12 @@ export function NamesStep({ s, update }) {
   return html`<div class="ob-stack">
     ${s.generators.map(g => html`<${GeneratorBox} key=${g.id} s=${s} g=${g} update=${update} />`)}
     ${s.alters.length ? html`<div class="ob-section">
-      <h3>Everyone named <span class="ob-meta">${s.alters.length}</span></h3>
-      <div class="ob-tablewrap"><table class="ob-table">
+      <h3>Everyone named <span class="meta">${s.alters.length}</span></h3>
+      <div class="table-wrap"><table class="tbl">
         <thead><tr><th scope="col">Name</th>${s.generators.map(g => html`<th scope="col">${g.name}</th>`)}</tr></thead>
         <tbody>${s.alters.map(a => html`<tr key=${a.id}>
           <th scope="row"><label class="visually-hidden" for=${'rn-' + a.id}>Name</label>
-            <input id=${'rn-' + a.id} class="ob-input" value=${a.label} onChange=${e => update(x => E.renameAlter(x, a.id, e.target.value))} /></th>
+            <input id=${'rn-' + a.id} class="input" value=${a.label} onChange=${e => update(x => E.renameAlter(x, a.id, e.target.value))} /></th>
           ${s.generators.map(g => html`<td>${a.generators.includes(g.id) ? 'named' : ''}</td>`)}
         </tr>`)}</tbody>
       </table></div>
@@ -76,12 +76,12 @@ function Cell({ it, a, update, r, c }) {
   const label = `${it.label} for ${a.label}`;
   if (it.type === 'categorical' || it.type === 'ordinal' || it.type === 'boolean') {
     const options = it.type === 'boolean' ? [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] : it.options || [];
-    return html`<select id=${id} class="ob-select" aria-label=${label} data-r=${r} data-c=${c} value=${String(v)} onChange=${e => set(e.target.value)}>
+    return html`<select id=${id} class="select" aria-label=${label} data-r=${r} data-c=${c} value=${String(v)} onChange=${e => set(e.target.value)}>
       <option value="">-</option>
       ${options.map(o => html`<option value=${o.value}>${o.label}</option>`)}
     </select>`;
   }
-  return html`<input id=${id} class="ob-input" aria-label=${label} data-r=${r} data-c=${c}
+  return html`<input id=${id} class="input" aria-label=${label} data-r=${r} data-c=${c}
     type=${it.type === 'number' ? 'number' : it.type === 'date' ? 'date' : 'text'} value=${v} onChange=${e => set(e.target.value)} />`;
 }
 
@@ -103,7 +103,7 @@ export function DescribeStep({ s, update }) {
   const p = E.progress(s);
   return html`<div class="ob-stack">
     <p class="ob-note">${p.answered} of ${p.cells} answers filled. Enter moves down a column, Tab moves across.</p>
-    <div class="ob-tablewrap" ref=${ref} onKeyDown=${onKey}><table class="ob-table ego-describe">
+    <div class="table-wrap" ref=${ref} onKeyDown=${onKey}><table class="tbl ego-describe">
       <thead><tr><th scope="col">Name</th>${s.interpreters.map(it => html`<th scope="col">${it.label}</th>`)}</tr></thead>
       <tbody>${s.alters.map((a, r) => html`<tr key=${a.id}>
         <th scope="row">${a.label}</th>

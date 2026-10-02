@@ -12,23 +12,31 @@ function ContextSorter({ s, update }) {
   const [name, setName] = useState('');
   const unused = E.CONTEXT_PRESETS.filter(p => !s.contexts.some(c => c.name.toLowerCase() === p.toLowerCase()));
   const placed = new Set(s.contexts.flatMap(c => c.members));
+  const [msg, setMsg] = useState(null);
+  // A new setting starts with the people whose answers place them in it.
+  const add = n => {
+    const pre = E.suggestedMembers(s, n).length;
+    update(x => E.addContext(x, n));
+    setMsg(pre ? `${n} starts with ${pre} ${pre === 1 ? 'person' : 'people'} whose answers say ${n}; untick anyone who does not belong.` : null);
+  };
   return html`<div class="ob-stack">
     <p class="ob-note">Sort the people named into the settings they come from. People in the same setting are assumed to know each other; fix the exceptions below. A person can be in more than one setting.</p>
     <div class="ob-row">
-      ${unused.map(p => html`<button type="button" class="ob-btn sm" onClick=${() => update(x => E.addContext(x, p))}>Add ${p}</button>`)}
-      <form class="ob-row" onSubmit=${e => { e.preventDefault(); if (name.trim()) { update(x => E.addContext(x, name)); setName(''); } }}>
+      ${unused.map(p => html`<button type="button" class="btn btn--sm" onClick=${() => add(p)}>Add ${p}</button>`)}
+      <form class="ob-row" onSubmit=${e => { e.preventDefault(); if (name.trim()) { add(name.trim()); setName(''); } }}>
         <label class="visually-hidden" for="ego-ctx-name">New setting name</label>
-        <input id="ego-ctx-name" class="ob-input sm" style="width:11rem" placeholder="Other setting" value=${name} onInput=${e => setName(e.target.value)} />
-        <button type="submit" class="ob-btn sm" disabled=${!name.trim()}>Add</button>
+        <input id="ego-ctx-name" class="input input--sm" style="width:11rem" placeholder="Other setting" value=${name} onInput=${e => setName(e.target.value)} />
+        <button type="submit" class="btn btn--sm" disabled=${!name.trim()}>Add</button>
       </form>
     </div>
-    ${s.contexts.length ? html`<div class="ob-tablewrap"><table class="ob-table ego-ctx">
+    ${msg ? html`<p class="ob-note" role="status">${msg}</p>` : null}
+    ${s.contexts.length ? html`<div class="table-wrap"><table class="tbl ego-ctx">
       <caption class="visually-hidden">Which setting each person belongs to</caption>
-      <thead><tr><th scope="col">Name</th>
+      <thead><tr><th scope="col">Person</th>
         ${s.contexts.map((c, i) => html`<th scope="col"><div class="ego-ctx-head">
           <span class="ego-ctx-line"><span class="ob-dot" style=${'background:' + groupColor(i)}></span>
-          <input class="ob-input sm ego-ctx-name" aria-label="Setting name" value=${c.name} onChange=${e => update(x => E.renameContext(x, c.id, e.target.value))} /></span>
-          <button type="button" class="ob-btn quiet sm" aria-label=${'Remove setting ' + c.name} onClick=${() => update(x => E.removeContext(x, c.id))}>Remove</button></div></th>`)}
+          <input class="input input--sm ego-ctx-name" aria-label="Setting name" value=${c.name} onChange=${e => update(x => E.renameContext(x, c.id, e.target.value))} /></span>
+          <button type="button" class="tlink tlink--quiet" aria-label=${'Delete the setting ' + c.name} onClick=${() => update(x => E.removeContext(x, c.id))}>Delete setting</button></div></th>`)}
       </tr></thead>
       <tbody>${s.alters.map(a => html`<tr key=${a.id}>
         <th scope="row">${a.label}${placed.has(a.id) ? '' : html` <span class="ob-note">unsorted</span>`}</th>
@@ -76,21 +84,22 @@ function TieCanvas({ s, update }) {
     setPick(null);
   };
   const pickedLabel = pick && s.alters.find(a => a.id === pick)?.label;
+  // Setting names sit outside the circle, pushed out from the center, and
+  // never on top of one another (placeLabels).
+  const hulls = s.contexts.map((c, i) => {
+    const pts = c.members.map(m => pos.get(m)).filter(Boolean);
+    if (!pts.length) return null;
+    const cx = pts.reduce((t, p) => t + p.x, 0) / pts.length, cy = pts.reduce((t, p) => t + p.y, 0) / pts.length;
+    const dx = cx - W / 2, dy = cy - H / 2, d = Math.hypot(dx, dy) || 1;
+    const anchor = Math.abs(dx) < 20 ? 'middle' : dx > 0 ? 'start' : 'end';
+    return { c, i, pts, x: W / 2 + (dx / d) * (R + 70), y: H / 2 + (dy / d) * (R + 62), anchor, w: c.name.length * 8.6 + 6 };
+  }).filter(Boolean);
+  const labelY = E.placeLabels(hulls, { lineH: 15, midY: H / 2 });
   return html`<div class="ob-stack" style="gap:.4rem">
     <p class="ob-note" aria-live="polite">${pickedLabel ? `${pickedLabel} selected. Click another person to add or remove their tie, or click ${pickedLabel} again to cancel.` : 'Click two people to add or remove the tie between them. Solid lines come from shared settings; accent lines are ties you added.'}</p>
     <svg class="ego-canvas" viewBox=${`0 0 ${W} ${H}`} role="group" aria-label="Who knows whom">
-      ${s.contexts.map((c, i) => {
-        const pts = c.members.map(m => pos.get(m)).filter(Boolean);
-        if (!pts.length) return null;
-        const cx = pts.reduce((t, p) => t + p.x, 0) / pts.length, cy = pts.reduce((t, p) => t + p.y, 0) / pts.length;
-        // Label pushed outward from the centre, beyond the alter labels.
-        const dx = cx - W / 2, dy = cy - H / 2, d = Math.hypot(dx, dy) || 1;
-        const lx = W / 2 + (dx / d) * (R + 70), ly = H / 2 + (dy / d) * (R + 62);
-        return html`<g key=${c.id}>
-          <path class="ego-hull" d=${hullPath(pts)} style=${`fill:${groupColor(i)};stroke:${groupColor(i)}`} />
-          <text class="ego-hull-label" x=${lx} y=${ly} text-anchor=${Math.abs(dx) < 20 ? 'middle' : dx > 0 ? 'start' : 'end'} style=${'fill:' + groupColor(i)}>${c.name}</text>
-        </g>`;
-      })}
+      ${hulls.map(h => html`<path key=${'h' + h.c.id} class="ego-hull" d=${hullPath(h.pts)} style=${`fill:${groupColor(h.i)};stroke:${groupColor(h.i)}`} />`)}
+      ${hulls.map((h, k) => html`<text key=${'t' + h.c.id} class="ego-hull-label" x=${h.x} y=${labelY[k]} text-anchor=${h.anchor} style=${'fill:' + groupColor(h.i)}>${h.c.name}</text>`)}
       ${ties.filter(t => t.on).map(t => {
         const a = pos.get(t.a), b = pos.get(t.b);
         return html`<line key=${t.key} class=${'ego-tie' + (t.source === 'added' ? ' added' : '')} x1=${a.x} y1=${a.y} x2=${b.x} y2=${b.y} />`;
@@ -127,15 +136,15 @@ function PairList({ s, update }) {
   const shown = rows.slice(0, 400);
   return html`<div class="ob-stack" style="gap:.5rem">
     <div class="ob-row">
-      <div class="ob-field" style="flex:1 1 12rem"><label for="ego-pair-q">Filter pairs by name</label>
-        <input id="ego-pair-q" class="ob-input" value=${q} onInput=${e => setQ(e.target.value)} /></div>
-      <div class="ob-field" style="flex:0 1 12rem"><label for="ego-pair-only">Show</label>
-        <select id="ego-pair-only" class="ob-select" value=${only} onChange=${e => setOnly(e.target.value)}>
+      <div class="field" style="flex:1 1 12rem"><label class="field__label" for="ego-pair-q">Filter pairs by name</label>
+        <input id="ego-pair-q" class="input" value=${q} onInput=${e => setQ(e.target.value)} /></div>
+      <div class="field" style="flex:0 1 12rem"><label class="field__label" for="ego-pair-only">Show</label>
+        <select id="ego-pair-only" class="select" value=${only} onChange=${e => setOnly(e.target.value)}>
           <option value="all">All pairs</option><option value="on">Ties only</option><option value="exceptions">Exceptions only</option>
         </select></div>
     </div>
     <ul class="ego-pairs" aria-label="Pairs of people">
-      ${shown.map(p => html`<li key=${p.key}><label class="ob-check">
+      ${shown.map(p => html`<li key=${p.key}><label class="check">
         <input type="checkbox" checked=${p.on} onChange=${e => update(x => E.setTie(x, p.a, p.b, e.target.checked))} />
         <span>${byId.get(p.a).label} and ${byId.get(p.b).label} know each other</span></label>
         <span class="ob-note">${why[p.source]}</span></li>`)}

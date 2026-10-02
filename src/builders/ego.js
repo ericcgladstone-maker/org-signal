@@ -37,7 +37,7 @@ export const GENERATOR_PRESETS = [
   { id: 'support', name: 'Support', cap: 10,
     prompt: 'If you needed help, such as a loan, a ride, or care when you were ill, who would you ask?' },
   { id: 'work', name: 'Work', cap: 15,
-    prompt: 'Who do you work with most closely, inside or outside your organisation?' },
+    prompt: 'Who do you work with most closely, inside or outside your organization?' },
 ];
 
 const opts = list => list.map(([value, label]) => ({ value, label }));
@@ -45,14 +45,14 @@ const opts = list => list.map(([value, label]) => ({ value, label }));
 export const INTERPRETER_PRESETS = [
   { id: 'relationship', name: 'relationship', label: 'Relationship type', type: 'categorical',
     options: opts([['partner', 'Partner or spouse'], ['family', 'Family'], ['friend', 'Friend'], ['coworker', 'Coworker'],
-      ['neighbour', 'Neighbour'], ['group', 'Group member'], ['adviser', 'Adviser'], ['other', 'Other']]) },
+      ['neighbor', 'Neighbor'], ['group', 'Group member'], ['adviser', 'Adviser'], ['other', 'Other']]) },
   { id: 'closeness', name: 'closeness', label: 'Closeness (1 to 5)', type: 'ordinal',
     options: opts([['1', '1 Distant'], ['2', '2'], ['3', '3'], ['4', '4'], ['5', '5 Very close']]) },
   { id: 'contact_freq', name: 'contact_freq', label: 'Contact frequency', type: 'ordinal',
     options: opts([['5', 'Daily'], ['4', 'Weekly'], ['3', 'Monthly'], ['2', 'Less than monthly'], ['1', 'Yearly or less']]) },
   { id: 'how_met', name: 'how_met', label: 'How met', type: 'categorical',
-    options: opts([['family', 'Family'], ['school', 'School'], ['work', 'Work'], ['neighbourhood', 'Neighbourhood'],
-      ['organisation', 'Club or organisation'], ['online', 'Online'], ['friend', 'Through a friend'], ['other', 'Other']]) },
+    options: opts([['family', 'Family'], ['school', 'School'], ['work', 'Work'], ['neighborhood', 'Neighborhood'],
+      ['organization', 'Club or organization'], ['online', 'Online'], ['friend', 'Through a friend'], ['other', 'Other']]) },
   { id: 'years_known', name: 'years_known', label: 'Years known', type: 'number' },
   { id: 'age_band', name: 'age_band', label: 'Age band', type: 'ordinal',
     options: opts([['1', 'Under 18'], ['2', '18 to 29'], ['3', '30 to 44'], ['4', '45 to 64'], ['5', '65 or older']]) },
@@ -61,7 +61,7 @@ export const INTERPRETER_PRESETS = [
       ['region', 'Same region'], ['farther', 'Farther']]) },
 ];
 
-export const CONTEXT_PRESETS = ['Work', 'Family', 'School', 'Neighbourhood', 'Other'];
+export const CONTEXT_PRESETS = ['Work', 'Family', 'School', 'Neighborhood', 'Other'];
 
 export const STEPS = [
   { id: 'generators', label: 'Name generators' },
@@ -219,9 +219,40 @@ export function setInterpreter(s, alterId, name, value) {
 
 // ---- contexts and alter-alter ties -----------------------------------------
 
-export function addContext(s, name) {
+// A new setting starts with the people whose answers already place them in
+// it: How met "School" puts them in School, relationship "Coworker" in Work,
+// and so on (pass { fromAnswers: false } for an empty one).
+export function addContext(s, name, { fromAnswers = true } = {}) {
   const n = String(name || '').trim() || `Context ${s.contexts.length + 1}`;
-  return set(s, { contexts: [...s.contexts, { id: uid('c'), name: n, members: [] }] });
+  const members = fromAnswers ? suggestedMembers(s, n) : [];
+  return set(s, { contexts: [...s.contexts, { id: uid('c'), name: n, members }] });
+}
+
+// Answer values that also mean a setting, beyond the setting's own name.
+const SETTING_WORDS = {
+  work: ['work', 'coworker', 'colleague', 'job'],
+  family: ['family', 'partner', 'spouse', 'relative'],
+  school: ['school', 'classmate', 'university', 'college'],
+  neighborhood: ['neighborhood', 'neighbourhood', 'neighbor', 'neighbour'],
+};
+
+// Alters whose categorical answers (value or option label) name the setting.
+export function suggestedMembers(s, name) {
+  const key = normName(name);
+  const words = new Set([key, ...(SETTING_WORDS[key] || [])]);
+  if (key === 'other') return [];
+  const out = [];
+  for (const a of s.alters) {
+    const hit = s.interpreters.some(it => {
+      if (it.type !== 'categorical') return false;
+      const v = a.attrs[it.name];
+      if (v === undefined || v === '') return false;
+      const opt = (it.options || []).find(o => String(o.value) === String(v));
+      return words.has(normName(v)) || (opt && words.has(normName(opt.label)));
+    });
+    if (hit) out.push(a.id);
+  }
+  return out;
 }
 
 export function renameContext(s, id, name) {
@@ -232,7 +263,7 @@ export function removeContext(s, id) {
   return set(s, { contexts: s.contexts.filter(c => c.id !== id) });
 }
 
-// An alter may belong to several contexts (a coworker who is also a neighbour).
+// An alter may belong to several contexts (a coworker who is also a neighbor).
 export function assignContext(s, alterId, contextId, on = true) {
   return set(s, {
     contexts: s.contexts.map(c => {
@@ -314,6 +345,43 @@ export function progress(s) {
   };
   const vals = Object.values(steps);
   return { steps, fraction: vals.reduce((x, y) => x + y, 0) / vals.length, answered, cells: nA * nI };
+}
+
+// Labels that must not overlap (setting names around the who-knows-whom
+// circle): items [{ x, y, w, anchor: 'start'|'middle'|'end' }] in drawing
+// units, w the label's width. Later labels that would overlap an earlier one
+// move down (or up, when below the middle line) in steps of lineH until they
+// are clear. Returns the new y for each item, in input order.
+export function placeLabels(items, { lineH = 14, midY = null } = {}) {
+  const box = (it, y) => {
+    const x0 = it.anchor === 'end' ? it.x - it.w : it.anchor === 'middle' ? it.x - it.w / 2 : it.x;
+    return { x0, x1: x0 + it.w, y0: y - lineH * 0.8, y1: y + lineH * 0.2 };
+  };
+  const hit = (a, b) => a.x0 < b.x1 + 4 && b.x0 < a.x1 + 4 && a.y0 < b.y1 && b.y0 < a.y1;
+  const placed = [];
+  return items.map(it => {
+    const dir = midY !== null && it.y < midY ? -1 : 1;
+    let y = it.y;
+    for (let k = 0; k < 40 && placed.some(p => hit(p, box(it, y))); k++) y += dir * lineH;
+    placed.push(box(it, y));
+    return y;
+  });
+}
+
+// What is left to do, in words, for the review step.
+export function todo(s) {
+  const p = progress(s);
+  const out = [];
+  if (!s.generators.length) out.push('choose at least one question that asks for names');
+  const empty = s.generators.filter(g => generatorCount(s, g.id) === 0);
+  if (empty.length) out.push(`no names yet for ${empty.map(g => `"${g.name}"`).join(', ')}`);
+  if (p.cells && p.answered < p.cells) out.push(`${p.cells - p.answered} of ${p.cells} descriptions still blank`);
+  if (s.alters.length >= 2) {
+    const placed = new Set(s.contexts.flatMap(c => c.members));
+    const loose = s.alters.filter(a => !placed.has(a.id)).length;
+    if (loose) out.push(`${loose} ${loose === 1 ? 'person is' : 'people are'} not in any setting (their ties come only from the pairs you set by hand)`);
+  }
+  return out;
 }
 
 // ---- Dataset ---------------------------------------------------------------
@@ -416,12 +484,16 @@ export function ncPrefix(s) {
 }
 
 export function generatorColumn(g) { return 'gen_' + varName(g.name); }
+export function settingColumn(c) { return 'setting_' + varName(c.name); }
 
 export function toNetworkCanvasCSV(s, { exportedAt = new Date().toISOString() } = {}) {
   const prefix = ncPrefix(s);
-  const egoVars = Object.keys(s.egoAttrs || {});
-  const egoRows = [[...NC.egoFixed, ...egoVars],
-    [s.egoId, s.caseId || '', s.id, s.protocolName || '', s.startedAt || '', s.finishedAt || '', exportedAt, APP_VERSION, '', ...egoVars.map(k => s.egoAttrs[k])]];
+  // The respondent's name goes in a `name` ego variable (as Network Canvas
+  // protocols usually ask it); an unfinished session counts as finished when
+  // it is exported, so sessionFinish is never blank.
+  const egoVars = Object.keys(s.egoAttrs || {}).filter(k => k !== 'name');
+  const egoRows = [[...NC.egoFixed, 'name', ...egoVars],
+    [s.egoId, s.caseId || '', s.id, s.protocolName || '', s.startedAt || '', s.finishedAt || exportedAt, exportedAt, APP_VERSION, '', s.egoLabel || '', ...egoVars.map(k => s.egoAttrs[k])]];
 
   const attrCols = [];
   for (const it of s.interpreters) {
@@ -429,7 +501,9 @@ export function toNetworkCanvasCSV(s, { exportedAt = new Date().toISOString() } 
     else attrCols.push({ col: it.name, it });
   }
   const genCols = s.generators.map(g => ({ col: generatorColumn(g), g }));
-  const alterRows = [[...NC.alterFixed, ...attrCols.map(c => c.col), ...genCols.map(c => c.col)]];
+  // Settings from the who-knows-whom step, one true/false column each.
+  const setCols = s.contexts.map(c => ({ col: settingColumn(c), c }));
+  const alterRows = [[...NC.alterFixed, ...attrCols.map(c => c.col), ...genCols.map(c => c.col), ...setCols.map(c => c.col)]];
   const nodeID = new Map();
   s.alters.forEach((a, i) => {
     nodeID.set(a.id, i + 1);
@@ -440,7 +514,8 @@ export function toNetworkCanvasCSV(s, { exportedAt = new Date().toISOString() } 
         if (raw === undefined) return '';
         return c.it.type === 'boolean' ? coerce(raw, 'boolean') : raw;
       }),
-      ...genCols.map(c => a.generators.includes(c.g.id))]);
+      ...genCols.map(c => a.generators.includes(c.g.id)),
+      ...setCols.map(c => c.c.members.includes(a.id))]);
   });
   const byId = new Map(s.alters.map(a => [a.id, a]));
   const edgeRows = [[...NC.edgeFixed]];
@@ -485,9 +560,9 @@ export function fromNetworkCanvasCSV(files, { template } = {}) {
     s.protocolName = unguard(egoRow.networkCanvasProtocolName) || s.protocolName;
     s.startedAt = egoRow.sessionStart || s.startedAt;
     s.finishedAt = egoRow.sessionFinish || null;
-    for (const k of egoT.headers) if (!NC.egoFixed.includes(k) && egoRow[k] !== '') s.egoAttrs[k] = unguard(egoRow[k]);
+    for (const k of egoT.headers) if (!NC.egoFixed.includes(k) && k !== 'name' && egoRow[k] !== '') s.egoAttrs[k] = unguard(egoRow[k]);
   }
-  s.egoLabel = s.caseId || 'Respondent';
+  s.egoLabel = unguard(egoRow?.name || '') || s.caseId || 'Respondent';
   const records = altT.records.filter(r => !r.networkCanvasEgoUUID || r.networkCanvasEgoUUID === s.egoId);
   const extra = altT.headers.filter(h => !NC.alterFixed.includes(h));
 
@@ -500,10 +575,13 @@ export function fromNetworkCanvasCSV(files, { template } = {}) {
   }
   if (!s.generators.length) s.generators.push({ id: uid('g'), name: 'Named', prompt: '', cap: Math.max(10, records.length) });
   const genByCol = new Map(genCols.map((c, i) => [c, s.generators[i]]));
+  const tCtx = new Map((template?.contexts || []).map(c => [settingColumn(c), c.name]));
+  const setCols = extra.filter(h => /^setting_/.test(h));
+  const ctxByCol = new Map(setCols.map(c => [c, { id: uid('c'), name: tCtx.get(c) || c.slice(8).replace(/_/g, ' ').replace(/^\w/, x => x.toUpperCase()), members: [] }]));
 
   // Categorical groups: a template interpreter claims its own columns; other
   // columns whose values are all true/false and share a stem form a group.
-  const rest = extra.filter(h => !genByCol.has(h));
+  const rest = extra.filter(h => !genByCol.has(h) && !ctxByCol.has(h));
   const claimed = new Set();
   for (const it of template?.interpreters || []) {
     if (it.type === 'categorical') {
@@ -541,15 +619,25 @@ export function fromNetworkCanvasCSV(files, { template } = {}) {
         if (hit) a.attrs[it.name] = hit.value;
       } else if (r[it.name] !== undefined && r[it.name] !== '') a.attrs[it.name] = unguard(r[it.name]);
     }
+    for (const [col, c] of ctxByCol) if (/^true$/i.test(r[col] ?? '')) c.members.push(a.id);
     byNodeID.set(String(r.nodeID), a);
     s.alters.push(a);
   }
+  s.contexts = [...ctxByCol.values()];
   const byUUID = new Map(s.alters.map(a => [a.uuid, a]));
+  const present = new Set();
   if (edgeT) for (const r of edgeT.records) {
     if (r.networkCanvasEgoUUID && r.networkCanvasEgoUUID !== s.egoId) continue;
     const a = byUUID.get(r.networkCanvasSourceUUID) || byNodeID.get(String(r.from));
     const b = byUUID.get(r.networkCanvasTargetUUID) || byNodeID.get(String(r.to));
-    if (a && b && a !== b) s.ties[pairKey(a.id, b.id)] = true;
+    if (a && b && a !== b) present.add(pairKey(a.id, b.id));
+  }
+  // The edge list is the final answer; with settings restored, only the pairs
+  // that differ from what the settings imply are kept as exceptions.
+  const implied = impliedTies(s);
+  for (let i = 0; i < s.alters.length; i++) for (let j = i + 1; j < s.alters.length; j++) {
+    const k = pairKey(s.alters[i].id, s.alters[j].id);
+    if (present.has(k) !== implied.has(k)) s.ties[k] = present.has(k);
   }
   s.step = 'review';
   return s;

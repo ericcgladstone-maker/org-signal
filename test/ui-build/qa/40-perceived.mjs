@@ -8,7 +8,7 @@ export async function run({ page, open, shot, assert, step }) {
   await clickText(page, 'button', 'Add to roster');
   step('informants');
   await clickText(page, 'button', 'Next: Informants');
-  for (const n of ['Ann', 'Bo', 'Cy']) await clickText(page, 'label.ob-check', n);
+  for (const n of ['Ann', 'Bo', 'Cy']) await clickText(page, 'label.check', n);
   await page.waitForFunction(() => document.body.textContent.includes('3 informants'));
   await shot('1-informants');
   step('reports');
@@ -23,7 +23,7 @@ export async function run({ page, open, shot, assert, step }) {
   step('results');
   await clickText(page, 'button', 'Next: Compare');
   await page.waitForFunction(() => document.body.textContent.includes('How each informant compares'));
-  const rows = await page.$$eval('.ob-table tbody tr', trs => trs.length);
+  const rows = await page.$$eval('.tbl tbody tr', trs => trs.length);
   assert.ok(rows >= 3);
   await shot('3-results');
   await clickText(page, 'button', 'Analyze this network');

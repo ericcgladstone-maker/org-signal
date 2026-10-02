@@ -12,7 +12,7 @@ export async function run({ page, open, shot, assert, step }) {
   step('relations');
   await clickText(page, 'button', 'Next: Relations');
   await clickText(page, 'label', 'Advice');
-  await page.waitForSelector('.ob-table input[aria-label="Relation name"]');
+  await page.waitForSelector('.tbl input[aria-label="Relation name"]');
   await shot('2-relations');
   step('grid');
   await clickText(page, 'button', 'Next: Collect ties');
@@ -36,10 +36,10 @@ export async function run({ page, open, shot, assert, step }) {
   assert.ok(Math.abs(headTop) < 3, 'header row stays at the top of the grid');
   await shot('3-grid');
   step('multi mode');
-  await clickText(page, 'span', 'Each member answers a survey');
+  await clickText(page, '.seg button', 'Each member answers a survey');
   await page.waitForFunction(() => document.body.textContent.includes('Template, Google Forms shape'));
   await shot('4-multi');
-  await clickText(page, 'span', 'One informant fills the grid');
+  await clickText(page, '.seg button', 'One informant fills the grid');
   step('review');
   await clickText(page, 'button', 'Next: Review');
   await clickText(page, 'button', 'Analyze this network');
@@ -47,6 +47,17 @@ export async function run({ page, open, shot, assert, step }) {
   const r = await page.evaluate(() => { const ds = window.__harness.loaded[0].ds; return { n: ds.nodes.count, e: ds.events.count, view: ds.meta.sources[0].view, ctx: ds.meta.sources[0].context }; });
   assert.deepEqual(r, { n: 60, e: 5, view: 'full', ctx: 'survey' });
   await shot('5-review');
+
+  step('a survey responses file pasted as names starts a survey roster');
+  const form = ['Timestamp,Your name,Who do you spend free time with? [Ann Lee],Who do you spend free time with? [Bo Park],Who do you spend free time with? [Cy Ortiz]',
+    '9/15/2025 9:44:01,Ann Lee,,Yes,Yes', '9/15/2025 9:50:12,Bo Park,Yes,,'].join('\n');
+  await clickText(page, '.ob-steps button', 'Roster');
+  await page.$eval('#ob-roster-paste', (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }, form);
+  await clickText(page, 'button', 'Add to roster');
+  await page.waitForFunction(() => /Read 3 people, 1 question and 2 responses/.test(document.body.textContent));
+  const step3 = await page.$eval('.ob-steps li[aria-current="step"]', el => el.textContent);
+  assert.match(step3, /Collect ties/);
+  await shot('6-from-survey');
 }
 
 export async function clickText(page, sel, text) {

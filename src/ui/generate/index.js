@@ -3,27 +3,98 @@
 //
 // The form is driven entirely by the generator's listContexts(); only valid
 // combinations are selectable (invalid ones stay visible, disabled, with the
-// reason). Generation runs in a module worker with progress and cancel.
-// After "Generate and analyze", a recovery check compares what the analysis
-// finds with the structure that was planted.
+// reason in words). Generation runs in a module worker with progress and
+// cancel.
+//
+// "Generate and analyze" loads the dataset and records the world behind it in
+// store.generated = { datasetName, spec, groundTruth, recovery, runId, people,
+// events }, then runs the recovery check, which compares what the analysis
+// finds with what was planted. Both live outside this component (the store,
+// and runState below for the job in progress and the last download), so
+// leaving the view and coming back keeps the run, its progress and its
+// recovery check; the Network view shows a short banner from the same store
+// field.
 
 import { html, useState, useEffect } from '../../../vendor/preact.js';
-import { options, defaultForm, applyChange, toSpec, describe, sizeNote } from '../../builders/generate-spec.js';
-import { ensureBuildCss, Unavailable, downloadBlob, storage } from '../build/shared.js';
+import { store, useStore } from '../store.js';
+import { options, defaultForm, applyChange, toSpec, describe, sizeNote, friendlyError, fmtDay } from '../../builders/generate-spec.js';
+import { ensureBuildCss, Unavailable, downloadBlob, downloadText, storage, ViewHeader } from '../build/shared.js';
 import { handOff, notify } from '../build/service.js';
 import { loadContexts, startGenerate, startRecovery } from './service.js';
+import { groundTruthJSON, readmeText } from './pack.js';
 
 const FORM_KEY = 'orgsignal.generate.form';
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+
+// ---- run state shared across mounts -----------------------------------------
+// job: { output, fraction, message, cancel } while a run is going;
+// err: the last failure; native: the last download; check: the recovery
+// check's own state ({ busy } | { error } | { missing }) beside the report in
+// store.generated.recovery.
+const runState = { job: null, err: null, native: null, check: null };
+const runSubs = new Set();
+function setRun(patch) {
+  Object.assign(runState, typeof patch === 'function' ? patch(runState) : patch);
+  for (const f of runSubs) f({ ...runState });
+}
+function useRun() {
+  const [s, set] = useState(() => ({ ...runState }));
+  useEffect(() => { runSubs.add(set); set({ ...runState }); return () => runSubs.delete(set); }, []);
+  return s;
+}
+
+// The dataset a recovery check reads when the worker no longer holds the run.
+function generatedDataset(g) {
+  const st = store.get();
+  return [st.dataset, ...(st.datasets || [])].find(d => d && d.meta?.name === g.datasetName) || null;
+}
+
+export async function runRecoveryCheck() {
+  const g = store.get().generated;
+  if (!g) return;
+  setRun({ check: { busy: true } });
+  try {
+    const res = await startRecovery({ seed: Number(g.spec?.seed) || 1, runId: g.runId, groundTruth: g.groundTruth, dataset: generatedDataset(g) });
+    // Only keep it if the same world is still the generated one.
+    if (store.get().generated !== g) return;
+    if (res.report) { store.set({ generated: { ...g, recovery: res.report } }); setRun({ check: null }); }
+    else setRun({ check: res.missing ? { missing: res.missing } : { error: 'The recovery check returned nothing.' } });
+  } catch (e) {
+    setRun({ check: { error: friendlyError(e.message) } });
+  }
+}
+
+async function generateRun(form, output) {
+  const spec = toSpec(form, { output });
+  const { promise, cancel, runId } = startGenerate(spec, { onProgress: (fraction, message) => setRun(r => ({ job: r.job ? { ...r.job, fraction, message } : r.job })) });
+  setRun({ job: { output, fraction: 0, message: 'Starting', cancel }, err: null });
+  try {
+    const res = await promise;
+    setRun({ job: null });
+    if (output === 'native') {
+      const d = res.download;
+      downloadBlob(d.name, new Blob([d.bytes], { type: d.type }));
+      setRun({ native: { spec, name: d.name, entries: d.entries, files: res.fileList, groundTruth: res.groundTruth } });
+      notify('info', `Downloaded ${d.name}.`);
+      return;
+    }
+    const ok = await handOff(res.dataset, { mode: 'replace' });
+    if (!ok) return;
+    store.set({ generated: { datasetName: res.dataset.meta.name, spec, groundTruth: res.groundTruth, recovery: null, runId, people: res.dataset.nodes.count, events: res.dataset.events.count } });
+    runRecoveryCheck();
+  } catch (e) {
+    setRun({ job: null, err: e.cancelled ? null : friendlyError(e.message, { size: spec.size }) });
+  }
+}
 
 export function GenerateView() {
   ensureBuildCss();
   const [state, setState] = useState(null); // { contexts, devFallback, error, recoveryAvailable }
   const [form, setForm] = useState(null);
   const [notes, setNotes] = useState([]);
-  const [job, setJob] = useState(null); // { output, fraction, message, cancel }
-  const [err, setErr] = useState(null);
-  const [last, setLast] = useState(null); // { spec, summary, fileList? }
-  const [recovery, setRecovery] = useState(null); // { busy } | { report } | { missing } | { error }
+  const run = useRun();
+  const generated = useStore(s => s.generated);
+  const loaded = useStore(s => s.dataset);
 
   useEffect(() => {
     let live = true;
@@ -38,75 +109,58 @@ export function GenerateView() {
   }, []);
   useEffect(() => { if (form) storage.set(FORM_KEY, form); }, [form]);
 
-  if (!state || !form) return html`<section class="ob ob-view"><p class="ob-note" role="status">Loading the generator...</p></section>`;
+  const head = html`<${ViewHeader} title="Generate" intro="Build a realistic world with known structure, then see whether the analysis finds it. Choose a setting, the medium people use, a scenario and what an export would show." />`;
+  if (!state || !form) return html`<section class="ob ob-view">${head}<p class="ob-note" role="status">Loading the generator...</p></section>`;
   const { contexts, devFallback } = state;
   const opt = options(contexts, form);
   const desc = describe(contexts, form);
   const ctx = contexts.find(c => c.id === form.context);
   const change = patch => { const r = applyChange(contexts, form, patch); setForm(r.form); setNotes(r.notes); };
-  const busy = !!job;
-
-  const run = async output => {
-    setErr(null); setRecovery(null);
-    const spec = toSpec(form, { output });
-    const { promise, cancel } = startGenerate(spec, { onProgress: (fraction, message) => setJob(j => (j ? { ...j, fraction, message } : j)) });
-    setJob({ output, fraction: 0, message: 'Starting', cancel });
-    try {
-      const res = await promise;
-      if (output === 'native') {
-        const name = `synthetic-${form.context}-${form.medium}-seed${form.seed}.zip`;
-        downloadBlob(name, new Blob([res.zip], { type: 'application/zip' }));
-        setLast({ spec, output, fileList: res.fileList, name });
-        notify('info', `Downloaded ${name} (${res.fileList.length} files).`);
-      } else {
-        const ok = await handOff(res.dataset, { mode: 'replace' });
-        setLast({ spec, output, nodes: res.dataset.nodes.count, events: res.dataset.events.count, loaded: ok, name: res.dataset.meta.name });
-      }
-    } catch (e) {
-      if (!e.cancelled) setErr(e.message);
-    } finally {
-      setJob(null);
-    }
-  };
-
-  const recover = async () => {
-    setRecovery({ busy: true });
-    try { setRecovery(await startRecovery({ seed: Number(form.seed) || 1 })); }
-    catch (e) { setRecovery({ error: e.message }); }
-  };
-
+  const busy = !!run.job;
   const sn = sizeNote(form.size);
   const nativeOk = desc.nativeAvailable;
+  const unavailable = items => items.filter(i => !i.enabled);
 
-  return html`<section class="ob ob-view ob-gen" aria-labelledby="ob-gen-title">
-    <header class="ob-head">
-      <span class="ob-meta">Generate</span>
-      <h2 id="ob-gen-title">Synthetic network</h2>
-      <p class="ob-lede">Build a realistic world with known structure, then see whether the analysis finds it. Choose a setting, the medium people use, a scenario and what an export would show.</p>
-    </header>
-
+  return html`<section class="ob ob-view ob-gen">
+    ${head}
     ${devFallback ? html`<${Unavailable} title="The generator is not available yet">
       The form below uses a small built-in outline of the settings for development only, so nothing can be generated. (${state.error})
     </${Unavailable}>` : null}
 
     <div class="ob-cols side">
       <form class="ob-stack" onSubmit=${e => e.preventDefault()} aria-describedby="ob-gen-summary">
-        <${Choices} legend="1. Setting" name="context" items=${opt.contexts} value=${form.context} onChange=${v => change({ context: v })}
-          help=${ctx?.description} />
-        <${Choices} legend="2. Medium" name="medium" items=${opt.media} value=${form.medium} onChange=${v => change({ medium: v })} />
+        <fieldset class="ob-fieldset">
+          <legend>1. Setting</legend>
+          <div class="radios">
+            ${opt.contexts.map(c => {
+              const d = contexts.find(x => x.id === c.id)?.description;
+              return html`<label class=${c.enabled ? 'radio' : 'radio radio--disabled'}>
+                <input type="radio" name="ob-gen-context" value=${c.id} checked=${form.context === c.id} disabled=${!c.enabled} onChange=${() => change({ context: c.id })} />
+                <span class="radio__name">${c.label}</span>
+                ${d || !c.enabled ? html`<span class="radio__desc">${d}${!c.enabled ? ` Not available: ${c.reason}.` : ''}</span>` : null}
+              </label>`;
+            })}
+          </div>
+        </fieldset>
+        <${SegChoice} legend="2. Medium" name="medium" items=${opt.media} value=${form.medium} onChange=${v => change({ medium: v })}
+          why=${unavailable(opt.media)} />
         ${opt.structures.length ? html`<fieldset class="ob-fieldset">
           <legend>3. Scenario</legend>
-          <div class="ob-stack" style="gap:.35rem">
-            ${opt.structures.map(s => html`<label class="ob-check ob-radioline">
-              <input type="radio" name="ob-gen-structure" checked=${form.structure === s.id} onChange=${() => change({ structure: s.id })} />
-              <span>${s.label}</span></label>`)}
+          <div class="radios">
+            ${opt.structures.map(s => {
+              // Preset labels read "Name: what it plants"; the name leads.
+              const [name, ...rest] = s.label.split(': ');
+              return html`<label class="radio">
+                <input type="radio" name="ob-gen-structure" value=${s.id} checked=${form.structure === s.id} onChange=${() => change({ structure: s.id })} />
+                <span class="radio__name">${name}</span>${rest.length ? html`<span class="radio__desc">${cap(rest.join(': '))}</span>` : null}</label>`;
+            })}
           </div>
         </fieldset>` : null}
         <fieldset class="ob-fieldset">
           <legend>4. Size</legend>
           <div class="ob-row">
             <label class="visually-hidden" for="ob-gen-size">${opt.size.label}</label>
-            <input id="ob-gen-size" class="ob-input" type="number" style="width:8rem" min=${opt.size.min} max=${opt.size.max} step="1" value=${form.size}
+            <input id="ob-gen-size" class="input" type="number" style="width:8rem" min=${opt.size.min} max=${opt.size.max} step="1" value=${form.size}
               aria-describedby="ob-gen-sizenote" onChange=${e => change({ size: Number(e.currentTarget.value) })} />
             <span class="ob-note">${opt.size.label.toLowerCase()}</span>
             <input class="ob-range" type="range" aria-label=${`${opt.size.label} (logarithmic slider)`}
@@ -115,138 +169,176 @@ export function GenerateView() {
           </div>
           <p id="ob-gen-sizenote" class=${sn.level === 'warn' ? 'ob-note ob-warn' : 'ob-note'}>${sn.text}</p>
         </fieldset>
-        <${Choices} legend="5. Message text" name="content" items=${opt.content} value=${form.content} onChange=${v => change({ content: v })}
+        <${SegChoice} legend="5. Message text" name="content" items=${opt.content} value=${form.content} onChange=${v => change({ content: v })}
           help=${opt.content.find(c => c.id === form.content)?.help} />
-        <${Choices} legend="6. What the export shows" name="observation" items=${opt.observations} value=${form.observation} onChange=${v => change({ observation: v })}
-          help=${opt.observations.find(o => o.id === form.observation)?.help} />
+        <${SegChoice} legend="6. What the export shows" name="observation" items=${opt.observations} value=${form.observation} onChange=${v => change({ observation: v })}
+          help=${opt.observations.find(o => o.id === form.observation)?.help} why=${unavailable(opt.observations)} caution=${desc.caution} />
         <fieldset class="ob-fieldset">
           <legend>7. Time and seed</legend>
-          <div class="ob-row">
-            <div class="ob-field" style="width:8rem"><label for="ob-gen-days">Days</label>
-              <input id="ob-gen-days" class="ob-input" type="number" min="1" max="3650" value=${form.days} onChange=${e => change({ days: Math.max(1, Number(e.currentTarget.value) || 1) })} /></div>
-            <div class="ob-field" style="width:10rem"><label for="ob-gen-start">Start</label>
-              <input id="ob-gen-start" class="ob-input" type="date" value=${form.start || ''} onChange=${e => change({ start: e.currentTarget.value || null })} /></div>
-            <div class="ob-field" style="width:8rem"><label for="ob-gen-seed">Seed</label>
-              <input id="ob-gen-seed" class="ob-input" type="number" min="1" value=${form.seed} onChange=${e => change({ seed: Math.max(1, Number(e.currentTarget.value) || 1) })} /></div>
-            <button type="button" class="ob-btn" style="align-self:flex-end" onClick=${() => change({ seed: 1 + Math.floor(Math.random() * 99999) })}>New seed</button>
+          <div class="ob-row" style="align-items:flex-end">
+            <div class="field" style="width:8rem"><label class="field__label" for="ob-gen-days">Days</label>
+              <input id="ob-gen-days" class="input" type="number" min="1" max="3650" value=${form.days} onChange=${e => change({ days: Math.max(1, Number(e.currentTarget.value) || 1) })} /></div>
+            <div class="field" style="width:10.5rem"><label class="field__label" for="ob-gen-start">Start</label>
+              <input id="ob-gen-start" class="input" type="date" value=${form.start || ''} onChange=${e => change({ start: e.currentTarget.value || null })} /></div>
+            <div class="field" style="width:8rem"><label class="field__label" for="ob-gen-seed">Seed</label>
+              <input id="ob-gen-seed" class="input" type="number" min="1" value=${form.seed} onChange=${e => change({ seed: Math.max(1, Number(e.currentTarget.value) || 1) })} /></div>
+            <button type="button" class="tlink ob-gen-newseed" onClick=${() => change({ seed: 1 + Math.floor(Math.random() * 99999) })}>New seed</button>
           </div>
         </fieldset>
         ${opt.params.length ? html`<details class="ob-fieldset ob-advanced">
-          <summary class="ob-linkbtn">Advanced parameters for ${ctx?.label.toLowerCase()}</summary>
-          <p class="ob-note">Blank means the scenario's or the generator's default.</p>
+          <summary class="tlink">Advanced parameters for ${ctx?.label.toLowerCase()}</summary>
+          <p class="ob-note">Blank means the scenario's or the generator's default, shown under each field.</p>
           <div class="ob-grid-form">${opt.params.map(p => html`<${Param} p=${p} value=${form.params?.[p.key]}
             preset=${ctx?.presets.find(x => x.id === form.structure)?.params?.[p.key]}
             onChange=${v => change({ params: { ...form.params, [p.key]: v } })} />`)}</div>
-          <button type="button" class="ob-btn quiet sm" onClick=${() => change({ params: {} })}>Reset to defaults</button>
+          <button type="button" class="tlink" onClick=${() => change({ params: {} })}>Reset to defaults</button>
         </details>` : null}
       </form>
 
       <aside class="ob-stack ob-gen-aside" aria-label="Summary and actions">
         <div class="ob-stack" id="ob-gen-summary" style="gap:.5rem">
-          <span class="ob-label">What will be generated</span>
-          <p class="ob-note" style="color:var(--text-2)">${desc.what}</p>
+          <h2 class="ob-h">What will be generated</h2>
+          <p class="ob-text">${desc.what}</p>
           <p class="ob-note">${desc.export}</p>
+          ${desc.caution ? html`<p class="ob-note ob-warn">${desc.caution}</p>` : null}
         </div>
         ${notes.length ? html`<p class="ob-note ob-warn" role="status">${notes.join('. ')}.</p>` : null}
-        <div class="ob-stack" style="gap:.5rem">
-          <button type="button" class="ob-btn primary" disabled=${busy || devFallback} onClick=${() => run('dataset')}>Generate and analyze</button>
-          <button type="button" class="ob-btn" disabled=${busy || devFallback || !nativeOk} onClick=${() => run('native')}
-            aria-describedby="ob-gen-native">Download as native export files</button>
+        <div class="ob-stack" style="gap:.6rem">
+          <button type="button" class="btn btn--primary" disabled=${busy || devFallback} onClick=${() => generateRun(form, 'dataset')}>Generate and analyze</button>
+          ${loaded ? html`<p class="ob-note">Replaces the data now loaded (${loaded.meta?.name}).</p>` : null}
+          <p class="ob-note"><button type="button" class="tlink" disabled=${busy || devFallback || !nativeOk} onClick=${() => generateRun(form, 'native')}
+            aria-describedby="ob-gen-native">Download as native export files</button></p>
           <p id="ob-gen-native" class="ob-note">${nativeOk ? desc.native : 'This medium has no native export writer yet; use Generate and analyze.'}</p>
+          ${nativeOk && desc.nativeCaution ? html`<p class="ob-note ob-warn">${desc.nativeCaution}</p>` : null}
         </div>
-        ${job ? html`<div class="ob-stack" style="gap:.35rem" role="status" aria-live="polite">
-          <div class="ob-progress" role="progressbar" aria-label="Generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow=${Math.round(job.fraction * 100)}>
-            <span style=${`width:${Math.max(2, job.fraction * 100)}%`}></span></div>
-          <div class="ob-row"><span class="ob-note">${job.message}</span><span class="ob-spacer"></span>
-            <button type="button" class="ob-btn sm" onClick=${() => job.cancel()}>Cancel</button></div>
+        ${run.job ? html`<div class="ob-stack" style="gap:.35rem" role="status" aria-live="polite">
+          <div class="ob-progress" role="progressbar" aria-label="Generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow=${Math.round(run.job.fraction * 100)}>
+            <span style=${`width:${Math.max(2, run.job.fraction * 100)}%`}></span></div>
+          <div class="ob-row"><span class="ob-note">${run.job.message}</span><span class="ob-spacer"></span>
+            <button type="button" class="tlink" onClick=${() => run.job.cancel()}>Cancel</button></div>
         </div>` : null}
-        ${err ? html`<p class="ob-err" role="alert">${err}</p>` : null}
-        ${last ? html`<${LastRun} last=${last} />` : null}
+        ${run.err ? html`<p class="ob-err" role="alert">${run.err}</p>` : null}
+        ${run.native ? html`<${NativeRun} last=${run.native} />` : null}
       </aside>
     </div>
 
-    ${last && last.output === 'dataset' ? html`<${Recovery} state=${recovery} onRun=${recover} available=${state.recoveryAvailable} />` : null}
+    ${generated ? html`<${Recovery} g=${generated} check=${run.check} available=${state.recoveryAvailable} loaded=${loaded} />` : null}
   </section>`;
 }
 
-function Choices({ legend, name, items, value, onChange, help }) {
+// Five or fewer choices: the shared segmented control. Unavailable choices
+// stay visible, muted, and the reason is written out below, not struck through.
+function SegChoice({ legend, name, items, value, onChange, help, why = [], caution }) {
   const hid = `ob-gen-${name}-help`;
   return html`<fieldset class="ob-fieldset">
-    <legend>${legend}</legend>
-    <div class="ob-choices" role="radiogroup">
-      ${items.map(it => html`<label class="ob-choice" title=${it.enabled ? '' : it.reason}>
-        <input type="radio" name=${'ob-gen-' + name} value=${it.id} checked=${value === it.id} disabled=${!it.enabled}
-          aria-describedby=${!it.enabled ? `${hid}-${it.id}` : help ? hid : undefined} onChange=${() => onChange(it.id)} />
-        <span>${it.label}</span>
-        ${!it.enabled ? html`<span id=${`${hid}-${it.id}`} class="visually-hidden">Not available: ${it.reason}</span>` : null}
-      </label>`)}
+    <legend id=${`ob-gen-${name}-legend`}>${legend}</legend>
+    <div class="seg" role="group" aria-labelledby=${`ob-gen-${name}-legend`}>
+      ${items.map(it => html`<button type="button" aria-pressed=${String(value === it.id)} disabled=${!it.enabled}
+        aria-describedby=${help ? hid : undefined} onClick=${() => onChange(it.id)}>${it.label}</button>`)}
     </div>
     ${help ? html`<p id=${hid} class="ob-note">${help}</p>` : null}
+    ${why.length ? html`<p class="ob-note">${why.map((it, i) => html`${i ? ' ' : ''}Not available: ${it.label}. ${it.reason}.`)}</p>` : null}
+    ${caution ? html`<p class="ob-note ob-warn">${caution}</p>` : null}
   </fieldset>`;
 }
 
 function Param({ p, value, preset, onChange }) {
   const id = 'ob-gen-p-' + p.key;
   const shown = value ?? '';
-  const ph = preset !== undefined ? `scenario: ${preset}` : p.default !== undefined ? `default: ${p.default}` : '';
+  const dflt = preset !== undefined ? `Scenario: ${preset}` : p.default !== undefined ? `Default: ${p.default === true ? 'yes' : p.default === false ? 'no' : p.default}` : '';
   let input;
   if (p.choices) {
-    input = html`<select id=${id} class="ob-select" value=${shown} onChange=${e => onChange(e.currentTarget.value || undefined)}>
-      <option value="">${ph || 'default'}</option>${p.choices.map(c => html`<option value=${c.id}>${c.label}</option>`)}</select>`;
+    input = html`<select id=${id} class="select" value=${shown} onChange=${e => onChange(e.currentTarget.value || undefined)}>
+      <option value="">Default</option>${p.choices.map(c => html`<option value=${c.id}>${c.label}</option>`)}</select>`;
   } else if (p.type === 'boolean') {
-    input = html`<select id=${id} class="ob-select" value=${shown === '' ? '' : String(shown)} onChange=${e => onChange(e.currentTarget.value === '' ? undefined : e.currentTarget.value === 'true')}>
-      <option value="">${ph || 'default'}</option><option value="true">yes</option><option value="false">no</option></select>`;
+    input = html`<select id=${id} class="select" value=${shown === '' ? '' : String(shown)} onChange=${e => onChange(e.currentTarget.value === '' ? undefined : e.currentTarget.value === 'true')}>
+      <option value="">Default</option><option value="true">Yes</option><option value="false">No</option></select>`;
   } else if (p.type === 'int' || p.type === 'number') {
-    input = html`<input id=${id} class="ob-input" type="number" min=${p.min} max=${p.max} step=${p.step ?? (p.type === 'int' ? 1 : 'any')} placeholder=${ph} value=${shown}
+    input = html`<input id=${id} class="input" type="number" min=${p.min} max=${p.max} step=${p.step ?? (p.type === 'int' ? 1 : 'any')} value=${shown}
+      aria-describedby=${dflt ? id + '-d' : undefined}
       onChange=${e => { const v = e.currentTarget.value; if (v === '') return onChange(undefined); let n = Number(v); if (p.min != null) n = Math.max(p.min, n); if (p.max != null) n = Math.min(p.max, n); if (p.type === 'int') n = Math.round(n); onChange(n); }} />`;
   } else {
-    input = html`<input id=${id} class="ob-input" placeholder=${ph} value=${shown} onChange=${e => onChange(e.currentTarget.value || undefined)} />`;
+    input = html`<input id=${id} class="input" value=${shown} aria-describedby=${dflt ? id + '-d' : undefined} onChange=${e => onChange(e.currentTarget.value || undefined)} />`;
   }
-  return html`<div class="ob-field"><label for=${id}>${p.label}</label>${input}${p.help ? html`<span class="ob-help">${p.help}</span>` : null}</div>`;
+  return html`<div class="field"><label class="field__label" for=${id}>${p.label}</label>${input}
+    ${dflt ? html`<span id=${id + '-d'} class="ob-help">${dflt}</span>` : null}${p.help ? html`<span class="ob-help">${p.help}</span>` : null}</div>`;
 }
 
-function LastRun({ last }) {
-  if (last.output === 'native') return html`<div class="ob-stack ob-section" style="gap:.4rem">
-    <span class="ob-label">Downloaded</span>
-    <p class="ob-note">${last.name}: ${last.fileList.length} files. Open it in Data, Import to read it back through the importer.</p>
-    <ul class="ob-inline ob-mono" style="font-size:.75rem">${last.fileList.slice(0, 12).map(f => html`<li>${f.path}</li>`)}${last.fileList.length > 12 ? html`<li>and ${last.fileList.length - 12} more</li>` : null}</ul>
-  </div>`;
-  return html`<div class="ob-stack ob-section" style="gap:.4rem">
-    <span class="ob-label">Generated</span>
-    <p class="ob-note">${last.name}: ${last.nodes.toLocaleString('en-US')} people, ${last.events.toLocaleString('en-US')} events. ${last.loaded ? 'Loaded for analysis.' : 'Not loaded: the analysis views are not connected here.'}</p>
+function NativeRun({ last }) {
+  const base = last.name.replace(/\.[^.]+$/, '');
+  const gtName = `${base}.ground-truth.json`;
+  const readme = () => downloadText(`${base}.README.txt`, readmeText({ spec: last.spec, groundTruth: last.groundTruth, files: last.entries, gtName,
+    description: { nativeCaution: null } }));
+  const gt = () => downloadText(gtName, groundTruthJSON(last.groundTruth), 'application/json');
+  return html`<div class="ob-stack ob-section" style="gap:.45rem">
+    <h2 class="ob-h">Downloaded</h2>
+    <p class="ob-note">${last.name}${last.entries.length > 1 ? `, ${last.entries.length} files` : ''}. Open it in Data, Import, as it is: no need to unzip it.</p>
+    ${last.entries.length > 1 ? html`<ul class="ob-inline ob-mono" style="font-size:.75rem">${last.entries.slice(0, 12).map(f => html`<li>${f}</li>`)}${last.entries.length > 12 ? html`<li>and ${last.entries.length - 12} more</li>` : null}</ul>` : null}
+    <p class="ob-row" style="gap:.4rem 1.25rem">
+      <button type="button" class="tlink tlink--down" onClick=${readme}>README (what the files are)</button>
+      <button type="button" class="tlink tlink--down" onClick=${gt}>Ground truth (JSON)</button>
+    </p>
   </div>`;
 }
 
-// Recovery report renderer. The generator owns the report's shape; this
-// shows checks as a table when they look like rows, and anything else as
-// key-value pairs, so a new field never breaks the view.
-function Recovery({ state, onRun, available }) {
-  return html`<section class="ob-section" aria-labelledby="ob-rec-title">
-    <h3 id="ob-rec-title">Recovery check</h3>
-    <p class="ob-note">Compares what the analysis finds (communities, brokers, central people, network measures) with the structure planted in the generated world. The network is built here with the default construction settings.</p>
-    <div class="ob-row"><button type="button" class="ob-btn" disabled=${state?.busy || !available} onClick=${onRun}>${state?.busy ? 'Checking...' : 'Run recovery check'}</button>
-      ${!available ? html`<span class="ob-note">The generator has no recoveryCheck yet.</span>` : null}</div>
-    ${state?.error ? html`<p class="ob-err" role="alert">${state.error}</p>` : null}
-    ${state?.missing ? html`<${Unavailable} title="The recovery check needs parts that are not in this build yet">
-      Missing: ${state.missing.join('; ')}.
-    </${Unavailable}>` : null}
-    ${state?.report ? html`<${Report} report=${state.report} />` : null}
+// ---- recovery check ------------------------------------------------------------
+
+const VERDICT = {
+  recovered: { cls: 'ok', text: 'Recovered' },
+  partly: { cls: 'caution', text: 'Partly' },
+  missed: { cls: 'error', text: 'Missed' },
+  'not checked': { cls: 'na', text: 'Not checked' },
+};
+const AREA = { observation: 'What the data shows', structure: 'Structure', survey: 'Survey answers', content: 'Content', diffusion: 'Spread of new terms', time: 'Change over time' };
+
+function Recovery({ g, check, available, loaded }) {
+  const rep = g.recovery;
+  const stale = loaded && loaded.meta?.name !== g.datasetName;
+  const span = g.groundTruth?.timespan;
+  return html`<section class="ob-section ob-recovery" id="ob-recovery" aria-labelledby="ob-rec-title">
+    <div class="ob-row">
+      <h2 id="ob-rec-title" class="ob-h">Recovery check</h2>
+      <span class="ob-spacer"></span>
+      ${!stale ? html`<button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView?.('network')}>Open network</button>` : null}
+    </div>
+    <p class="ob-text">${g.datasetName}: ${g.people?.toLocaleString('en-US') ?? '?'} people, ${g.events?.toLocaleString('en-US') ?? '?'} events${span ? `, ${fmtDay(new Date(span.start).toISOString())} to ${fmtDay(new Date(span.end).toISOString())}` : ''}.
+      ${stale ? ' Other data has been loaded since; this check still refers to the generated world.' : ' Loaded for analysis.'}</p>
+    <p class="ob-note">Compares what the analysis finds (communities, brokers, content and change over time) with what was planted in the generated world. The network is built here with the default construction settings.</p>
+    ${!available ? html`<p class="ob-note">The generator has no recovery check in this build.</p>` : null}
+    ${check?.busy ? html`<p class="ob-note" role="status">Checking what the analysis recovers...</p>` : null}
+    ${check?.error ? html`<p class="ob-err" role="alert">${check.error}</p>` : null}
+    ${check?.missing ? html`<${Unavailable} title="The recovery check needs parts that are not in this build yet">Missing: ${check.missing.join('; ')}.</${Unavailable}>` : null}
+    ${rep ? html`<${Report} report=${rep} />` : null}
+    ${available && !check?.busy ? html`<p><button type="button" class="tlink" onClick=${runRecoveryCheck}>${rep ? 'Run the check again' : 'Run recovery check'}</button></p>` : null}
   </section>`;
 }
 
-const fmt = v => (v === null || v === undefined ? '—' : typeof v === 'number' ? (Number.isInteger(v) ? v.toLocaleString('en-US') : v.toFixed(3)) : typeof v === 'boolean' ? (v ? 'yes' : 'no') : Array.isArray(v) ? (v.length > 8 ? `${v.length} items` : v.map(fmt).join(', ')) : typeof v === 'object' ? '' : String(v));
+const fmtVal = v => (v === null || v === undefined ? '' : typeof v === 'number' ? (Number.isInteger(v) ? v.toLocaleString('en-US') : v.toFixed(2)) : String(v));
 
+// The generator owns the report's shape ({ summary, checks[] }, see
+// src/generator/recovery.js). Each check reads as a verdict and a plain
+// sentence first, the numbers after; anything else falls back to key-value
+// pairs so a new field never breaks the view.
 function Report({ report }) {
-  const rows = Array.isArray(report) ? report : Array.isArray(report.checks) ? report.checks : null;
-  if (rows && rows.length && typeof rows[0] === 'object') {
-    const cols = [...new Set(rows.flatMap(r => Object.keys(r)))].filter(k => rows.some(r => typeof r[k] !== 'object' || r[k] === null || Array.isArray(r[k])));
-    return html`<div class="ob-tablewrap"><table class="ob-table">
-      <thead><tr>${cols.map(c => html`<th>${c}</th>`)}</tr></thead>
-      <tbody>${rows.map(r => html`<tr>${cols.map(c => html`<td class=${typeof r[c] === 'number' ? 'num' : ''}>${fmt(r[c])}</td>`)}</tr>`)}</tbody>
-    </table></div>
-    ${report.summary ? html`<p class="ob-note">${typeof report.summary === 'string' ? report.summary : fmt(report.summary)}</p>` : null}`;
-  }
-  return html`<${KV} obj=${report} depth=${0} />`;
+  const rows = Array.isArray(report?.checks) ? report.checks : null;
+  if (!rows) return html`<${KV} obj=${report} depth=${0} />`;
+  const areas = [...new Set(rows.map(r => r.area || 'other'))];
+  return html`<div class="ob-stack" style="gap:1rem">
+    ${report.summary ? html`<p class="ob-text"><strong>${report.summary}</strong></p>` : null}
+    ${areas.map(a => html`<div class="ob-stack" style="gap:0">
+      <h3 class="label">${AREA[a] || a}</h3>
+      <ul class="ob-checks">${rows.filter(r => (r.area || 'other') === a).map(r => {
+        const v = VERDICT[r.verdict] || VERDICT['not checked'];
+        const nums = [r.planted && `Planted: ${r.planted}`, r.recovered && `Found: ${r.recovered}`,
+          r.value !== null && r.value !== undefined && `${r.metric || 'Value'} ${fmtVal(r.value)}${r.baseline !== null && r.baseline !== undefined ? ` (chance ${fmtVal(r.baseline)})` : ''}`].filter(Boolean);
+        return html`<li>
+          <div class="ob-checks__head"><span class=${`flag flag--${v.cls}`}>${v.text}</span><span class="ob-checks__name">${r.name}</span></div>
+          ${r.says ? html`<p class="ob-text">${r.says}</p>` : null}
+          ${nums.length ? html`<p class="ob-note">${nums.join(' · ')}</p>` : null}
+        </li>`;
+      })}</ul>
+    </div>`)}
+  </div>`;
 }
 
 function KV({ obj, depth }) {
@@ -254,7 +346,7 @@ function KV({ obj, depth }) {
   return html`<dl class="ob-kv" style=${depth ? 'margin-left:1rem' : ''}>
     ${entries.map(([k, v]) => v && typeof v === 'object' && !Array.isArray(v) && depth < 2
       ? html`<dt>${k}</dt><dd><${KV} obj=${v} depth=${depth + 1} /></dd>`
-      : html`<dt>${k}</dt><dd>${fmt(v)}</dd>`)}
+      : html`<dt>${k}</dt><dd>${Array.isArray(v) ? `${v.length} items` : fmtVal(v)}</dd>`)}
   </dl>`;
 }
 

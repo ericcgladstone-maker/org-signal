@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newRoster, makeRelation, parseRosterText, formTemplate, parseRosterResponses, mergeResponses, toDataset, responsesFromDataset, RELATION_PRESETS } from '../../src/builders/roster.js';
+import { newRoster, makeRelation, parseRosterText, formTemplate, parseRosterResponses, mergeResponses, toDataset, responsesFromDataset, RELATION_PRESETS, rosterFromResponses, tiesFor } from '../../src/builders/roster.js';
 import { parseCSV } from '../../src/importers/tabular.js';
 import { pairKey, cellValue, parseAdjacencyCSV, adjacencyCSV } from '../../src/builders/matrix.js';
 import { eventTargets } from '../../src/core/model.js';
@@ -129,4 +129,51 @@ test('toDataset: single informant and multi with merge rule', () => {
 test('makeRelation gives ids', () => {
   const r = makeRelation(RELATION_PRESETS[0]);
   assert.ok(r.id); assert.equal(r.scale, 'binary');
+});
+
+// A Google Forms responses export, as a teacher downloads it (P5, P6).
+const FORM = [
+  'Timestamp,Your name,Who do you spend free time with? [Ann Lee],Who do you spend free time with? [Bo Park],Who do you spend free time with? [Cy Ortiz],Who do you spend free time with? [Di Ng]',
+  '9/15/2025 9:44:01,Ann Lee,,Yes,Yes,',
+  '9/15/2025 9:50:12,Bo Park,Yes,,,',
+  '9/15/2025 10:02:40,Di Ng,,,Yes,',
+  '9/15/2025 10:05:00,Ed Ruiz,Yes,,,',
+].join('\n');
+
+test('parseRosterText: a survey responses file is not a list of names', () => {
+  const r = parseRosterText(FORM);
+  assert.equal(r.survey, true);
+  assert.equal(r.people.length, 0);
+});
+
+test('parseRosterText: a table without a name column asks which column, then uses it', () => {
+  const t = 'id,first,dept\n1,Ana,Eng\n2,Ben,Ops\n3,Cara,Eng';
+  const r = parseRosterText(t);
+  assert.equal(r.needsColumn, true);
+  assert.deepEqual(r.headers, ['id', 'first', 'dept']);
+  const p = parseRosterText(t, { nameColumn: 'first' });
+  assert.deepEqual(p.people.map(x => x.label), ['Ana', 'Ben', 'Cara']);
+  assert.deepEqual(p.people[0].attrs, { id: '1', dept: 'Eng' });
+  // or each whole line is a name ("Lee, Ann" style lists)
+  assert.deepEqual(parseRosterText('Lee, Ann\nPark, Bo', { nameColumn: '' }).people.map(x => x.label), ['Lee, Ann', 'Park, Bo']);
+});
+
+test('rosterFromResponses: the file is the roster, its questions and its answers', () => {
+  const m = rosterFromResponses(FORM, { file: 'Friendship survey (Responses).csv' });
+  assert.deepEqual(m.people.map(p => p.label), ['Ann Lee', 'Bo Park', 'Cy Ortiz', 'Di Ng', 'Ed Ruiz']);
+  assert.equal(m.relations.length, 1);
+  assert.equal(m.relations[0].question, 'Who do you spend free time with?');
+  assert.equal(m.relations[0].name, 'Spend free time with');
+  assert.equal(m.mode, 'multi');
+  assert.equal(m.mergeRule, 'union');
+  assert.equal(m.name, 'Friendship survey (Responses)');
+  assert.equal(m.responses.respondents.length, 4);
+  assert.equal(m.responses.file, 'Friendship survey (Responses).csv');
+  // union: Ann-Bo (both), Ann-Cy, Di-Cy, Ed-Ann
+  const t = tiesFor(m, m.relations[0].id);
+  assert.equal(Object.keys(t.ties).length, 4);
+  assert.equal(t.stats.reciprocated, 1);
+  assert.equal(rosterFromResponses('Ann\nBo'), null);
+  const ds = toDataset(m);
+  assert.equal(ds.nodes.count, 5);
 });

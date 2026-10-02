@@ -7,25 +7,12 @@
 //   ../../analysis/index.js    defaultSettings, buildNetwork, computeNodeMetrics,
 //                              computeNetworkMetrics, detectCommunities
 
-import { zipSync, strToU8 } from '../../../vendor/fflate.js';
+import { packNative } from './pack.js';
 
 let genMod = null;
 export async function generator() {
   if (!genMod) genMod = await import('../../generator/index.js');
   return genMod;
-}
-
-// result.files from the generator: [{ path, bytes }] (generator API), also
-// tolerating { name, text } / { name, data }. Returns zip bytes.
-export function zipFiles(files) {
-  const entries = {};
-  for (const f of files) {
-    const name = f.path || f.name;
-    if (!name) continue;
-    const data = f.bytes ?? f.data ?? f.text ?? '';
-    entries[name] = typeof data === 'string' ? strToU8(data) : data instanceof Uint8Array ? data : new Uint8Array(data);
-  }
-  return zipSync(entries, { level: 6 });
 }
 
 // Run one generation. progress(fraction, message) is called at coarse
@@ -39,7 +26,7 @@ export async function runGenerate(spec, progress = () => {}) {
   const out = { groundTruth: res.groundTruth, dataset: res.dataset };
   if (spec.output === 'native') {
     if (!res.files || !res.files.length) throw new Error('The generator returned no native files for this medium.');
-    out.zip = zipFiles(res.files);
+    out.download = packNative(res.files, { name: `synthetic-${spec.context}-${spec.medium}-seed${spec.seed}` });
     out.fileList = res.files.map(f => ({ path: f.path || f.name, size: (f.bytes || f.data || f.text || '').length }));
   }
   progress(1, 'Done');
@@ -66,6 +53,13 @@ export async function runRecovery(groundTruth, ds, { seed = 1 } = {}) {
   await tryStep('metrics', () => an.computeNodeMetrics(net, { which: ['degree', 'strength', 'betweenness', 'pagerank', 'constraint', 'coreNumber'], approx: net.n > 3000 }));
   await tryStep('network', () => an.computeNetworkMetrics(net));
   await tryStep('communities', () => an.detectCommunities(net, { seed }));
+  // Shifts over time, for the planted events (weekly windows, as Time uses).
+  if (typeof an.timeSeries === 'function' && typeof an.detectShifts === 'function' && net.n <= 5000) {
+    await tryStep('shifts', async () => (await an.detectShifts(await an.timeSeries(ds, settings, { window: 'week', attr: groundTruth?.communities?.attr }))).shifts);
+  }
+  // recoveryCheck reads `membership` and `nodeMetrics` (see recovery.js).
+  if (results.communities?.membership) results.membership = results.communities.membership;
+  if (results.metrics) results.nodeMetrics = results.metrics;
   const report = await gen.recoveryCheck(groundTruth, ds, net, results);
   return { report, settings: { directed: settings?.directed, weighting: settings?.weighting } };
 }

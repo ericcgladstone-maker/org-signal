@@ -17,7 +17,7 @@ import { groupColor } from '../shared.js';
 export const NODE_R = 10;
 const DRAG_START_PX = 3;
 const GUIDE_PX = 6;
-const DASHES = ['', '7 4', '2 3', '9 3 2 3', '4 4', '1 4'];
+export const DASHES = ['', '7 4', '2 3', '9 3 2 3', '4 4', '1 4'];
 
 const hullLine = d3.line().curve(d3.curveCatmullRomClosed.alpha(0.5));
 
@@ -26,7 +26,7 @@ export function screenToWorld(view, sx, sy) {
 }
 
 export function Canvas(props) {
-  const { doc, live, sel, focusId, pending, view, settings, guides, marquee, rubber, size, ctl, mode } = props;
+  const { doc, live, sel, focusId, pending, view, settings, guides, marquee, rubber, size, ctl, mode, dashed } = props;
   const svgRef = useRef(null);
   const g = useRef(null);            // current gesture
   const pointers = useRef(new Map()); // for pinch
@@ -232,7 +232,8 @@ export function Canvas(props) {
     const end = e.directed ? NODE_R + 3 : 0;
     const x2 = b.x - ux * end, y2 = b.y - uy * end;
     const isSel = selE.has(e.id);
-    const dash = DASHES[(typeIdx.get(e.type) ?? 0) % DASHES.length];
+    // Solid unless several tie types are in use (dashes also mean "in progress").
+    const dash = dashed ? DASHES[(typeIdx.get(e.type) ?? 0) % DASHES.length] : '';
     const sw = 1.5 + Math.min(4, Math.log2(Math.max(1, e.weight)));
     const arrow = e.directed ? `M ${x2} ${y2} L ${x2 - ux * 9 - uy * 4.5} ${y2 - uy * 9 + ux * 4.5} L ${x2 - ux * 9 + uy * 4.5} ${y2 - uy * 9 - ux * 4.5} Z` : null;
     const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
@@ -269,7 +270,7 @@ export function Canvas(props) {
   const gsz = settings.gridSize;
   const showGrid = settings.grid || settings.showGrid;
   const selCount = sel.nodes.length;
-  const label = `Network drawing canvas, ${doc.nodes.length} nodes, ${doc.edges.length} ties` +
+  const label = `Network drawing canvas, ${doc.nodes.length} people, ${doc.edges.length} ties` +
     (selCount ? `, ${selCount} selected` : '') + '. Press question mark for keyboard shortcuts.';
 
   return html`<svg ref=${svgRef} tabindex="0" role="application" aria-label=${label} aria-describedby="ob-draw-live"

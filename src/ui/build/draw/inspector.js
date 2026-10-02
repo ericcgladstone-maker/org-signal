@@ -22,7 +22,7 @@ export function Inspector({ doc, sel, apply, setSel, edgeDefaults, setEdgeDefaul
 }
 
 function GroupSelect({ doc, value, onChange, id, mixed }) {
-  return html`<select class="ob-select" id=${id} value=${mixed ? '__mixed' : value || ''} onChange=${e => e.currentTarget.value !== '__mixed' && onChange(e.currentTarget.value || null)}>
+  return html`<select class="select" id=${id} value=${mixed ? '__mixed' : value || ''} onChange=${e => e.currentTarget.value !== '__mixed' && onChange(e.currentTarget.value || null)}>
     ${mixed ? html`<option value="__mixed">Mixed</option>` : null}
     <option value="">No group</option>
     ${doc.groups.map(g => html`<option value=${g.id}>${g.name}</option>`)}
@@ -32,12 +32,12 @@ function GroupSelect({ doc, value, onChange, id, mixed }) {
 function AttrInput({ col, value, onChange, id }) {
   const v = value ?? '';
   if (col.type === 'boolean') {
-    return html`<select class="ob-select" id=${id} value=${v === true || /^(true|yes|1)$/i.test(String(v)) ? 'true' : v === '' ? '' : 'false'}
+    return html`<select class="select" id=${id} value=${v === true || /^(true|yes|1)$/i.test(String(v)) ? 'true' : v === '' ? '' : 'false'}
       onChange=${e => onChange(e.currentTarget.value)}>
       <option value=""></option><option value="true">Yes</option><option value="false">No</option></select>`;
   }
   const type = col.type === 'number' || col.type === 'ordinal' ? 'number' : col.type === 'date' ? 'date' : 'text';
-  return html`<input class="ob-input" id=${id} type=${type} value=${v} step=${type === 'number' ? 'any' : undefined}
+  return html`<input class="input" id=${id} type=${type} value=${v} step=${type === 'number' ? 'any' : undefined}
     onChange=${e => onChange(e.currentTarget.value)} />`;
 }
 
@@ -45,29 +45,29 @@ function NodePanel({ doc, n, apply, setSel, onRename }) {
   const ties = doc.edges.filter(e => e.source === n.id || e.target === n.id);
   const other = e => D.nodeById(doc, e.source === n.id ? e.target : e.source)?.label;
   return html`<div class="ob-stack">
-    <span class="ob-meta">Node</span>
-    <div class="ob-field"><label for="ob-n-label">Label</label>
-      <input class="ob-input" id="ob-n-label" value=${n.label} onChange=${e => apply(d => D.updateNode(d, n.id, { label: e.currentTarget.value.trim() || n.label }), 'Rename')} /></div>
-    <div class="ob-field"><label for="ob-n-group">Group</label>
+    <h3 class="label">Person</h3>
+    <div class="field"><label class="field__label" for="ob-n-label">Name</label>
+      <input class="input" id="ob-n-label" value=${n.label} onChange=${e => apply(d => D.updateNode(d, n.id, { label: e.currentTarget.value.trim() || n.label }), 'Rename')} /></div>
+    <div class="field"><label class="field__label" for="ob-n-group">Group</label>
       <${GroupSelect} id="ob-n-group" doc=${doc} value=${n.group} onChange=${g => apply(d => D.setGroup(d, [n.id], g), 'Set group')} /></div>
-    ${doc.attrColumns.map(c => html`<div class="ob-field" key=${c.key}><label for=${'ob-n-a-' + c.key}>${c.key} <span class="ob-help">${c.type}</span></label>
+    ${doc.attrColumns.map(c => html`<div class="field" key=${c.key}><label class="field__label" for=${'ob-n-a-' + c.key}>${c.key} <span class="ob-help">(${c.type})</span></label>
       <${AttrInput} id=${'ob-n-a-' + c.key} col=${c} value=${n.attrs[c.key]} onChange=${v => apply(d => D.setNodeAttr(d, n.id, c.key, v), 'Edit attribute')} /></div>`)}
-    ${doc.attrColumns.length ? null : html`<p class="ob-note">Add attribute columns (role, tenure...) with nothing selected.</p>`}
+    ${doc.attrColumns.length ? null : html`<p class="ob-note">Add attribute columns (role, tenure...) with nobody selected.</p>`}
     <div class="ob-stack" style="gap:.3rem">
-      <span class="ob-meta">Ties (${ties.length})</span>
+      <h3 class="label">Ties (${ties.length})</h3>
       ${ties.length ? html`<ul class="ob-inline" style="flex-direction:column;gap:.15rem">
-        ${ties.map(e => html`<li key=${e.id}><button type="button" class="ob-linkbtn" onClick=${() => setSel({ nodes: [], edges: [e.id] })}>
+        ${ties.map(e => html`<li key=${e.id}><button type="button" class="tlink" onClick=${() => setSel({ nodes: [], edges: [e.id] })}>
           ${e.directed ? (e.source === n.id ? 'to ' : 'from ') : 'with '}${other(e)}</button> <span class="ob-note">(${e.type}${e.weight !== 1 ? ', weight ' + e.weight : ''})</span></li>`)}
       </ul>` : html`<p class="ob-note">No ties yet.</p>`}
     </div>
     <div class="ob-row">
-      <button type="button" class="ob-btn sm" onClick=${() => onRename(n.id)}>Rename on canvas</button>
-      <button type="button" class="ob-btn sm danger" onClick=${() => { apply(d => D.removeNodes(d, [n.id]), 'Delete node'); setSel({ nodes: [], edges: [] }); }}>Delete node</button>
+      <button type="button" class="tlink" onClick=${() => onRename(n.id)}>Rename on canvas</button>
+      <button type="button" class="tlink ob-danger" onClick=${() => { apply(d => D.removeNodes(d, [n.id]), 'Delete person'); setSel({ nodes: [], edges: [] }); }}>Delete ${n.label}</button>
     </div>
   </div>`;
 }
 
-const ALIGN = [['left', 'Left'], ['center', 'Centre'], ['right', 'Right'], ['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']];
+const ALIGN = [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']];
 
 function MultiPanel({ doc, sel, apply, setSel }) {
   const nodes = sel.nodes.map(id => D.nodeById(doc, id)).filter(Boolean);
@@ -79,30 +79,30 @@ function MultiPanel({ doc, sel, apply, setSel }) {
     setNewGroup('');
   };
   return html`<div class="ob-stack">
-    <span class="ob-meta">${nodes.length} nodes${sel.edges.length ? `, ${sel.edges.length} ties` : ''} selected</span>
+    <h3 class="label">${nodes.length} people${sel.edges.length ? `, ${sel.edges.length} ties` : ''} selected</h3>
     ${nodes.length ? html`
-    <div class="ob-field"><label for="ob-m-group">Group</label>
+    <div class="field"><label class="field__label" for="ob-m-group">Group</label>
       <${GroupSelect} id="ob-m-group" doc=${doc} value=${[...groups][0]} mixed=${groups.size > 1} onChange=${g => apply(d => D.setGroup(d, sel.nodes, g), 'Set group')} /></div>
     <div class="ob-row" style="flex-wrap:nowrap">
-      <input class="ob-input" aria-label="New group name" placeholder="New group name" value=${newGroup} onInput=${e => setNewGroup(e.currentTarget.value)}
+      <input class="input" aria-label="Name of a new group for the selection" placeholder="New group name" value=${newGroup} onInput=${e => setNewGroup(e.currentTarget.value)}
         onKeyDown=${e => e.key === 'Enter' && makeGroup()} />
-      <button type="button" class="ob-btn sm" onClick=${makeGroup}>Group</button>
+      <button type="button" class="btn btn--sm" onClick=${makeGroup}>Make group</button>
     </div>
     <div class="ob-stack" style="gap:.35rem" role="group" aria-label="Align">
-      <span class="ob-meta">Align</span>
-      <div class="ob-row" style="gap:.3rem">${ALIGN.map(([k, l]) => html`<button type="button" class="ob-btn sm" disabled=${nodes.length < 2}
+      <span class="field__label">Align</span>
+      <div class="ob-row" style="gap:.3rem">${ALIGN.map(([k, l]) => html`<button type="button" class="btn btn--sm" disabled=${nodes.length < 2}
         onClick=${() => apply(d => D.align(d, sel.nodes, k), 'Align ' + l.toLowerCase())}>${l}</button>`)}</div>
-      <span class="ob-meta">Distribute</span>
+      <span class="field__label">Distribute</span>
       <div class="ob-row" style="gap:.3rem">
-        <button type="button" class="ob-btn sm" disabled=${nodes.length < 3} onClick=${() => apply(d => D.distribute(d, sel.nodes, 'h'), 'Distribute')}>Horizontally</button>
-        <button type="button" class="ob-btn sm" disabled=${nodes.length < 3} onClick=${() => apply(d => D.distribute(d, sel.nodes, 'v'), 'Distribute')}>Vertically</button>
+        <button type="button" class="btn btn--sm" disabled=${nodes.length < 3} onClick=${() => apply(d => D.distribute(d, sel.nodes, 'h'), 'Distribute')}>Horizontally</button>
+        <button type="button" class="btn btn--sm" disabled=${nodes.length < 3} onClick=${() => apply(d => D.distribute(d, sel.nodes, 'v'), 'Distribute')}>Vertically</button>
       </div>
     </div>
     <div class="ob-row">
-      <button type="button" class="ob-btn sm" disabled=${nodes.length < 2} onClick=${() => apply(d => D.connectPath(d, sel.nodes), 'Connect')}>Connect in order</button>
+      <button type="button" class="btn btn--sm" disabled=${nodes.length < 2} onClick=${() => apply(d => D.connectPath(d, sel.nodes), 'Connect')}>Connect in order</button>
     </div>` : null}
     <div class="ob-row">
-      <button type="button" class="ob-btn sm danger" onClick=${() => { apply(d => D.removeEdges(D.removeNodes(d, sel.nodes), sel.edges), 'Delete'); setSel({ nodes: [], edges: [] }); }}>Delete selection</button>
+      <button type="button" class="tlink ob-danger" onClick=${() => { apply(d => D.removeEdges(D.removeNodes(d, sel.nodes), sel.edges), 'Delete'); setSel({ nodes: [], edges: [] }); }}>Delete selection</button>
     </div>
   </div>`;
 }
@@ -110,11 +110,11 @@ function MultiPanel({ doc, sel, apply, setSel }) {
 function TypeSelect({ doc, value, onChange, id }) {
   const [adding, setAdding] = useState(false);
   if (adding) {
-    return html`<input class="ob-input" id=${id} placeholder="New tie type, then Enter" autofocus
+    return html`<input class="input" id=${id} placeholder="New tie type, then Enter" autofocus
       onKeyDown=${e => { if (e.key === 'Enter') { const v = e.currentTarget.value.trim(); if (v) onChange(v); setAdding(false); } else if (e.key === 'Escape') { e.stopPropagation(); setAdding(false); } }}
       onBlur=${e => { const v = e.currentTarget.value.trim(); if (v) onChange(v); setAdding(false); }} />`;
   }
-  return html`<select class="ob-select" id=${id} value=${value} onChange=${e => (e.currentTarget.value === '__new' ? setAdding(true) : onChange(e.currentTarget.value))}>
+  return html`<select class="select" id=${id} value=${value} onChange=${e => (e.currentTarget.value === '__new' ? setAdding(true) : onChange(e.currentTarget.value))}>
     ${doc.edgeTypes.map(t => html`<option value=${t}>${t}</option>`)}
     <option value="__new">New type...</option>
   </select>`;
@@ -123,18 +123,18 @@ function TypeSelect({ doc, value, onChange, id }) {
 function EdgePanel({ doc, e, apply, setSel }) {
   const s = D.nodeById(doc, e.source), t = D.nodeById(doc, e.target);
   return html`<div class="ob-stack">
-    <span class="ob-meta">Tie</span>
-    <p><button type="button" class="ob-linkbtn" onClick=${() => setSel({ nodes: [s.id], edges: [] })}>${s.label}</button>
+    <h3 class="label">Tie</h3>
+    <p><button type="button" class="tlink" onClick=${() => setSel({ nodes: [s.id], edges: [] })}>${s.label}</button>
       ${e.directed ? ' to ' : ' and '}
-      <button type="button" class="ob-linkbtn" onClick=${() => setSel({ nodes: [t.id], edges: [] })}>${t.label}</button></p>
-    <div class="ob-field"><label for="ob-e-type">Type</label>
+      <button type="button" class="tlink" onClick=${() => setSel({ nodes: [t.id], edges: [] })}>${t.label}</button></p>
+    <div class="field"><label class="field__label" for="ob-e-type">Type</label>
       <${TypeSelect} id="ob-e-type" doc=${doc} value=${e.type} onChange=${v => apply(d => D.updateEdge(d, e.id, { type: v }), 'Tie type')} /></div>
-    <div class="ob-field"><label for="ob-e-w">Weight</label>
-      <input class="ob-input" id="ob-e-w" type="number" min="0" step="any" value=${e.weight} onChange=${ev => apply(d => D.updateEdge(d, e.id, { weight: ev.currentTarget.value }), 'Tie weight')} /></div>
-    <label class="ob-check"><input type="checkbox" checked=${e.directed} onChange=${ev => apply(d => D.updateEdge(d, e.id, { directed: ev.currentTarget.checked }), 'Tie direction')} /> Directed</label>
+    <div class="field"><label class="field__label" for="ob-e-w">Weight</label>
+      <input class="input" id="ob-e-w" type="number" min="0" step="any" value=${e.weight} onChange=${ev => apply(d => D.updateEdge(d, e.id, { weight: ev.currentTarget.value }), 'Tie weight')} /></div>
+    <label class="check"><input type="checkbox" checked=${e.directed} onChange=${ev => apply(d => D.updateEdge(d, e.id, { directed: ev.currentTarget.checked }), 'Tie direction')} /> Directed</label>
     <div class="ob-row">
-      <button type="button" class="ob-btn sm" disabled=${!e.directed} onClick=${() => apply(d => D.reverseEdge(d, e.id), 'Reverse tie')}>Reverse</button>
-      <button type="button" class="ob-btn sm danger" onClick=${() => { apply(d => D.removeEdges(d, [e.id]), 'Delete tie'); setSel({ nodes: [], edges: [] }); }}>Delete tie</button>
+      ${e.directed ? html`<button type="button" class="tlink" onClick=${() => apply(d => D.reverseEdge(d, e.id), 'Reverse tie')}>Reverse direction</button>` : null}
+      <button type="button" class="tlink ob-danger" onClick=${() => { apply(d => D.removeEdges(d, [e.id]), 'Delete tie'); setSel({ nodes: [], edges: [] }); }}>Delete tie</button>
     </div>
   </div>`;
 }
@@ -145,45 +145,45 @@ function DocPanel({ doc, apply, edgeDefaults, setEdgeDefaults }) {
   const addCol = () => { if (col.key.trim()) { apply(d => D.addAttrColumn(d, { key: col.key.trim(), type: col.type }), 'Add column'); setCol({ key: '', type: col.type }); } };
   const addGrp = () => { apply(d => D.addGroup(d, { name: grp }), 'Add group'); setGrp(''); };
   return html`<div class="ob-stack">
-    <span class="ob-meta">Drawing</span>
-    <div class="ob-field"><label for="ob-d-name">Name</label>
-      <input class="ob-input" id="ob-d-name" value=${doc.name} onChange=${e => apply(d => ({ ...d, name: e.currentTarget.value.trim() || d.name }), 'Rename drawing')} /></div>
-    <dl class="ob-kv"><dt>Nodes</dt><dd>${doc.nodes.length}</dd><dt>Ties</dt><dd>${doc.edges.length}</dd><dt>Groups</dt><dd>${doc.groups.length}</dd></dl>
+    <h3 class="label">Drawing</h3>
+    <div class="field"><label class="field__label" for="ob-d-name">Name</label>
+      <input class="input" id="ob-d-name" value=${doc.name} onChange=${e => apply(d => ({ ...d, name: e.currentTarget.value.trim() || d.name }), 'Rename drawing')} /></div>
+    <dl class="ob-kv"><dt>People</dt><dd>${doc.nodes.length}</dd><dt>Ties</dt><dd>${doc.edges.length}</dd><dt>Groups</dt><dd>${doc.groups.length}</dd></dl>
 
     <div class="ob-stack" style="gap:.4rem">
-      <span class="ob-meta">New ties</span>
-      <div class="ob-field"><label for="ob-d-etype">Type</label>
+      <h3 class="label">New ties</h3>
+      <div class="field"><label class="field__label" for="ob-d-etype">Type</label>
         <${TypeSelect} id="ob-d-etype" doc=${doc} value=${edgeDefaults.type} onChange=${v => { apply(d => D.addEdgeType(d, v), 'Add tie type'); setEdgeDefaults({ ...edgeDefaults, type: v }); }} /></div>
-      <label class="ob-check"><input type="checkbox" checked=${edgeDefaults.directed} onChange=${e => setEdgeDefaults({ ...edgeDefaults, directed: e.currentTarget.checked })} /> Directed</label>
+      <label class="check"><input type="checkbox" checked=${edgeDefaults.directed} onChange=${e => setEdgeDefaults({ ...edgeDefaults, directed: e.currentTarget.checked })} /> Directed</label>
     </div>
 
     <div class="ob-stack" style="gap:.4rem">
-      <span class="ob-meta">Groups</span>
+      <h3 class="label">Groups</h3>
       ${doc.groups.map((g, i) => html`<div class="ob-row" key=${g.id} style="flex-wrap:nowrap;gap:.4rem">
         <span class="ob-dot" style=${`background:${groupColor(i)}`} aria-hidden="true"></span>
-        <input class="ob-input sm" aria-label=${'Group name ' + (i + 1)} value=${g.name} onChange=${e => apply(d => D.renameGroup(d, g.id, e.currentTarget.value), 'Rename group')} />
-        <button type="button" class="ob-btn sm quiet" aria-label=${'Remove group ' + g.name} onClick=${() => apply(d => D.removeGroup(d, g.id), 'Remove group')}>Remove</button>
+        <input class="input input--sm" aria-label=${'Group name ' + (i + 1)} value=${g.name} onChange=${e => apply(d => D.renameGroup(d, g.id, e.currentTarget.value), 'Rename group')} />
+        <button type="button" class="btn btn--sm btn--quiet" aria-label=${'Remove group ' + g.name} onClick=${() => apply(d => D.removeGroup(d, g.id), 'Remove group')}>Remove</button>
       </div>`)}
       <div class="ob-row" style="flex-wrap:nowrap;gap:.4rem">
-        <input class="ob-input sm" aria-label="New group name" placeholder="New group" value=${grp} onInput=${e => setGrp(e.currentTarget.value)} onKeyDown=${e => e.key === 'Enter' && addGrp()} />
-        <button type="button" class="ob-btn sm" onClick=${addGrp}>Add</button>
+        <input class="input input--sm" aria-label="New group name" placeholder="New group" value=${grp} onInput=${e => setGrp(e.currentTarget.value)} onKeyDown=${e => e.key === 'Enter' && addGrp()} />
+        <button type="button" class="btn btn--sm" onClick=${addGrp}>Add group</button>
       </div>
-      <p class="ob-note">Select nodes, then pick a group for them. Groups are drawn as outlines with their names.</p>
+      <p class="ob-note">Select people, then pick a group for them. Groups are drawn as outlines with their names, in the colors the analysis views use.</p>
     </div>
 
     <div class="ob-stack" style="gap:.4rem">
-      <span class="ob-meta">Attribute columns</span>
+      <h3 class="label">Attribute columns</h3>
       ${doc.attrColumns.map(c => html`<div class="ob-row" key=${c.key} style="flex-wrap:nowrap;gap:.4rem">
         <span style="flex:1 1 auto;font-size:var(--fs-small)">${c.key}</span>
-        <select class="ob-select sm" style="width:auto" aria-label=${'Type of ' + c.key} value=${c.type} onChange=${e => apply(d => D.setAttrColumnType(d, c.key, e.currentTarget.value), 'Column type')}>
+        <select class="select select--sm" style="width:auto" aria-label=${'Type of ' + c.key} value=${c.type} onChange=${e => apply(d => D.setAttrColumnType(d, c.key, e.currentTarget.value), 'Column type')}>
           ${ATTR_TYPES.map(t => html`<option value=${t}>${t}</option>`)}</select>
-        <button type="button" class="ob-btn sm quiet" aria-label=${'Remove column ' + c.key} onClick=${() => apply(d => D.removeAttrColumn(d, c.key), 'Remove column')}>Remove</button>
+        <button type="button" class="btn btn--sm btn--quiet" aria-label=${'Remove column ' + c.key} onClick=${() => apply(d => D.removeAttrColumn(d, c.key), 'Remove column')}>Remove</button>
       </div>`)}
       <div class="ob-row" style="flex-wrap:nowrap;gap:.4rem">
-        <input class="ob-input sm" aria-label="New column name" placeholder="New column" value=${col.key} onInput=${e => setCol({ ...col, key: e.currentTarget.value })} onKeyDown=${e => e.key === 'Enter' && addCol()} />
-        <select class="ob-select sm" style="width:auto" aria-label="New column type" value=${col.type} onChange=${e => setCol({ ...col, type: e.currentTarget.value })}>
+        <input class="input input--sm" aria-label="New column name" placeholder="New column" value=${col.key} onInput=${e => setCol({ ...col, key: e.currentTarget.value })} onKeyDown=${e => e.key === 'Enter' && addCol()} />
+        <select class="select select--sm" style="width:auto" aria-label="New column type" value=${col.type} onChange=${e => setCol({ ...col, type: e.currentTarget.value })}>
           ${ATTR_TYPES.map(t => html`<option value=${t}>${t}</option>`)}</select>
-        <button type="button" class="ob-btn sm" onClick=${addCol}>Add</button>
+        <button type="button" class="btn btn--sm" onClick=${addCol}>Add column</button>
       </div>
     </div>
   </div>`;

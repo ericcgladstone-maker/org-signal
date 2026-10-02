@@ -309,6 +309,30 @@ export function bounds(nodes) {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+// A place for a new node at or near p that keeps clear of every node and its
+// label (drawn below the circle), so a new node never hides a name. Tries p,
+// then rings of candidates around it (right first), nearest first.
+//   r       node radius
+//   clearX  horizontal clearance from another node's centre (label width)
+//   clearY  vertical clearance (circle plus label line)
+export function freeSpot(nodes, p, { r = 10, clearX = 56, clearY = 44, step = null } = {}) {
+  const free = q => nodes.every(n => Math.abs(n.x - q.x) >= clearX || Math.abs(n.y - q.y) >= clearY);
+  if (free(p)) return { x: p.x, y: p.y };
+  const s = step || Math.max(r * 2, clearY);
+  for (let ring = 1; ring <= 12; ring++) {
+    const cands = [];
+    for (let i = -ring; i <= ring; i++) for (let j = -ring; j <= ring; j++) {
+      if (Math.max(Math.abs(i), Math.abs(j)) !== ring) continue;
+      cands.push({ x: p.x + i * clearX, y: p.y + j * s });
+    }
+    // Nearest first; ties prefer the right, then below.
+    cands.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y) || b.x - a.x || b.y - a.y);
+    const hit = cands.find(free);
+    if (hit) return hit;
+  }
+  return { x: p.x + clearX, y: p.y };
+}
+
 // ---- JSON import / export ------------------------------------------------------
 
 export function exportJSON(doc) {
