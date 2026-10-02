@@ -63,6 +63,14 @@ export function exportGEXF(ds, net, opts = {}) {
     cols.forEach((c, k) => out.push(`      <attribute id="${k}" title="${xmlEscape(c.name)}" type="${GEXF_TYPE[c.type]}"/>`));
     out.push('    </attributes>');
   }
+  // Evidence per construction rule (replies, mentions, ...) on every tie, so a
+  // tie can be filtered or styled by what created it in Gephi.
+  const rules = Object.keys(net.edges.byRule || {}).filter(r => net.edges.byRule[r]?.length === net.edges.count);
+  if (rules.length) {
+    out.push('    <attributes class="edge" mode="static">');
+    rules.forEach((r, k) => out.push(`      <attribute id="e${k}" title="evidence_${xmlEscape(r)}" type="double"/>`));
+    out.push('    </attributes>');
+  }
   out.push('    <nodes>');
   for (let i = 0; i < net.n; i++) {
     const vals = [];
@@ -87,10 +95,9 @@ export function exportGEXF(ds, net, opts = {}) {
     // Gephi needs parallel edges to differ by kind.
     const kind = dup > 1 ? ` kind="parallel-${dup}"` : '';
     const open = `      <edge id="${e}" source="${xmlEscape(nodeKey(ds, net, a))}" target="${xmlEscape(nodeKey(ds, net, b))}" weight="${fmtNum(E.w[e])}"${kind}`;
-    if (times && times[e].length) {
-      const vals = [...new Set(times[e].map(fmtT))];
-      out.push(`${open}><spells>${vals.map(v => `<spell start="${v}" end="${v}"/>`).join('')}</spells></edge>`);
-    } else out.push(`${open}/>`);
+    const ev = rules.map((r, k) => (E.byRule[r][e] ? `<attvalue for="e${k}" value="${fmtNum(E.byRule[r][e])}"/>` : '')).join('');
+    const spells = times && times[e].length ? `<spells>${[...new Set(times[e].map(fmtT))].map(v => `<spell start="${v}" end="${v}"/>`).join('')}</spells>` : '';
+    out.push(ev || spells ? `${open}>${ev ? `<attvalues>${ev}</attvalues>` : ''}${spells}</edge>` : `${open}/>`);
   }
   out.push('    </edges>');
   out.push('  </graph>');
