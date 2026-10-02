@@ -39,7 +39,8 @@ function PeopleInner({ ds, net }) {
   const [filterAttr, setFilterAttr] = useState('');
   const [filterVal, setFilterVal] = useState('');
   const attrs = useMemo(() => groupableAttributes(ds), [ds]);
-  const numAttrs = useMemo(() => numericAttributes(ds).slice(0, 3), [ds]);
+  // Ordinal attributes are both groupable and numeric; show each one once.
+  const numAttrs = useMemo(() => numericAttributes(ds).filter(a => !attrs.some(g => g.key === a.key)).slice(0, 3), [ds, attrs]);
   const ids = net.nodeIds;
   const comm = useMemo(() => (communities ? categoricalScale(Array.from({ length: communities.count }, (_, i) => String(i))) : null), [communities]);
 
