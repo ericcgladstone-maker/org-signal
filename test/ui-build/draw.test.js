@@ -258,5 +258,5 @@ test('toDataset: shape, keys, view, contexts, weights, typed attrs', () => {
   const mixed = D.toDataset(D.addEdge(d, { source: 'a', target: 'c', type: 'reports to', directed: true }));
   assert.equal(mixed.meta.sources[0].directed, true);
   assert.equal(mixed.events.count, 3 * 2 + 1);
-  assert.throws(() => D.toDataset(D.emptyDoc()), /no nodes/);
+  assert.throws(() => D.toDataset(D.emptyDoc()), /no people/);
 });

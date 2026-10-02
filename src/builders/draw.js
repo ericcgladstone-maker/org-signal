@@ -75,8 +75,8 @@ export function groupById(doc, id) { return doc.groups.find(g => g.id === id) ??
 export function nextLabel(doc) {
   const taken = new Set(doc.nodes.map(n => n.label));
   let i = doc.nodes.length + 1;
-  while (taken.has(`Node ${i}`)) i++;
-  return `Node ${i}`;
+  while (taken.has(`Person ${i}`)) i++;
+  return `Person ${i}`;
 }
 
 // ---- node operations -------------------------------------------------------
@@ -353,12 +353,12 @@ export function validateDoc(obj) {
     .map(c => ({ key: String(c.key), type: ATTR_TYPES.includes(c.type) ? c.type : 'text' }));
   const ids = new Set();
   obj.nodes.forEach((n, i) => {
-    if (!n || n.id == null) { errors.push(`Node ${i + 1} has no id; skipped.`); return; }
+    if (!n || n.id == null) { errors.push(`Person ${i + 1} has no id; skipped.`); return; }
     const id = String(n.id);
-    if (ids.has(id)) { errors.push(`Duplicate node id "${id}"; second copy skipped.`); return; }
+    if (ids.has(id)) { errors.push(`Duplicate person id "${id}"; second copy skipped.`); return; }
     ids.add(id);
     const x = Number(n.x), y = Number(n.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) warnings.push(`Node "${id}" had no position; placed at the origin.`);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) warnings.push(`Person "${id}" had no position; placed at the origin.`);
     let group = n.group == null || n.group === '' ? null : String(n.group);
     if (group && !groupIds.has(group)) { doc.groups.push({ id: group, name: group }); groupIds.add(group); }
     doc.nodes.push({ id, label: String(n.label ?? id), x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0, group,
@@ -368,7 +368,7 @@ export function validateDoc(obj) {
   (Array.isArray(obj.edges) ? obj.edges : []).forEach((e, i) => {
     if (!e) return;
     const s = String(e.source), t = String(e.target);
-    if (!ids.has(s) || !ids.has(t)) { errors.push(`Tie ${i + 1} refers to a missing node; skipped.`); return; }
+    if (!ids.has(s) || !ids.has(t)) { errors.push(`Tie ${i + 1} refers to a missing person; skipped.`); return; }
     if (s === t) { errors.push(`Tie ${i + 1} is a self-loop; skipped.`); return; }
     const w = Number(e.weight ?? 1);
     const type = String(e.type ?? DEFAULT_EDGE_TYPE);
@@ -400,7 +400,7 @@ export function importJSON(text) {
 // directed analysis reads it as the mutual tie the user drew rather than as a
 // one-way tie in an arbitrary direction.
 export function toDataset(doc, { name } = {}) {
-  if (!doc.nodes.length) throw new Error('The drawing has no nodes yet.');
+  if (!doc.nodes.length) throw new Error('The drawing has no people yet.');
   const directed = doc.edges.some(e => e.directed);
   const b = new DatasetBuilder({ name: name || doc.name || 'Drawing' });
   b.beginSource({ format: 'draw', family: 'custom', medium: 'canvas', view: 'full', context: 'custom', directed, fileNames: [] });
@@ -424,7 +424,7 @@ export function toDataset(doc, { name } = {}) {
   };
   for (const e of doc.edges) {
     const s = idx.get(e.source), t = idx.get(e.target);
-    if (s === undefined || t === undefined) { b.warn('dangling-tie', 'Ties to nodes that no longer exist were skipped'); continue; }
+    if (s === undefined || t === undefined) { b.warn('dangling-tie', 'Ties to people who are no longer in the drawing were skipped'); continue; }
     const c = ctxFor(e.type || DEFAULT_EDGE_TYPE);
     b.event({ type: 'declared', actor: s, targets: [[t, 'declared']], context: c, weight: e.weight ?? 1, key: `draw:${e.id}` });
     if (directed && !e.directed) b.event({ type: 'declared', actor: t, targets: [[s, 'declared']], context: c, weight: e.weight ?? 1, key: `draw:${e.id}:rev` });

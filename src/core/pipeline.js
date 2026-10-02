@@ -155,7 +155,7 @@ export async function runImport(input, { choices, options = {}, progress, signal
   const allRels = fs.entries.map(e => e.rel);
   const { plan, unclaimed } = planImports(detections, choices, allRels);
   if (!plan.length) {
-    throw new Error(`No importer recognised these files (${allRels.slice(0, 5).join(', ')}${allRels.length > 5 ? ', ...' : ''}). If it is a table, choose the spreadsheet importer and map the columns.`);
+    throw new Error(`No importer recognized these files (${allRels.slice(0, 5).join(', ')}${allRels.length > 5 ? ', ...' : ''}). If it is a table, choose the spreadsheet importer and map the columns.`);
   }
   const builder = new DatasetBuilder({ name: name || defaultName(fs) });
   const errors = [];

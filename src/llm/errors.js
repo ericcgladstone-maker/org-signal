@@ -45,7 +45,7 @@ export function messageFor(code, provider, detail = '') {
     case 'billing': return `${who} reports a billing or quota problem on this account. Add credit or check the plan, then try again.${d}`;
     case 'rate_limit': return `${who} is rate-limiting this key. Wait a minute and try again, or use a smaller request.${d}`;
     case 'overloaded': return `${who} is temporarily overloaded. Try again in a moment.${d}`;
-    case 'not_found': return `${who} does not recognise that model for this key. Pick another model from the list.${d}`;
+    case 'not_found': return `${who} does not recognize that model for this key. Pick another model from the list.${d}`;
     case 'too_large': return `The request is too large for ${who}. Ask about a smaller part of the network or use fewer messages.${d}`;
     case 'bad_request': return `${who} rejected the request.${d}`;
     case 'server': return `${who} had an internal error. Try again shortly.${d}`;

@@ -15,9 +15,9 @@ export const FORMATS = [
   { id: 'gml', label: 'GML', ext: 'gml', mime: 'text/plain', module: 'gml.js', fn: 'exportGML', note: 'igraph, networkx, yEd' },
   { id: 'pajek', label: 'Pajek .net', ext: 'net', mime: 'text/plain', module: 'pajek.js', fn: 'exportPajek', note: 'Pajek, statnet' },
   { id: 'ucinet', label: 'UCINET DL', ext: 'dl', mime: 'text/plain', module: 'ucinet.js', fn: 'exportUCINET', note: 'UCINET, NetDraw' },
-  { id: 'nodes', label: 'Nodes CSV', ext: 'csv', mime: 'text/csv', module: 'csv.js', fn: 'exportNodesCSV', note: 'Id, label, attributes, metrics' },
-  { id: 'edges', label: 'Edges CSV', ext: 'csv', mime: 'text/csv', module: 'csv.js', fn: 'exportEdgesCSV', note: 'Source, target, weight per rule' },
-  { id: 'metrics', label: 'Metrics CSV', ext: 'csv', mime: 'text/csv', module: 'csv.js', fn: 'exportMetricsCSV', note: 'Node metrics only' },
+  { id: 'nodes', label: 'People CSV (Gephi nodes table)', ext: 'csv', mime: 'text/csv', module: 'csv.js', fn: 'exportNodesCSV', note: 'Id, label, attributes, metrics' },
+  { id: 'edges', label: 'Ties CSV (Gephi edges table)', ext: 'csv', mime: 'text/csv', module: 'csv.js', fn: 'exportEdgesCSV', note: 'Source, target, weight per rule' },
+  { id: 'metrics', label: 'Metrics CSV', ext: 'csv', mime: 'text/csv', module: 'csv.js', fn: 'exportMetricsCSV', note: 'Measures per person only' },
 ];
 
 export async function available() {

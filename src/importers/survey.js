@@ -517,7 +517,7 @@ async function importQualtrics(f, builder, options) {
   if (!roster.length && !slotsQ.length) {
     startSource(builder, { format: 'qualtrics', view: 'full', fileNames: [fileName] });
     for (const r of respondents) builder.node(r.key, { label: r.label, attrs: { ...r.attrs, respondent: true } });
-    builder.warn('no-network-questions', 'No roster matrix or name-slot question was recognised; only respondents were imported. Use the CSV column mapper for other layouts.', 1);
+    builder.warn('no-network-questions', 'No roster matrix or name-slot question was recognized; only respondents were imported. Use the CSV column mapper for other layouts.', 1);
   }
 }
 

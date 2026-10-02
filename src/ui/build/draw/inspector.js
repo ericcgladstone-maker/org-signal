@@ -75,7 +75,7 @@ function MultiPanel({ doc, sel, apply, setSel }) {
   const [newGroup, setNewGroup] = useState('');
   const makeGroup = () => {
     const id = 'g' + Math.random().toString(36).slice(2, 8);
-    apply(d => D.setGroup(D.addGroup(d, { id, name: newGroup }), sel.nodes, id), 'Group nodes');
+    apply(d => D.setGroup(D.addGroup(d, { id, name: newGroup }), sel.nodes, id), 'Group people');
     setNewGroup('');
   };
   return html`<div class="ob-stack">

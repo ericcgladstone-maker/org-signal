@@ -104,7 +104,7 @@ test('a failing importer is reported, not swallowed; all failing throws', async 
   assert.equal(failed.warnings[0].severity, 'error');
   assert.match(failed.warnings[0].message, /boom/);
   await assert.rejects(runImport(fs, { importers: [bad] }), /boom/);
-  await assert.rejects(runImport(fs, { importers: [] }), /No importer recognised/);
+  await assert.rejects(runImport(fs, { importers: [] }), /No importer recognized/);
 });
 
 test('planImports: higher score claims shared files first; unclaimed listed', () => {
