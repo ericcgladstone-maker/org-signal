@@ -8,6 +8,7 @@
 //   importRosterResponses(file, opts) -> survey importer if it understands the file, else null
 //   currentDataset()          -> the active Dataset, used as a reference network
 
+import { EVENT_TYPES } from '../../core/model.js';
 import { store } from '../store.js';
 
 export function notify(level, text) {
@@ -33,7 +34,9 @@ export async function handOff(ds, { mode = 'replace', view = 'network' } = {}) {
   try {
     await store.actions.loadDataset(ds, { mode });
     if (view && typeof store.actions.setView === 'function') store.actions.setView(view);
-    notify('info', `Loaded ${ds.meta.name}: ${ds.nodes.count} people, ${ds.events.count} declared ties.`);
+    // Hand-built networks are all reported ties; generated ones are messages and other events.
+    const declaredOnly = ds.events.type.every(t => t === EVENT_TYPES.indexOf('declared'));
+    notify('info', `Loaded ${ds.meta.name}: ${ds.nodes.count.toLocaleString('en-US')} people, ${ds.events.count.toLocaleString('en-US')} ${declaredOnly ? 'reported ties' : 'events'}.`);
     return true;
   } catch (e) {
     notify('error', `Could not load the network: ${e.message}`);

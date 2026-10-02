@@ -38,6 +38,18 @@ const narrow = () => typeof innerWidth === 'number' && innerWidth <= 1060;
 // Display choices survive switching views (not reloads); reset per dataset.
 let prefs = { ds: null };
 
+// Open Generate at its recovery panel rather than at the top of the form.
+function openRecovery() {
+  store.actions.setView('generate');
+  let tries = 0;
+  const go = () => {
+    const el = document.getElementById('ob-rec-title');
+    if (el) { el.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); el.setAttribute('tabindex', '-1'); el.focus({ preventScroll: true }); }
+    else if (++tries < 40) setTimeout(go, 50);
+  };
+  setTimeout(go, 0);
+}
+
 export function NetworkView() {
   const ds = useStore(s => s.dataset);
   const net = useStore(s => s.network);
@@ -240,7 +252,7 @@ function RecoveryBanner({ ds }) {
   return html`<div class="net-banner" role="note">
     <${Flag} level="info">Generated</${Flag}>
     <span class="grow">${rec?.summary ? `Recovery check: ${rec.summary}` : 'This network was generated with planted structure. The recovery check compares what the analysis finds with what was planted.'}</span>
-    <button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView('generate')}>${rec ? 'Full recovery check' : 'Run the recovery check'}</button>
+    <button type="button" class="tlink tlink--arrow" onClick=${openRecovery}>${rec ? 'Full recovery check' : 'Run the recovery check'}</button>
   </div>`;
 }
 

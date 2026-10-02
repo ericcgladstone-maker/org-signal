@@ -93,6 +93,9 @@ function perDsNode(ctx, arr) {
 
 function add(ctx, c) { ctx.checks.push({ baseline: null, details: undefined, ...c }); }
 const r3 = x => (x == null || !Number.isFinite(x) ? null : Math.round(x * 1000) / 1000);
+// For the plain-language `says` lines: p-values never read as exactly 0, counts get separators.
+const pText = p => (!Number.isFinite(p) ? 'p not available' : p < 0.001 ? 'p < 0.001' : `p = ${r3(p)}`);
+const nText = n => (Number.isFinite(n) ? n.toLocaleString('en-US') : String(n));
 
 // ---- 1. tie coverage: how much of the true network the observed data shows ----
 
@@ -126,7 +129,7 @@ function coverage(ctx) {
   const view = truth.observation?.view;
   add(ctx, {
     id: 'tie-coverage', name: 'True ties visible in the data', area: 'observation',
-    planted: `${truePairs.size} true ties (${view} view)`, recovered: `${coveredTrue} seen; ${observedPairs} observed pairs, ${onTrue} of them true ties`,
+    planted: `${nText(truePairs.size)} true ties (${view} view)`, recovered: `${nText(coveredTrue)} seen; ${nText(observedPairs)} observed pairs, ${nText(onTrue)} of them true ties`,
     metric: 'share of true ties seen', value: r3(cov), baseline: null,
     verdict: cov == null ? 'not checked' : view === 'full' ? (cov >= 0.7 ? 'recovered' : cov >= 0.4 ? 'partly' : 'missed') : 'not checked',
     says: cov == null ? 'No true ties to compare.' : `${pct(cov)} of true ties show up as at least one interaction; ${prec == null ? 'no' : pct(prec)} of observed pairs are true ties.${view !== 'full' ? ` This is a ${view} view, so most of the network is expected to be invisible.` : ''}`,
@@ -336,7 +339,7 @@ function affectChecks(ctx) {
       const ok = d > 0.03 && (!test || test.p < 0.05);
       add(ctx, { id: 'affect-groups', name: x.description, area: 'content', planted: `valence gap ${x.plantedDelta}`, recovered: `measured gap ${r3(d)}`, metric: 'mean compound difference', value: r3(d), baseline: 0,
         verdict: ok ? 'recovered' : d > 0 ? 'partly' : 'missed',
-        says: `Measured with ${src}: ${x.highName} ${r3(hi)} vs ${x.lowName} ${r3(lo)}${test ? ` (Welch p = ${r3(test.p)})` : ''}. The planted direction is ${ok ? 'clearly' : d > 0 ? 'weakly' : 'not'} visible.` });
+        says: `Measured with ${src}: ${x.highName} ${r3(hi)} vs ${x.lowName} ${r3(lo)}${test ? ` (two-sample test, ${pText(test.p)})` : ''}. The planted direction is ${ok ? 'clearly' : d > 0 ? 'weakly' : 'not'} visible.` });
     } else if (x.kind === 'public-private') {
       const A = rows.filter(r => r.vis === 'public').map(r => r.s), B = rows.filter(r => r.vis !== 'public' && r.vis !== 'unknown').map(r => r.s);
       if (!A.length || !B.length) { add(ctx, { id: 'affect-visibility', name: x.description, area: 'content', planted: `gap ${x.plantedDelta}`, recovered: null, metric: 'public minus private', value: null, verdict: 'not checked', says: 'The observed data has only one of public or private messages.' }); continue; }
@@ -344,7 +347,7 @@ function affectChecks(ctx) {
       const same = Math.sign(d) === Math.sign(x.plantedDelta) && test.p < 0.05;
       add(ctx, { id: 'affect-visibility', name: x.description, area: 'content', planted: `public minus private ${x.plantedDelta}`, recovered: `measured ${r3(d)}`, metric: 'public minus private compound', value: r3(d), baseline: 0,
         verdict: same ? 'recovered' : Math.sign(d) === Math.sign(x.plantedDelta) ? 'partly' : 'missed',
-        says: `Public messages average ${r3(mean(A))}, private ${r3(mean(B))} (Welch p = ${r3(test.p)}).` });
+        says: `Public messages average ${r3(mean(A))}, private ${r3(mean(B))} (two-sample test, ${pText(test.p)}).` });
     } else if (x.kind === 'shift') {
       const who = x.people ? new Set(x.people) : null;
       const sel = rows.filter(r => (who ? who.has(r.p) : r.g === x.group));
@@ -353,9 +356,9 @@ function affectChecks(ctx) {
       if (before.length < 5 || after.length < 5) { add(ctx, { id: 'affect-shift', name: x.description, area: 'content', planted: `shift ${x.plantedDelta} at ${iso(x.t)}`, recovered: null, metric: 'after minus before', value: null, verdict: 'not checked', says: 'Too few messages from the affected people on one side of the shift.' }); continue; }
       const d = mean(after) - mean(before), test = welch(after, before);
       const ok = Math.sign(d) === Math.sign(x.plantedDelta) && test.p < 0.05;
-      add(ctx, { id: 'affect-shift', name: x.description, area: 'content', planted: `shift ${x.plantedDelta} at ${iso(x.t)}`, recovered: `measured ${r3(d)}`, metric: 'after minus before compound', value: r3(d), baseline: 0,
+      add(ctx, { id: 'affect-shift', name: `${x.description}${Number.isInteger(x.group) && ctx.truth.communities?.names?.[x.group] ? ` (${ctx.truth.communities.names[x.group]})` : ''}, ${iso(x.t).slice(0, 10)}`, area: 'content', planted: `shift ${x.plantedDelta} at ${iso(x.t)}`, recovered: `measured ${r3(d)}`, metric: 'after minus before compound', value: r3(d), baseline: 0,
         verdict: ok ? 'recovered' : Math.sign(d) === Math.sign(x.plantedDelta) ? 'partly' : 'missed',
-        says: `Mean sentiment of the affected people moves from ${r3(mean(before))} to ${r3(mean(after))} (Welch p = ${r3(test.p)}).` });
+        says: `Mean sentiment of the affected people moves from ${r3(mean(before))} to ${r3(mean(after))} (two-sample test, ${pText(test.p)}).` });
     }
   }
 }
