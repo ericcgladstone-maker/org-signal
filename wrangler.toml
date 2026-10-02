@@ -1,0 +1,9 @@
+# Cloudflare Workers Static Assets — asset-only, no Worker script.
+# Deploys ./_deploy, an allowlist copy of the app (tools/stage.sh). Never point this at ".".
+#   tools/stage.sh && npx wrangler deploy
+name = "orgsignal"
+compatibility_date = "2026-10-02"
+
+[assets]
+directory = "./_deploy"
+not_found_handling = "404-page"

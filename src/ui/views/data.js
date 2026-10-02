@@ -159,8 +159,8 @@ export function DataView() {
 
 async function loadDemo() {
   try {
-    const { mockDataset } = await import('../services/mock.js');
-    await store.actions.loadDataset(mockDataset({}), { mode: 'replace' });
+    const { demoDataset } = await import('../app.js');
+    await store.actions.loadDataset(await demoDataset(), { mode: 'replace' });
     store.actions.notify('info', 'Loaded the synthetic demo organisation (fake names, generated messages).');
   } catch (e) { store.actions.notify('error', `Could not load the demo: ${e.message}`); }
 }

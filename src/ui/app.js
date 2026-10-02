@@ -152,10 +152,16 @@ async function boot() {
   // engine with the same synthetic data, for trying the tool or QA.
   const params = new URLSearchParams(location.search);
   if ((MOCK || params.has('demo')) && engineStatus().available && !params.has('empty')) {
-    const { mockDataset } = await import('./services/mock.js');
-    try { await store.actions.loadDataset(mockDataset({ n: mockSize() })); }
+    try { await store.actions.loadDataset(MOCK ? (await import('./services/mock.js')).mockDataset({ n: mockSize() }) : await demoDataset(mockSize())); }
     catch (e) { store.actions.notify('error', `Demo data failed to load: ${e.message}`); }
   }
+}
+
+// The demo organisation comes from the real generator: a bridge-dependent
+// workplace on Slack with light message text (fake names, generated messages).
+export async function demoDataset(size) {
+  const { generate } = await import('../generator/index.js');
+  return generate({ context: 'workplace', medium: 'slack', structure: 'bridge-dependent', size: size || 120, seed: 1, content: 'light', output: 'dataset' }).dataset;
 }
 
 boot();
