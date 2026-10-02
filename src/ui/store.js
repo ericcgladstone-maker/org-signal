@@ -19,6 +19,12 @@ const initial = {
   jobs: [],              // [{ id, label, progress, cancel }] long-running work shown in the status bar
   llm: { provider: 'anthropic', model: null, key: null, remember: false },
   notice: null,          // { level: 'info'|'warn'|'error', text }
+  // Ground truth of the generated world behind the active dataset, if any:
+  // { datasetName, spec, groundTruth, recovery } where recovery is the last
+  // recoveryCheck report (null until computed). Set by the Generate view;
+  // cleared by loadDataset when a different dataset replaces it. Lets any view
+  // show the recovery check after the user leaves Generate.
+  generated: null,
 };
 
 function createStore(state) {
