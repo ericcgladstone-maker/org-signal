@@ -1,0 +1,2 @@
+data: {"candidates": [{"content": {"parts": [{"functionCall": {"id": "fc_gem_1","name": "top_nodes","args": {"metric": "betweenness","k": 3}},"thoughtSignature": "CiQBFAKESIG2"}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 300,"candidatesTokenCount": 15,"thoughtsTokenCount": 40,"totalTokenCount": 355},"modelVersion": "gemini-3.8-flash","responseId": "fake2"}
+

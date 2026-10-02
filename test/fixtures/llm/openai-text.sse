@@ -1,0 +1,24 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_FAKE1","object":"response","status":"in_progress","model":"gpt-6.1-sol","output":[],"usage":null}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"id":"rs_FAKE","type":"reasoning","summary":[],"encrypted_content":"gAAAAFAKE"}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":2,"output_index":0,"item":{"id":"rs_FAKE","type":"reasoning","summary":[],"encrypted_content":"gAAAAFAKE"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":3,"output_index":1,"item":{"id":"msg_FAKE","type":"message","status":"in_progress","role":"assistant","content":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_FAKE","output_index":1,"content_index":0,"delta":"Hello","sequence_number":4,"logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_FAKE","output_index":1,"content_index":0,"delta":" there!","sequence_number":5,"logprobs":[]}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":6,"output_index":1,"item":{"id":"msg_FAKE","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Hello there!","annotations":[]}]}}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":7,"response":{"id":"resp_FAKE1","status":"completed","model":"gpt-6.1-sol","error":null,"incomplete_details":null,"output":[{"id":"rs_FAKE","type":"reasoning","summary":[],"encrypted_content":"gAAAAFAKE"},{"id":"msg_FAKE","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Hello there!","annotations":[]}]}],"usage":{"input_tokens":30,"output_tokens":12,"output_tokens_details":{"reasoning_tokens":4},"total_tokens":42,"input_tokens_details":{"cached_tokens":0}}}}
+
