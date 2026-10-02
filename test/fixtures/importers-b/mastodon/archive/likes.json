@@ -1,0 +1,10 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "likes.json",
+  "type": "OrderedCollection",
+  "orderedItems": [
+    "https://other.example/users/marten/statuses/998877",
+    "https://ap.example/ap/users/987/statuses/1",
+    "https://weird.example/notes/abc"
+  ]
+}

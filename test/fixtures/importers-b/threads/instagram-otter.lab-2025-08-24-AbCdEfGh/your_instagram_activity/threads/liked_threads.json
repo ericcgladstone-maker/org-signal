@@ -1,0 +1,26 @@
+{
+  "text_post_app_media_likes": [
+    {
+      "title": "river.otter",
+      "media_list_data": [],
+      "string_list_data": [
+        {
+          "href": "https://www.threads.com/@river.otter/post/DAbCdEfGhIj",
+          "value": "\u00f0\u009f\u0091\u008d",
+          "timestamp": 1760912834
+        }
+      ]
+    },
+    {
+      "title": "",
+      "media_list_data": [],
+      "string_list_data": [
+        {
+          "href": "https://www.threads.net/@badger.x/post/DZZZ",
+          "value": "\u00e2\u009d\u00a4",
+          "timestamp": 1760912900
+        }
+      ]
+    }
+  ]
+}

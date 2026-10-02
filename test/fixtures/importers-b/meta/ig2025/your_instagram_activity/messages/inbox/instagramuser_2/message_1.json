@@ -1,0 +1,20 @@
+{
+  "participants": [
+    {
+      "name": "Ana Kova\u00c4\u008d"
+    },
+    {
+      "name": "Instagram User"
+    }
+  ],
+  "title": "Instagram User",
+  "thread_path": "inbox/instagramuser_2",
+  "messages": [
+    {
+      "sender_name": "Instagram User",
+      "timestamp_ms": 1720000005000,
+      "content": "who",
+      "type": "Generic"
+    }
+  ]
+}

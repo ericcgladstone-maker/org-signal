@@ -1,0 +1,40 @@
+{
+  "participants": [
+    {
+      "name": "Ana Kova\u00c4\u008d"
+    },
+    {
+      "name": "otter lab"
+    }
+  ],
+  "title": "otter lab",
+  "is_still_participant": true,
+  "thread_path": "inbox/otterlab_17841",
+  "messages": [
+    {
+      "sender_name": "otter lab",
+      "timestamp_ms": 1720000002000,
+      "content": "Reacted \u00e2\u009d\u00a4 to your message",
+      "type": "Generic"
+    },
+    {
+      "sender_name": "Ana Kova\u00c4\u008d",
+      "timestamp_ms": 1720000001000,
+      "content": "nice",
+      "type": "Generic",
+      "reactions": [
+        {
+          "reaction": "\u00e2\u009d\u00a4",
+          "actor": "otter lab"
+        }
+      ]
+    },
+    {
+      "sender_name": "otter lab",
+      "timestamp_ms": 1720000000000,
+      "content": "",
+      "type": "Generic",
+      "is_unsent": true
+    }
+  ]
+}

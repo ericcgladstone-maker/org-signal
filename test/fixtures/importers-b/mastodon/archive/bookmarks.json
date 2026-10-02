@@ -1,0 +1,8 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "bookmarks.json",
+  "type": "OrderedCollection",
+  "orderedItems": [
+    "https://birds.example/ap/users/116000000000000001/statuses/42"
+  ]
+}

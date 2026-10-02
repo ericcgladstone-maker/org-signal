@@ -1,0 +1,23 @@
+{
+  "text_post_app_text_post_app_followers": [
+    {
+      "title": "Pine Marten \u00c3\u00a9cole",
+      "string_list_data": [
+        {
+          "href": "https://www.threads.com/pine.marten",
+          "value": "pine.marten",
+          "timestamp": 1730000000
+        }
+      ]
+    },
+    {
+      "title": "heron.bird",
+      "string_list_data": [
+        {
+          "href": "https://www.threads.net/heron.bird",
+          "timestamp": 1730000500
+        }
+      ]
+    }
+  ]
+}

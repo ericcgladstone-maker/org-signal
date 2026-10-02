@@ -1,0 +1,66 @@
+{
+  "guild": {
+    "id": "0",
+    "name": "Direct Messages",
+    "iconUrl": "x"
+  },
+  "channel": {
+    "id": "1100000000000000050",
+    "type": "DirectTextChat",
+    "categoryId": null,
+    "category": "Private",
+    "name": "rio.m",
+    "topic": null
+  },
+  "dateRange": {
+    "after": null,
+    "before": null
+  },
+  "exportedAt": "2026-09-30T12:00:00.000+00:00",
+  "messages": [
+    {
+      "id": "1200000000000000101",
+      "type": "Default",
+      "timestamp": "2026-09-02T09:00:00.000+00:00",
+      "content": "hi",
+      "author": {
+        "id": "900000000000000002",
+        "name": "nova_fox",
+        "discriminator": "0000",
+        "nickname": "Nova",
+        "color": null,
+        "isBot": false,
+        "roles": [
+          {
+            "id": "1",
+            "name": "Mods",
+            "color": null,
+            "position": 1
+          }
+        ],
+        "avatarUrl": "x"
+      },
+      "reactions": [],
+      "mentions": []
+    },
+    {
+      "id": "1200000000000000102",
+      "type": "Default",
+      "timestamp": "2026-09-02T09:01:00.000+00:00",
+      "content": "hey",
+      "author": {
+        "id": "900000000000000003",
+        "name": "rio.m",
+        "discriminator": "0000",
+        "nickname": "Rio",
+        "color": null,
+        "isBot": false,
+        "roles": [],
+        "avatarUrl": "x"
+      },
+      "reactions": [],
+      "mentions": []
+    }
+  ],
+  "messageCount": 2
+}

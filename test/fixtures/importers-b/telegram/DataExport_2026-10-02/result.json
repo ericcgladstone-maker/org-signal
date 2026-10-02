@@ -1,0 +1,404 @@
+{
+ "about": "Here is the data you requested.",
+ "personal_information": {
+  "user_id": 100000001,
+  "first_name": "Ana",
+  "last_name": "Kovač",
+  "phone_number": "+386 40 000 000",
+  "username": "@ana_k",
+  "bio": "test"
+ },
+ "contacts": {
+  "about": "x",
+  "list": [
+   {
+    "user_id": 100000002,
+    "first_name": "Ben",
+    "last_name": "Ito",
+    "phone_number": "+81 90 0000 0000",
+    "date": "2024-01-03T10:00:00",
+    "date_unixtime": "1704276000"
+   },
+   {
+    "date": "2024-01-04T10:00:00",
+    "date_unixtime": "1704362400"
+   }
+  ]
+ },
+ "frequent_contacts": {
+  "about": "x",
+  "list": [
+   {
+    "id": 100000002,
+    "category": "people",
+    "type": "user",
+    "name": "Ben Ito",
+    "rating": 0.83
+   },
+   {
+    "id": 100000003,
+    "category": "calls",
+    "type": "user",
+    "name": "Cleo Park",
+    "rating": 0.5
+   },
+   {
+    "id": 100000077,
+    "category": "inline_bots",
+    "type": "user",
+    "name": "Gif Bot",
+    "rating": 0.2
+   },
+   {
+    "id": 1234567890,
+    "category": "people",
+    "type": "private_supergroup",
+    "name": "Field Ops",
+    "rating": 0.4
+   }
+  ]
+ },
+ "chats": {
+  "about": "x",
+  "list": [
+   {
+    "name": "Ben Ito",
+    "type": "personal_chat",
+    "id": 100000002,
+    "messages": [
+     {
+      "id": 1,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731571964",
+      "from": "Ana Kovač",
+      "from_id": "user100000001",
+      "text": [
+       "Ping ",
+       {
+        "type": "mention",
+        "text": "@ben_ito"
+       }
+      ],
+      "text_entities": [
+       {
+        "type": "plain",
+        "text": "Ping "
+       },
+       {
+        "type": "mention",
+        "text": "@ben_ito"
+       }
+      ]
+     },
+     {
+      "id": 2,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731572024",
+      "from": "Ben Ito",
+      "from_id": "user100000002",
+      "reply_to_message_id": 1,
+      "text": "pong",
+      "text_entities": [
+       {
+        "type": "plain",
+        "text": "pong"
+       }
+      ],
+      "reactions": [
+       {
+        "type": "emoji",
+        "count": 2,
+        "emoji": "\ud83d\udc4d",
+        "recent": [
+         {
+          "from": "Ana Kovač",
+          "from_id": "user100000001",
+          "date": "2024-11-14T09:13:00"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "id": 3,
+      "type": "service",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731572084",
+      "actor": "Ana Kovač",
+      "actor_id": "user100000001",
+      "action": "phone_call",
+      "duration_seconds": 60
+     },
+     {
+      "id": 4,
+      "type": "unsupported"
+     }
+    ]
+   },
+   {
+    "name": "Field Ops",
+    "type": "private_supergroup",
+    "id": 1234567890,
+    "messages": [
+     {
+      "id": 10,
+      "type": "service",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731572964",
+      "actor": "Ana Kovač",
+      "actor_id": "user100000001",
+      "action": "create_group",
+      "title": "Field Ops",
+      "members": [
+       "Ana Kovač",
+       "Cleo Park"
+      ]
+     },
+     {
+      "id": 11,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731572974",
+      "from": "Cleo Park",
+      "from_id": "user100000003",
+      "text": [
+       {
+        "type": "mention_name",
+        "text": "Ben",
+        "user_id": 100000002
+       },
+       " come"
+      ],
+      "text_entities": [
+       {
+        "type": "mention_name",
+        "text": "Ben",
+        "user_id": 100000002
+       },
+       {
+        "type": "plain",
+        "text": " come"
+       }
+      ]
+     },
+     {
+      "id": 12,
+      "type": "service",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731572984",
+      "actor": "Cleo Park",
+      "actor_id": "user100000003",
+      "action": "invite_members",
+      "members": [
+       "Ben Ito",
+       "Dmitri Volk"
+      ]
+     },
+     {
+      "id": 13,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731572994",
+      "from": "Ben Ito",
+      "from_id": "user100000002",
+      "reply_to_message_id": 11,
+      "text": "here",
+      "text_entities": [
+       {
+        "type": "plain",
+        "text": "here"
+       }
+      ]
+     },
+     {
+      "id": 14,
+      "type": "service",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731573004",
+      "actor": "Ben Ito",
+      "actor_id": "user100000002",
+      "action": "remove_members",
+      "members": [
+       "Ben Ito"
+      ]
+     },
+     {
+      "id": 15,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731573014",
+      "from": "Cleo Park",
+      "from_id": "user100000003",
+      "rich_message": {
+       "blocks": [
+        {
+         "type": "paragraph",
+         "text": "rich hello"
+        }
+       ]
+      }
+     },
+     {
+      "id": 16,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731573024",
+      "from": "Cleo Park",
+      "from_id": "user100000003",
+      "reply_to_message_id": 77,
+      "reply_to_peer_id": "channel987",
+      "text": "x",
+      "text_entities": [
+       {
+        "type": "plain",
+        "text": "x"
+       }
+      ]
+     },
+     {
+      "id": 17,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731573034",
+      "from": null,
+      "from_id": "user100000009",
+      "text": "gone",
+      "text_entities": [
+       {
+        "type": "plain",
+        "text": "gone"
+       }
+      ]
+     },
+     {
+      "id": 18,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731573044",
+      "from": "Cleo Park",
+      "from_id": "user100000003",
+      "text": "",
+      "text_entities": [
+       {
+        "type": "mention",
+        "text": "@ana_k"
+       },
+       {
+        "type": "plain",
+        "text": " and "
+       },
+       {
+        "type": "mention",
+        "text": "@Some_One"
+       }
+      ]
+     },
+     {
+      "id": 19,
+      "type": "service",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731573054",
+      "actor": "Cleo Park",
+      "actor_id": "user100000003",
+      "action": "migrate_from_group",
+      "title": "Field Ops"
+     }
+    ]
+   },
+   {
+    "type": "saved_messages",
+    "id": 100000001,
+    "messages": [
+     {
+      "id": 1,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731571964",
+      "from": "Ana Kovač",
+      "from_id": "user100000001",
+      "text": "note",
+      "text_entities": [
+       {
+        "type": "plain",
+        "text": "note"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "name": "News",
+    "type": "public_channel",
+    "id": 4444,
+    "messages": [
+     {
+      "id": 1,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731571964",
+      "from": "News",
+      "from_id": "channel4444",
+      "text": "n",
+      "text_entities": [
+       {
+        "type": "plain",
+        "text": "n"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "name": "Helper",
+    "type": "bot_chat",
+    "id": 5555,
+    "messages": [
+     {
+      "id": 1,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731571964",
+      "from": "Helper",
+      "from_id": "user5555",
+      "text": "hi",
+      "text_entities": [
+       {
+        "type": "plain",
+        "text": "hi"
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "left_chats": {
+  "about": "x",
+  "list": [
+   {
+    "name": "Old Club",
+    "type": "public_supergroup",
+    "id": 555,
+    "messages": [
+     {
+      "id": 1,
+      "type": "message",
+      "date": "2024-11-14T09:12:44",
+      "date_unixtime": "1731570964",
+      "from": "Ben Ito",
+      "from_id": "user100000002",
+      "text": "old",
+      "text_entities": [
+       {
+        "type": "plain",
+        "text": "old"
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ }
+}

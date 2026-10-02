@@ -1,0 +1,6 @@
+username,message_id,created_at,updated_at,channel_url,subreddit,channel_name,conversation_type,thread_parent_message_id,message
+river_otter_77,m1,2024-02-01 10:00:00 UTC,,sendbird_group_channel_aaa,,,direct,,hey
+maple_owl,m2,2024-02-01 10:01:00 UTC,,sendbird_group_channel_aaa,,,direct,m1,hey yourself
+river_otter_77,m3,2024-02-02 10:00:00 UTC,,sendbird_group_channel_bbb,,Trail crew,group,,who is in
+maple_owl,m4,2024-02-02 10:02:00 UTC,,sendbird_group_channel_bbb,,Trail crew,group,,me
+Pine_Marten,m5,2024-02-02 10:03:00 UTC,,sendbird_group_channel_bbb,,Trail crew,group,m3,me too

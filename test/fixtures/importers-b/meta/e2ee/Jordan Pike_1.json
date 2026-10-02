@@ -1,0 +1,45 @@
+{
+  "participants": [
+    "Ana Kovač",
+    "Jordan Pike"
+  ],
+  "threadName": "Jordan Pike",
+  "messages": [
+    {
+      "senderName": "Ana Kovač",
+      "text": "new e2ee msg",
+      "timestamp": 1717500000000,
+      "type": "Generic",
+      "isUnsent": false,
+      "media": [],
+      "reactions": []
+    },
+    {
+      "senderName": "Jordan Pike",
+      "text": "See you at 3",
+      "timestamp": 1717321402123,
+      "type": "Generic",
+      "isUnsent": false,
+      "media": [],
+      "reactions": []
+    },
+    {
+      "senderName": "Jordan Pike",
+      "text": "",
+      "timestamp": 1717450000000,
+      "type": "Generic",
+      "isUnsent": false,
+      "media": [
+        {
+          "uri": "./media/photo.jpg"
+        }
+      ],
+      "reactions": [
+        {
+          "actor": "Ana Kovač",
+          "reaction": "\ud83d\udc4d"
+        }
+      ]
+    }
+  ]
+}

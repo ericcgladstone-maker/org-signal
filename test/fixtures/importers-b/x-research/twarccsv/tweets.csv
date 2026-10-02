@@ -1,0 +1,5 @@
+id,conversation_id,referenced_tweets.replied_to.id,referenced_tweets.retweeted.id,referenced_tweets.quoted.id,author_id,in_reply_to_user_id,in_reply_to_username,retweeted_user_id,retweeted_username,quoted_user_id,quoted_username,created_at,text,lang,edit_history_tweet_ids,entities.mentions,author.id,author.username,author.name,__twarc.retrieved_at,__twarc.url,__twarc.version
+1800000000000000201,1800000000000000150,1800000000000000190,,,100000001,100000002,river_otter,,,,,2024-05-02T13:20:05.000Z,"@river_otter thanks! cc @pine_marten
+second line",,"[""1800000000000000201""]","[{""start"": 0, ""end"": 12, ""username"": ""river_otter"", ""id"": ""100000002""}, {""start"": 24, ""end"": 36, ""username"": ""pine_marten"", ""id"": ""100000003""}]",100000001,otter_lab,Otter Lab,,https://api.twitter.com/2/tweets/search/all?query=otters,2.10.4
+1800000000000000202,1800000000000000202,,1800000000000000190,,100000003,,,100000002,river_otter,,,2024-05-02T14:00:00.000Z,RT @river_otter: the original text,,,,,pine_marten,,,,2.10.4
+1.8E+18,,,,,1.00000001E+8,,,,,,,2024-05-02T15:00:00.000Z,mangled,,,,,,,,,2.10.4

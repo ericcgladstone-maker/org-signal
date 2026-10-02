@@ -1,0 +1,293 @@
+{
+  "guild": {
+    "id": "1000000000000000009",
+    "name": "Synthwave Club",
+    "iconUrl": "x"
+  },
+  "channel": {
+    "id": "1100000000000000002",
+    "type": "GuildTextChat",
+    "categoryId": "1100000000000000000",
+    "category": "Text Channels",
+    "name": "general",
+    "topic": null
+  },
+  "dateRange": {
+    "after": null,
+    "before": null
+  },
+  "exportedAt": "2026-09-30T12:00:00.000+00:00",
+  "messages": [
+    {
+      "id": "1200000000000000001",
+      "type": "Default",
+      "timestamp": "2026-09-01T14:00:00.000+02:00",
+      "timestampEdited": null,
+      "callEndedTimestamp": null,
+      "isPinned": false,
+      "content": "morning all",
+      "author": {
+        "id": "900000000000000002",
+        "name": "nova_fox",
+        "discriminator": "0000",
+        "nickname": "Nova",
+        "color": null,
+        "isBot": false,
+        "roles": [
+          {
+            "id": "1",
+            "name": "Mods",
+            "color": null,
+            "position": 1
+          }
+        ],
+        "avatarUrl": "x"
+      },
+      "attachments": [],
+      "embeds": [],
+      "stickers": [],
+      "reactions": [
+        {
+          "emoji": {
+            "id": "",
+            "name": "\ud83d\udc4d",
+            "code": "thumbsup",
+            "isAnimated": false,
+            "imageUrl": "x"
+          },
+          "count": 2,
+          "users": [
+            {
+              "id": "900000000000000003",
+              "name": "rio.m",
+              "discriminator": "0000",
+              "nickname": "Rio",
+              "color": null,
+              "isBot": false,
+              "roles": [],
+              "avatarUrl": "x"
+            }
+          ]
+        }
+      ],
+      "mentions": [],
+      "inlineEmojis": []
+    },
+    {
+      "id": "1200000000000000002",
+      "type": "Reply",
+      "timestamp": "2026-09-01T14:02:11.512+02:00",
+      "timestampEdited": null,
+      "callEndedTimestamp": null,
+      "isPinned": false,
+      "content": "agreed, @Nova",
+      "author": {
+        "id": "900000000000000003",
+        "name": "rio.m",
+        "discriminator": "0000",
+        "nickname": "Rio",
+        "color": null,
+        "isBot": false,
+        "roles": [],
+        "avatarUrl": "x"
+      },
+      "attachments": [],
+      "embeds": [],
+      "stickers": [],
+      "reactions": [],
+      "mentions": [
+        {
+          "id": "900000000000000002",
+          "name": "nova_fox",
+          "discriminator": "0000",
+          "nickname": "Nova",
+          "color": null,
+          "isBot": false,
+          "roles": [
+            {
+              "id": "1",
+              "name": "Mods",
+              "color": null,
+              "position": 1
+            }
+          ],
+          "avatarUrl": "x"
+        }
+      ],
+      "reference": {
+        "type": "Default",
+        "messageId": "1200000000000000001",
+        "channelId": "1100000000000000002",
+        "guildId": "1000000000000000009"
+      },
+      "inlineEmojis": []
+    },
+    {
+      "id": "1200000000000000003",
+      "type": "Reply",
+      "timestamp": "2026-09-01T14:03:00.000+02:00",
+      "content": "replying to something old",
+      "author": {
+        "id": "900000000000000002",
+        "name": "nova_fox",
+        "discriminator": "0000",
+        "nickname": "Nova",
+        "color": null,
+        "isBot": false,
+        "roles": [
+          {
+            "id": "1",
+            "name": "Mods",
+            "color": null,
+            "position": 1
+          }
+        ],
+        "avatarUrl": "x"
+      },
+      "reactions": [],
+      "mentions": [],
+      "reference": {
+        "type": "Default",
+        "messageId": "1199999999999999999",
+        "channelId": "1100000000000000002",
+        "guildId": "1000000000000000009"
+      }
+    },
+    {
+      "id": "1200000000000000004",
+      "type": "GuildMemberJoin",
+      "timestamp": "2026-09-01T14:04:00.000+02:00",
+      "content": "",
+      "author": {
+        "id": "900000000000000004",
+        "name": "kai",
+        "discriminator": "0000",
+        "nickname": "kai",
+        "color": null,
+        "isBot": false,
+        "roles": [],
+        "avatarUrl": "x"
+      },
+      "reactions": [],
+      "mentions": []
+    },
+    {
+      "id": "1200000000000000005",
+      "type": "ChannelPinnedMessage",
+      "timestamp": "2026-09-01T14:05:00.000+02:00",
+      "content": "",
+      "author": {
+        "id": "900000000000000002",
+        "name": "nova_fox",
+        "discriminator": "0000",
+        "nickname": "Nova",
+        "color": null,
+        "isBot": false,
+        "roles": [
+          {
+            "id": "1",
+            "name": "Mods",
+            "color": null,
+            "position": 1
+          }
+        ],
+        "avatarUrl": "x"
+      },
+      "reactions": [],
+      "mentions": [],
+      "reference": {
+        "type": "Default",
+        "messageId": "1200000000000000001"
+      }
+    },
+    {
+      "id": "1200000000000000006",
+      "type": "Default",
+      "timestamp": "2026-09-01T14:06:00.000+02:00",
+      "content": "pong",
+      "author": {
+        "id": "900000000000000099",
+        "name": "helperbot",
+        "discriminator": "0000",
+        "nickname": "Helper",
+        "color": null,
+        "isBot": true,
+        "roles": [],
+        "avatarUrl": "x"
+      },
+      "reactions": [],
+      "mentions": [],
+      "interaction": {
+        "id": "5",
+        "name": "ping",
+        "user": {
+          "id": "900000000000000003",
+          "name": "rio.m",
+          "discriminator": "0000",
+          "nickname": "Rio",
+          "color": null,
+          "isBot": false,
+          "roles": [],
+          "avatarUrl": "x"
+        }
+      }
+    },
+    {
+      "id": "1200000000000000007",
+      "type": "Default",
+      "timestamp": "2026-09-01T14:07:00.000+02:00",
+      "content": "fwd",
+      "author": {
+        "id": "900000000000000003",
+        "name": "rio.m",
+        "discriminator": "0000",
+        "nickname": "Rio",
+        "color": null,
+        "isBot": false,
+        "roles": [],
+        "avatarUrl": "x"
+      },
+      "reactions": [],
+      "mentions": [],
+      "reference": {
+        "type": "Forward",
+        "messageId": "1200000000000000001"
+      }
+    },
+    {
+      "id": "1200000000000000008",
+      "type": "Default",
+      "timestamp": "2026-09-01T14:08:00.000+02:00",
+      "content": "\u00e9t\u00e9",
+      "author": {
+        "id": "900000000000000002",
+        "name": "nova_fox",
+        "discriminator": "0000",
+        "nickname": "Nova",
+        "color": null,
+        "isBot": false,
+        "roles": [
+          {
+            "id": "1",
+            "name": "Mods",
+            "color": null,
+            "position": 1
+          }
+        ],
+        "avatarUrl": "x"
+      },
+      "reactions": [
+        {
+          "emoji": {
+            "id": "",
+            "name": "\ud83c\udf89",
+            "code": "tada"
+          },
+          "count": 3
+        }
+      ],
+      "mentions": []
+    }
+  ],
+  "messageCount": 8
+}

@@ -1,0 +1,27 @@
+{
+  "participants": [
+    {
+      "name": "Ana Kova\u00c4\u008d"
+    },
+    {
+      "name": "Jane Doe"
+    }
+  ],
+  "title": "Jane Doe",
+  "thread_type": "Regular",
+  "thread_path": "inbox/janedoe_10158",
+  "messages": [
+    {
+      "sender_name": "Jane Doe",
+      "timestamp_ms": 1500000000000,
+      "content": "old times",
+      "type": "Generic"
+    },
+    {
+      "sender_name": "Ana Kova\u00c4\u008d",
+      "timestamp_ms": 1499999999000,
+      "content": "caf\u00c3\u00a9?",
+      "type": "Generic"
+    }
+  ]
+}

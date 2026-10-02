@@ -1,0 +1,20 @@
+{
+  "participants": [
+    {
+      "name": "Spam Person"
+    },
+    {
+      "name": "Ana Kova\u00c4\u008d"
+    }
+  ],
+  "title": "Spam Person",
+  "thread_path": "message_requests/stranger_5",
+  "messages": [
+    {
+      "sender_name": "Spam Person",
+      "timestamp_ms": 1717000000001,
+      "content": "buy",
+      "type": "Generic"
+    }
+  ]
+}

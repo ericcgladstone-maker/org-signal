@@ -1,0 +1,462 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    {
+      "Hashtag": "as:Hashtag"
+    }
+  ],
+  "id": "outbox.json",
+  "type": "OrderedCollection",
+  "totalItems": 12,
+  "orderedItems": [
+    {
+      "id": "https://social.example/users/otter/statuses/113000000000000001/activity",
+      "type": "Create",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-05T09:30:00Z",
+      "to": [
+        "https://www.w3.org/ns/activitystreams#Public"
+      ],
+      "cc": [
+        "https://social.example/users/otter/followers",
+        "https://other.example/users/marten"
+      ],
+      "object": {
+        "id": "https://social.example/users/otter/statuses/113000000000000001",
+        "type": "Note",
+        "summary": null,
+        "inReplyTo": "https://other.example/users/marten/statuses/998877",
+        "published": "2025-01-05T09:30:00Z",
+        "url": "https://social.example/@otter/113000000000000001",
+        "attributedTo": "https://social.example/users/otter",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "cc": [
+          "https://social.example/users/otter/followers",
+          "https://other.example/users/marten"
+        ],
+        "sensitive": false,
+        "conversation": "tag:social.example,2025-01-05:objectId=4401:objectType=Conversation",
+        "content": "<p><span class=\"h-card\"><a href=\"https://other.example/@marten\" class=\"u-url mention\">@<span>marten</span></a></span> agreed &amp; thanks!</p>",
+        "contentMap": {
+          "en": "<p><span class=\"h-card\"><a href=\"https://other.example/@marten\" class=\"u-url mention\">@<span>marten</span></a></span> agreed &amp; thanks!</p>"
+        },
+        "attachment": [],
+        "tag": [
+          {
+            "type": "Mention",
+            "href": "https://other.example/users/marten",
+            "name": "@marten@other.example"
+          }
+        ],
+        "replies": {
+          "id": "https://social.example/users/otter/statuses/113000000000000001/replies",
+          "type": "Collection"
+        }
+      }
+    },
+    {
+      "id": "https://social.example/users/otter/statuses/113000000000000002/activity",
+      "type": "Create",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-06T10:00:00Z",
+      "to": [
+        "https://www.w3.org/ns/activitystreams#Public"
+      ],
+      "cc": [
+        "https://social.example/users/otter/followers",
+        "https://social.example/users/badger",
+        "https://birds.example/ap/users/116000000000000001"
+      ],
+      "object": {
+        "id": "https://social.example/users/otter/statuses/113000000000000002",
+        "type": "Note",
+        "summary": null,
+        "inReplyTo": null,
+        "published": "2025-01-06T10:00:00Z",
+        "url": "https://social.example/@otter/113000000000000002",
+        "attributedTo": "https://social.example/users/otter",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "cc": [
+          "https://social.example/users/otter/followers",
+          "https://social.example/users/badger",
+          "https://birds.example/ap/users/116000000000000001"
+        ],
+        "sensitive": false,
+        "conversation": "tag:social.example,2025-01-05:objectId=4402:objectType=Conversation",
+        "content": "<p>hello @badger and @heron</p>",
+        "contentMap": {
+          "en": "<p>hello @badger and @heron</p>"
+        },
+        "attachment": [],
+        "tag": [
+          {
+            "type": "Mention",
+            "href": "https://social.example/users/badger",
+            "name": "@badger"
+          },
+          {
+            "type": "Mention",
+            "href": "https://birds.example/ap/users/116000000000000001",
+            "name": "@heron@birds.example"
+          },
+          {
+            "type": "Hashtag",
+            "href": "https://social.example/tags/x",
+            "name": "#x"
+          }
+        ],
+        "replies": {
+          "id": "https://social.example/users/otter/statuses/113000000000000002/replies",
+          "type": "Collection"
+        },
+        "context": "https://social.example/contexts/1-77"
+      }
+    },
+    {
+      "id": "https://social.example/users/otter/statuses/113000000000000003/activity",
+      "type": "Create",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-07T11:00:00Z",
+      "to": [
+        "https://social.example/users/otter/followers"
+      ],
+      "cc": [
+        "https://www.w3.org/ns/activitystreams#Public"
+      ],
+      "object": {
+        "id": "https://social.example/users/otter/statuses/113000000000000003",
+        "type": "Note",
+        "summary": null,
+        "inReplyTo": null,
+        "published": "2025-01-07T11:00:00Z",
+        "url": "https://social.example/@otter/113000000000000003",
+        "attributedTo": "https://social.example/users/otter",
+        "to": [
+          "https://social.example/users/otter/followers"
+        ],
+        "cc": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "sensitive": false,
+        "conversation": "tag:social.example,2025-01-05:objectId=4403:objectType=Conversation",
+        "content": "<p>quiet post</p>",
+        "contentMap": {
+          "en": "<p>quiet post</p>"
+        },
+        "attachment": [],
+        "tag": [],
+        "replies": {
+          "id": "https://social.example/users/otter/statuses/113000000000000003/replies",
+          "type": "Collection"
+        }
+      }
+    },
+    {
+      "id": "https://social.example/users/otter/statuses/113000000000000004/activity",
+      "type": "Create",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-08T12:00:00Z",
+      "to": [
+        "https://social.example/users/otter/followers"
+      ],
+      "cc": [
+        "https://other.example/users/marten"
+      ],
+      "object": {
+        "id": "https://social.example/users/otter/statuses/113000000000000004",
+        "type": "Note",
+        "summary": null,
+        "inReplyTo": null,
+        "published": "2025-01-08T12:00:00Z",
+        "url": "https://social.example/@otter/113000000000000004",
+        "attributedTo": "https://social.example/users/otter",
+        "to": [
+          "https://social.example/users/otter/followers"
+        ],
+        "cc": [
+          "https://other.example/users/marten"
+        ],
+        "sensitive": false,
+        "conversation": "tag:social.example,2025-01-05:objectId=4404:objectType=Conversation",
+        "content": "<p>for followers @marten</p>",
+        "contentMap": {
+          "en": "<p>for followers @marten</p>"
+        },
+        "attachment": [],
+        "tag": [
+          {
+            "type": "Mention",
+            "href": "https://other.example/users/marten",
+            "name": "@marten@other.example"
+          }
+        ],
+        "replies": {
+          "id": "https://social.example/users/otter/statuses/113000000000000004/replies",
+          "type": "Collection"
+        }
+      }
+    },
+    {
+      "id": "https://social.example/users/otter/statuses/113000000000000005/activity",
+      "type": "Create",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-09T13:00:00Z",
+      "to": [
+        "https://birds.example/ap/users/116000000000000001"
+      ],
+      "cc": [],
+      "object": {
+        "id": "https://social.example/users/otter/statuses/113000000000000005",
+        "type": "Note",
+        "summary": null,
+        "inReplyTo": null,
+        "published": "2025-01-09T13:00:00Z",
+        "url": "https://social.example/@otter/113000000000000005",
+        "attributedTo": "https://social.example/users/otter",
+        "to": [
+          "https://birds.example/ap/users/116000000000000001"
+        ],
+        "cc": [],
+        "sensitive": false,
+        "conversation": "tag:social.example,2025-01-05:objectId=4405:objectType=Conversation",
+        "content": "<p>@heron private note</p>",
+        "contentMap": {
+          "en": "<p>@heron private note</p>"
+        },
+        "attachment": [],
+        "tag": [
+          {
+            "type": "Mention",
+            "href": "https://birds.example/ap/users/116000000000000001",
+            "name": "@heron@birds.example"
+          }
+        ],
+        "replies": {
+          "id": "https://social.example/users/otter/statuses/113000000000000005/replies",
+          "type": "Collection"
+        }
+      }
+    },
+    {
+      "id": "https://social.example/users/otter/statuses/113000000000000006/activity",
+      "type": "Create",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-10T14:00:00Z",
+      "to": [
+        "https://birds.example/ap/users/116000000000000001",
+        "https://birds.example/users/kite"
+      ],
+      "cc": [],
+      "object": {
+        "id": "https://social.example/users/otter/statuses/113000000000000006",
+        "type": "Note",
+        "summary": null,
+        "inReplyTo": null,
+        "published": "2025-01-10T14:00:00Z",
+        "url": "https://social.example/@otter/113000000000000006",
+        "attributedTo": "https://social.example/users/otter",
+        "to": [
+          "https://birds.example/ap/users/116000000000000001",
+          "https://birds.example/users/kite"
+        ],
+        "cc": [],
+        "sensitive": false,
+        "conversation": "tag:social.example,2025-01-05:objectId=4406:objectType=Conversation",
+        "content": "<p>@heron @kite plan</p>",
+        "contentMap": {
+          "en": "<p>@heron @kite plan</p>"
+        },
+        "attachment": [],
+        "tag": [
+          {
+            "type": "Mention",
+            "href": "https://birds.example/ap/users/116000000000000001",
+            "name": "@heron@birds.example"
+          },
+          {
+            "type": "Mention",
+            "href": "https://birds.example/users/kite",
+            "name": "@kite@birds.example"
+          }
+        ],
+        "replies": {
+          "id": "https://social.example/users/otter/statuses/113000000000000006/replies",
+          "type": "Collection"
+        }
+      }
+    },
+    {
+      "id": "https://social.example/users/otter/statuses/113000000000000007/activity",
+      "type": "Create",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-11T15:00:00Z",
+      "to": [
+        "https://www.w3.org/ns/activitystreams#Public"
+      ],
+      "cc": [
+        "https://social.example/users/otter/followers"
+      ],
+      "object": {
+        "id": "https://social.example/users/otter/statuses/113000000000000007",
+        "type": "Note",
+        "summary": null,
+        "inReplyTo": "https://gone.example/users/ghost/statuses/1",
+        "published": "2025-01-11T15:00:00Z",
+        "url": "https://social.example/@otter/113000000000000007",
+        "attributedTo": "https://social.example/users/otter",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "cc": [
+          "https://social.example/users/otter/followers"
+        ],
+        "sensitive": false,
+        "conversation": "tag:social.example,2025-01-05:objectId=4407:objectType=Conversation",
+        "content": "<p>replying into the void</p>",
+        "contentMap": {
+          "en": "<p>replying into the void</p>"
+        },
+        "attachment": [],
+        "tag": [],
+        "replies": {
+          "id": "https://social.example/users/otter/statuses/113000000000000007/replies",
+          "type": "Collection"
+        }
+      }
+    },
+    {
+      "id": "https://social.example/users/otter/statuses/113000000000000008/activity",
+      "type": "Create",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-12T16:00:00Z",
+      "to": [
+        "https://www.w3.org/ns/activitystreams#Public"
+      ],
+      "cc": [
+        "https://social.example/users/otter/followers"
+      ],
+      "object": {
+        "id": "https://social.example/users/otter/statuses/113000000000000008",
+        "type": "Note",
+        "summary": "spoilers",
+        "inReplyTo": null,
+        "published": "2025-01-12T16:00:00Z",
+        "url": "https://social.example/@otter/113000000000000008",
+        "attributedTo": "https://social.example/users/otter",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "cc": [
+          "https://social.example/users/otter/followers"
+        ],
+        "sensitive": false,
+        "conversation": "tag:social.example,2025-01-05:objectId=4408:objectType=Conversation",
+        "content": "<p>look at this</p>",
+        "contentMap": {
+          "en": "<p>look at this</p>"
+        },
+        "attachment": [],
+        "tag": [
+          {
+            "type": "Mention",
+            "href": "https://other.example/users/marten",
+            "name": "@marten@other.example"
+          }
+        ],
+        "replies": {
+          "id": "https://social.example/users/otter/statuses/113000000000000008/replies",
+          "type": "Collection"
+        },
+        "quote": "https://other.example/users/marten/statuses/555"
+      }
+    },
+    {
+      "id": "https://social.example/users/otter/statuses/113000000000000009/activity",
+      "type": "Announce",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-13T17:00:00Z",
+      "to": [
+        "https://www.w3.org/ns/activitystreams#Public"
+      ],
+      "cc": [
+        "https://other.example/users/marten",
+        "https://social.example/users/otter/followers"
+      ],
+      "object": "https://other.example/users/marten/statuses/556"
+    },
+    {
+      "id": "https://social.example/users/otter/statuses/113000000000000010/activity",
+      "type": "Announce",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-14T18:00:00Z",
+      "to": [
+        "https://www.w3.org/ns/activitystreams#Public"
+      ],
+      "cc": [
+        "https://social.example/users/otter/followers"
+      ],
+      "object": "https://far.example/users/vole/statuses/55"
+    },
+    {
+      "id": "https://social.example/users/otter/statuses/113000000000000011/activity",
+      "type": "Announce",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-15T19:00:00Z",
+      "to": [
+        "https://social.example/users/otter/followers"
+      ],
+      "cc": [
+        "https://social.example/users/otter"
+      ],
+      "object": {
+        "id": "https://social.example/users/otter/statuses/113000000000000004",
+        "type": "Note",
+        "attributedTo": "https://social.example/users/otter"
+      }
+    },
+    {
+      "id": "https://social.example/users/otter/statuses/1130000000000000012/activity",
+      "type": "Create",
+      "actor": "https://social.example/users/otter",
+      "published": "2025-01-16T20:00:00Z",
+      "to": [
+        "https://www.w3.org/ns/activitystreams#Public"
+      ],
+      "cc": [
+        "https://social.example/users/otter/followers"
+      ],
+      "object": {
+        "id": "https://social.example/users/otter/statuses/1130000000000000012",
+        "type": "Note",
+        "summary": null,
+        "inReplyTo": "https://social.example/users/otter/statuses/113000000000000001",
+        "published": "2025-01-16T20:00:00Z",
+        "url": "https://social.example/@otter/1130000000000000012",
+        "attributedTo": "https://social.example/users/otter",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "cc": [
+          "https://social.example/users/otter/followers"
+        ],
+        "sensitive": false,
+        "conversation": "tag:social.example,2025-01-05:objectId=4412:objectType=Conversation",
+        "content": "<p>and another thing</p>",
+        "contentMap": {
+          "en": "<p>and another thing</p>"
+        },
+        "attachment": [],
+        "tag": [],
+        "replies": {
+          "id": "https://social.example/users/otter/statuses/1130000000000000012/replies",
+          "type": "Collection"
+        }
+      }
+    }
+  ]
+}

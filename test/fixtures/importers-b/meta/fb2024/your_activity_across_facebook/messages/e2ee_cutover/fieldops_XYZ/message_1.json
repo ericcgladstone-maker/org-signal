@@ -1,0 +1,38 @@
+{
+  "participants": [
+    {
+      "name": "Ana Kova\u00c4\u008d"
+    },
+    {
+      "name": "Jordan Pike"
+    }
+  ],
+  "title": "Field Ops crew",
+  "is_still_participant": true,
+  "thread_path": "e2ee_cutover/fieldops_XYZ",
+  "messages": [
+    {
+      "sender_name": "Sam Rivera",
+      "timestamp_ms": 1717200000000,
+      "content": "Sam left the chat",
+      "type": "Unsubscribe"
+    },
+    {
+      "sender_name": "Jordan Pike",
+      "timestamp_ms": 1717100000000,
+      "content": "Plans?",
+      "type": "Generic"
+    },
+    {
+      "sender_name": "Ana Kova\u00c4\u008d",
+      "timestamp_ms": 1717000000000,
+      "content": "Ana added Sam to the group",
+      "type": "Subscribe",
+      "users": [
+        {
+          "name": "Sam Rivera"
+        }
+      ]
+    }
+  ]
+}

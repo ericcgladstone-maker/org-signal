@@ -1,0 +1,21 @@
+{
+  "participants": [
+    {
+      "name": "Sam Rivera"
+    },
+    {
+      "name": "Ana Kova\u00c4\u008d"
+    }
+  ],
+  "title": "Sam Rivera",
+  "is_still_participant": true,
+  "thread_path": "archived_threads/samrivera_9",
+  "messages": [
+    {
+      "sender_name": "Sam Rivera",
+      "timestamp_ms": 1717400000000,
+      "content": "hi",
+      "type": "Generic"
+    }
+  ]
+}

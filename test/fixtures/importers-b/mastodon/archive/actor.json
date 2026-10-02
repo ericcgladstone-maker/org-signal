@@ -1,0 +1,29 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    {
+      "Hashtag": "as:Hashtag"
+    }
+  ],
+  "id": "https://social.example/users/otter",
+  "type": "Person",
+  "following": "https://social.example/users/otter/following",
+  "followers": "https://social.example/users/otter/followers",
+  "inbox": "https://social.example/users/otter/inbox",
+  "outbox": "outbox.json",
+  "featured": "https://social.example/users/otter/collections/featured",
+  "preferredUsername": "otter",
+  "name": "Otter Lab",
+  "summary": "<p>synthetic</p>",
+  "url": "https://social.example/@otter",
+  "manuallyApprovesFollowers": false,
+  "discoverable": true,
+  "published": "2024-01-01T00:00:00Z",
+  "likes": "likes.json",
+  "bookmarks": "bookmarks.json",
+  "icon": {
+    "type": "Image",
+    "url": "avatar.png"
+  }
+}

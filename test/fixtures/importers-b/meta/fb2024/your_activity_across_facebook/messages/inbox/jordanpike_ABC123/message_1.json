@@ -1,0 +1,46 @@
+{
+  "participants": [
+    {
+      "name": "Ana Kova\u00c4\u008d"
+    },
+    {
+      "name": "Jordan Pike"
+    }
+  ],
+  "title": "Jordan Pike",
+  "is_still_participant": true,
+  "thread_path": "inbox/jordanpike_ABC123",
+  "magic_words": [],
+  "messages": [
+    {
+      "sender_name": "Jordan Pike",
+      "timestamp_ms": 1717321402123,
+      "content": "See you at 3",
+      "type": "Generic",
+      "reactions": [
+        {
+          "reaction": "\u00e2\u009d\u00a4",
+          "actor": "Ana Kova\u00c4\u008d"
+        }
+      ],
+      "is_geoblocked_for_viewer": false
+    },
+    {
+      "sender_name": "Ana Kova\u00c4\u008d",
+      "timestamp_ms": 1717321300000,
+      "type": "Generic",
+      "photos": [
+        {
+          "uri": "messages/inbox/jordanpike_ABC123/photos/123.jpg",
+          "creation_timestamp": 1717321300
+        }
+      ]
+    },
+    {
+      "sender_name": "Jordan Pike",
+      "timestamp_ms": 1717320000000,
+      "type": "Call",
+      "call_duration": 192
+    }
+  ]
+}
