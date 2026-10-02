@@ -77,3 +77,9 @@ test('nothing is described that was not run', () => {
   const bare = buildMethodsAppendix({ meta: { sources: [slack] }, settings, metrics: ['degree'] });
   for (const h of ['Group comparison', 'Statistical comparison', 'Time windows', 'Content analysis']) assert.ok(!bare.includes(`## ${h}`), h);
 });
+
+test('survey sources state their combine rule; report labels name sources', () => {
+  const survey = { format: 'survey', view: 'full', combine: 'intersection', counts: { responses: 40 } };
+  const out = buildMethodsAppendix({ meta: { sources: [survey] }, settings: {}, sourceLabels: ['Roster survey'] });
+  assert.match(out, /- \*\*Roster survey\*\*\. View: \*full\*.*Only reciprocated nominations were kept/);
+});

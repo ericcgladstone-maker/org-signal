@@ -53,7 +53,9 @@ Tokens live in `assets/theme.css` (type, frame, site colors) and the data palett
 
 **Dialogs.** `.dialog-backdrop > .dialog` (with `.dialog__head`): modal dialogs sit above the masthead and the drawer and scroll inside the viewport, so a title and Close are never under the header.
 
-**Notices and focus** (store.actions, see below). `notify()` stacks at the bottom right, above the status bar.
+**Notices and focus** (store.actions, see below). `notify()` stacks at the bottom right, above the status bar and above any bar a view keeps stuck to the bottom of the window: mark such a bar with `data-sticky-bottom` (the Data view's `.dv-actions` is recognized as is).
+
+**Virtualized table.** The shared `.vt` rules (keyboard row cursor tint, first-cell padding, `.vt--more-left/right` side fades, header info buttons, wrapping header labels) live in `app.css`.
 
 **Data color** (design rule 9). Every group in every view uses `--cat-1..8` in fixed order and `--cat-other` for the rest (read them with `tokens()` / `categoricalScale()` in `src/ui/lib/palette.js`). A single series uses `--cat-1`. Text never takes a series color. See "Palette" below for validation and the all-pairs limit.
 

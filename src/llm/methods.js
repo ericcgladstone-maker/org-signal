@@ -165,8 +165,17 @@ const uniq = xs => [...new Set(xs.filter(Boolean))];
 // Several runs of one kind may be recorded (input.nullModels, a single input.nullModel, ...).
 const runs = (many, one) => [...(Array.isArray(many) ? many : []), ...(one ? [].concat(one) : [])];
 
+// How a survey's two answers about a pair became a tie (src.combine, set by
+// the survey and roster importers).
+const COMBINE_TEXT = {
+  union: 'Answers were combined by union: a tie exists if either person named the other; ties are undirected.',
+  intersection: 'Only reciprocated nominations were kept: a tie exists only if both people named each other; ties are undirected.',
+  respondent: 'Ties were kept as reported: each runs from the respondent to the person they named.',
+};
+
+// src.label, when given, is the import report's short source name.
 function sourceLine(src) {
-  const name = formatName(src.format);
+  const name = src.label || formatName(src.format);
   const files = (src.fileNames || []).length;
   const counts = Object.entries(src.counts || {}).filter(([, v]) => typeof v === 'number').map(([k, v]) => `${fmtNum(v)} ${k}`).join(', ');
   // Family, medium and context only where they add something the format name
@@ -179,11 +188,13 @@ function sourceLine(src) {
   if (isAttributeTable(src)) role = ' An attribute table with one row per person: it adds attributes to people already in the data and records no interactions.';
   else role = ` View: *${src.view}*, i.e. ${VIEW_TEXT[src.view] || 'unspecified'}.${src.egoKey ? ' The ego is the export owner.' : ''}`;
   const window = src.window && (fmtDate(src.window.start) || fmtDate(src.window.end)) ? ` Covers ${fmtDate(src.window.start) || 'the start'} to ${fmtDate(src.window.end) || 'the end'}.` : '';
-  return `${head}${role}${files ? ` ${files} file${files === 1 ? '' : 's'} read.` : ''}${counts ? ` Records: ${counts}.` : ''}${src.tz ? ` Time zone: ${src.tz}.` : ''}${window}`;
+  const combine = src.combine && COMBINE_TEXT[src.combine] ? ` ${COMBINE_TEXT[src.combine]}` : '';
+  return `${head}${role}${combine}${files ? ` ${files} file${files === 1 ? '' : 's'} read.` : ''}${counts ? ` Records: ${counts}.` : ''}${src.tz ? ` Time zone: ${src.tz}.` : ''}${window}`;
 }
 
 // buildMethodsAppendix(input) -> markdown
 // input = { dataset | meta, settings, network, metrics: [names], networkStats: [names], approx: { [metric]: text },
+//           sourceLabels: [short name per source, from the import report],
 //           communities: { method, resolution, seed, runs },
 //           groups: [attrKeys actually analyzed], attributeLabels: { key: label },
 //           nullModel | nullModels: [{ stats, reps, seed, attr, communities }],
@@ -196,7 +207,7 @@ export function buildMethodsAppendix(input = {}) {
   const used = new Set();
   const cite = keys => { keys.forEach(k => used.add(k)); return keys.length ? ` (${keys.map(k => CITE[k]).join('; ')})` : ''; };
   const meta = input.dataset?.meta || input.meta || {};
-  const sources = meta.sources || [];
+  const sources = (meta.sources || []).map((src, i) => (input.sourceLabels?.[i] ? { ...src, label: input.sourceLabels[i] } : src));
   const s = input.settings || {};
   const net = input.network || null;
   const directed = net ? !!net.directed : !!s.directed;

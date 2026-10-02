@@ -55,6 +55,8 @@ export function appendixInput(state) {
     approx,
     communities: communities ? { resolution: communities.resolution ?? 1, seed: communities.seed ?? 1, runs: 1 } : undefined,
     groups, attributeLabels,
+    // The import report's short names, by source index (report.sources[i].id).
+    sourceLabels: (dataset?.meta?.sources || []).map((_, i) => state.report?.sources?.find(x => x.id === i)?.label || null),
     nullModels: log.nullModel || [],
     resampling: (log.resampling || []).map(r => ({ ...r, scheme: 'events resampled with replacement' })),
     time: (log.time || []).map(t => ({ window: t.window, metrics: t.metrics })),
@@ -171,12 +173,16 @@ function summaryMarkdown(state, appendix) {
     L.push(`- **${g.label}: ${fmtNum(v)}.** ${g.meaning} ${g.reliability ? `Reliability: ${g.reliability}` : ''}`);
   }
   if (communities) L.push(`- **Communities: ${communities.count}** (modularity ${fmtNum(communities.modularity)}). ${gloss('community').reliability}`);
-  L.push('', '## Most central people', '', 'Ranks are descriptive. Check rank intervals (People view) before treating a ranking as a finding.', '');
+  // Rank intervals from the People view's stability check, when it was run on this network.
+  const stab = state.stability?.version === network.version ? state.stability.byMetric || {} : {};
+  const anyStab = ['degree', 'betweenness'].some(m => stab[m]);
+  L.push('', '## Most central people', '', anyStab ? 'Ranks are descriptive. Where shown, the rank interval comes from resampling events and rebuilding the network; a wide interval means the rank is not a finding.' : 'Ranks are descriptive. Check rank intervals (People view, "Check stability of this ranking") before treating a ranking as a finding.', '');
   for (const m of ['degree', 'betweenness']) {
     if (ap[m]?.level === 'na') { L.push(`- ${gloss(m).label}: not applicable here. ${applicabilityReason(ap[m])}`); continue; }
     const top = topBy(state, m, 8);
     if (!top.length) continue;
-    L.push(`- **${gloss(m).label}** (${gloss(m).meaning}) ${top.map(x => `${nodeLabel(ds, x.i)} (${fmtNum(x.value)})`).join(', ')}.${ap[m]?.level === 'caution' ? ` Caution: ${applicabilityReason(ap[m])}` : ''}`);
+    const iv = x => { const r = stab[m]?.map?.get(x.i); return r && Number.isFinite(r.lo) ? `; rank ${r.lo}-${r.hi}${Number.isFinite(r.topShare) ? `, top ${stab[m].top} in ${Math.round(r.topShare * 100)}% of ${stab[m].reps} resamples` : ''}` : ''; };
+    L.push(`- **${gloss(m).label}** (${gloss(m).meaning}) ${top.map(x => `${nodeLabel(ds, x.i)} (${fmtNum(x.value)}${iv(x)})`).join(', ')}.${ap[m]?.level === 'caution' ? ` Caution: ${applicabilityReason(ap[m])}` : ''}`);
   }
   L.push('');
   if (appendix) L.push(appendix.replace(/^# /m, '## '));

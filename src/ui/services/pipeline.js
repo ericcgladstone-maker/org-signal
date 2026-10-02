@@ -17,6 +17,11 @@
 // choose the importer per input; several inputs are combined with
 // mergeDatasets afterwards.
 //
+// The Data view (views/data/io.js) calls importInWorker directly for real
+// runs, so detection can report progress and hand its result to the import;
+// it uses detectInput/importInput below for ?mock (and they remain a complete
+// real-pipeline path for any other caller).
+//
 // With ?mock, detection and import are faked (services/mock.js); report,
 // identity, merge, mapping and profile join use the real pure modules when
 // they load, because they need no worker and keep the demo honest.

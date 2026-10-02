@@ -131,10 +131,33 @@ function StatusBar() {
   </div>`;
 }
 
+// Notices sit at the bottom right, above the status bar and above any bar a
+// view keeps stuck to the bottom of the window (the Data view's action bar):
+// views mark such bars with [data-sticky-bottom] (or .dv-actions).
+function stickyBottomOffset() {
+  let h = 0;
+  for (const el of document.querySelectorAll('[data-sticky-bottom], .dv-actions')) {
+    const r = el.getBoundingClientRect();
+    if (r.height && r.bottom >= window.innerHeight - 2 && r.top < window.innerHeight) h = Math.max(h, window.innerHeight - r.top);
+  }
+  return h;
+}
+
 function Notices() {
   const notices = useStore(s => s.notices || []);
+  const view = useStore(s => s.view);
   const a = store.actions;
-  return html`<div class="notices" aria-live="polite" aria-relevant="additions"
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!notices.length) return;
+    const place = () => { if (ref.current) ref.current.style.setProperty('--notice-lift', `${stickyBottomOffset()}px`); };
+    place();
+    const t = setInterval(place, 500);
+    window.addEventListener('scroll', place, { passive: true });
+    window.addEventListener('resize', place);
+    return () => { clearInterval(t); window.removeEventListener('scroll', place); window.removeEventListener('resize', place); };
+  }, [notices.length, view]);
+  return html`<div class="notices" ref=${ref} aria-live="polite" aria-relevant="additions"
     onMouseEnter=${() => a.pauseNotices()} onMouseLeave=${e => { if (!e.currentTarget.contains(document.activeElement)) a.resumeNotices(); }}
     onFocusIn=${() => a.pauseNotices()} onFocusOut=${e => { if (!e.currentTarget.contains(e.relatedTarget)) a.resumeNotices(); }}>
     ${notices.map(n => html`<div class=${`notice notice--${n.level}`} key=${n.id} data-notice=${n.id} role=${n.level === 'error' ? 'alert' : 'status'}>
@@ -202,12 +225,15 @@ function syncTitle(s) {
 }
 
 // Leaving or reloading with data loaded loses it: nothing is stored (decision 7).
-// Browsers show their own wording; the masthead's Start over states ours.
+// The wording is the Data view's (LEAVE_WARNING), loaded lazily so the view
+// is not pulled into startup; most browsers show their own text anyway.
+let leaveWarning = 'Leave Org Signal? The loaded data is not stored anywhere, so leaving or reloading erases it.';
+import('./views/data.js').then(m => { if (m.LEAVE_WARNING) leaveWarning = m.LEAVE_WARNING; }, () => {});
 function warnBeforeLeaving(e) {
   if (!store.get().dataset) return;
   e.preventDefault();
-  e.returnValue = 'Nothing is stored; closing this tab erases the loaded data and results.';
-  return e.returnValue;
+  e.returnValue = leaveWarning;
+  return leaveWarning;
 }
 
 // Focus safety net (A8): when an action removes the focused control (a

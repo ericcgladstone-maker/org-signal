@@ -91,6 +91,14 @@ for (const width of [1440, 390]) {
   await p.goto(`${BASE}/index.html?mock#data`, { waitUntil: 'load' });
   await sleep(500); await idle(p, 800);
   await overflow(p, `${tag} data`); await shot(p, `${tag}-data`);
+  // The masthead's loaded-data chip with a long dataset name must not widen the page.
+  await p.evaluate(async () => {
+    const { store } = await import('/src/ui/store.js');
+    const d = store.get().dataset;
+    if (d) store.set({ dataset: { ...d, meta: { ...d.meta, name: 'Acme Corporation Slack workspace export plus the HR roster (slack, 2025)' } } });
+  });
+  await sleep(300);
+  await overflow(p, `${tag} loaded chip, long name`); await shot(p, `${tag}-loaded-chip`);
   await clickText(p, '.tabs button', 'Who is who'); await idle(p, 400); await shot(p, `${tag}-data-identity`);
 
   await go(p, 'network'); await sleep(1200);

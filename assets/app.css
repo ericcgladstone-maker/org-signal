@@ -295,6 +295,24 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.8125rem}
 .vt__td.name{color:var(--text)}
 .vt__td .swatch{margin-right:.4rem}
 
+/* virtualized table: keyboard cursor, header info buttons, side fades (UX pass) */
+/* Visible row cursor while the table has focus (A2). */
+.vt__scroll.has-focus .vt__row.is-focus{background:rgba(111,216,190,.12);box-shadow:inset 3px 0 0 var(--accent)}
+/* Room for the selection bar so it never clips the first cell (V38). */
+.vt__th:first-child,.vt__td:first-child{padding-left:.6rem}
+/* A fade on the side with more columns (P21). */
+.vt--more-right::after,.vt--more-left::before{content:'';position:absolute;top:0;bottom:0;width:2.5rem;pointer-events:none;z-index:3}
+.vt--more-right::after{right:0;background:linear-gradient(90deg,rgba(var(--bg-rgb,7,26,43),0),var(--bg))}
+.vt--more-left::before{left:0;background:linear-gradient(270deg,rgba(var(--bg-rgb,7,26,43),0),var(--bg))}
+.vt__th .tip-wrap--icon{flex:0 0 auto}
+.vt__th .tip-wrap--icon .tip-trigger{display:inline-flex;align-items:center;justify-content:center;min-width:1.5rem;min-height:1.5rem;color:var(--text-muted);text-decoration:none}
+.vt__th .tip-wrap--icon .tip-trigger:hover,.vt__th .tip-wrap--icon .tip-trigger:focus-visible{color:var(--text)}
+.vt__th .tip-wrap--icon svg{width:.8rem;height:.8rem}
+.vt__th.is-sorted .vt__sort{color:var(--text)}
+/* Long measure names wrap to two lines instead of being clipped. */
+.vt__th .vt__sort{min-width:0;white-space:normal}
+.vt__th.num .vt__sort{text-align:right;justify-content:flex-end}
+
 /* ---------- layout with side panel ---------- */
 .split{display:grid;grid-template-columns:minmax(0,1fr) 22rem;gap:0;align-items:start}
 .split > .split__main{min-width:0;padding-right:1.5rem}
@@ -395,7 +413,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.8125rem}
 @keyframes indet{0%{left:-30%}100%{left:100%}}
 .status__label{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .status__pct{font-family:var(--mono);font-size:.7rem;color:var(--text-muted);font-variant-numeric:tabular-nums}
-.notices{position:fixed;right:var(--pad-app);bottom:calc(var(--status-h) + 1rem);z-index:75;display:flex;flex-direction:column;justify-content:flex-end;gap:.5rem;width:min(26rem,calc(100vw - 2*var(--pad-app)));pointer-events:none}
+.notices{position:fixed;right:var(--pad-app);bottom:calc(max(var(--status-h),var(--notice-lift,0px)) + 1rem);z-index:75;display:flex;flex-direction:column;justify-content:flex-end;gap:.5rem;width:min(26rem,calc(100vw - 2*var(--pad-app)));pointer-events:none}
 .notices > *{pointer-events:auto}
 .notice{display:flex;gap:.75rem;align-items:flex-start;padding:.7rem .85rem;background:var(--bg-deep);border:1px solid var(--rule-strong);border-left:2px solid var(--text-muted);font-size:var(--fs-small);color:var(--text-2);box-shadow:0 8px 24px rgba(0,0,0,.3)}
 .notice__body{display:flex;flex-direction:column;gap:.35rem}
