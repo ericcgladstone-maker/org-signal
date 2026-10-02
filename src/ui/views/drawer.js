@@ -10,6 +10,22 @@ import { Icon, Flag, Select, ErrorLine } from '../components/common.js';
 import { Histogram } from '../components/charts.js';
 import { RULES, RULE_TEXT, ruleEvidence, activityHistogram, visibilityPresent, mediaPresent, botCount, timeExtent } from '../lib/dsutil.js';
 import { fmtInt, isoDay, fmtDate } from '../lib/format.js';
+import { RULE_LABEL } from '../actions.js';
+
+const ruleName = r => { const l = RULE_LABEL[r] || r; return l.charAt(0).toUpperCase() + l.slice(1); };
+const MEDIA_TEXT = { chat: 'Chat', email: 'Email', meeting: 'Meetings', calendar: 'Calendar', social: 'Social media', survey: 'Surveys', sms: 'Text messages', forum: 'Forums', canvas: 'Drawn' };
+
+// Why a rule has no evidence. Most rules need a kind of record the sources do
+// not have; turn-taking is different: it is inferred from message order, and
+// the engine only offers it when many messages in shared conversations are
+// unaddressed (src/analysis/construct.js defaultSettings). Saying "none of the
+// sources records this" for a Slack export was wrong (D10).
+function noEvidenceReason(r, ds, evidence) {
+  if (r === 'adjacency' && evidence.adjacency > 0) {
+    return 'Not derived for this data. Turn-taking is inferred from message order only where many messages in shared conversations are unaddressed (30% or more) or there are group chats; here most messages are replies, mentions or direct messages. Plain channel posts with no reply, mention or reaction create no tie.';
+  }
+  return 'None of the imported sources records this.';
+}
 
 const VIS_TEXT = { public: 'Public channels', private: 'Private channels', direct: 'Direct messages', group: 'Group chats and meetings', unknown: 'Unknown visibility' };
 
@@ -47,7 +63,7 @@ export function SettingsDrawer() {
   if (!ds || !current) {
     return html`<div class="drawer-backdrop" onClick=${close}></div>
       <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-h" ref=${panel}>
-        <div class="drawer__head"><h2 id="drawer-h" tabindex="-1">Construction settings</h2><button class="btn btn--quiet" onClick=${close} aria-label="Close">${Icon.close}</button></div>
+        <div class="drawer__head"><h2 id="drawer-h" tabindex="-1">Construction settings</h2><button type="button" class="btn btn--quiet" onClick=${close} aria-label="Close">${Icon.close}</button></div>
         <div class="drawer__body"><p class="text2" style="padding-top:1rem">Load data first; the settings describe how its events become ties.</p></div>
       </aside>`;
   }
@@ -73,7 +89,7 @@ export function SettingsDrawer() {
   <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-h" ref=${panel}>
     <div class="drawer__head">
       <h2 id="drawer-h" tabindex="-1">Construction settings</h2>
-      <button class="btn btn--quiet" onClick=${close} aria-label="Close settings">${Icon.close}</button>
+      <button type="button" class="btn btn--quiet" onClick=${close} aria-label="Close settings">${Icon.close}</button>
     </div>
     <div class="drawer__body">
       <p class="small text2" style="padding-top:.9rem">A tie between two people is built from the evidence below. Each rule is a choice you can defend or change; every tie can be traced back to its events in the Network view.</p>
@@ -81,15 +97,15 @@ export function SettingsDrawer() {
       <div class="section" style="border-top:0">
         <p class="label">Rules with evidence in this data</p>
         ${rulesWith.map(r => html`<div class=${`rule-row${rule(r).on ? '' : ' rule-row--off'}`}>
-          <label class="check"><input type="checkbox" checked=${!!rule(r).on} onChange=${e => setRule(r, { on: e.currentTarget.checked })} /><span style="color:var(--text)">${r}</span></label>
-          <label class="field field--inline"><span class="visually-hidden">Weight for ${r}</span><input class="input tnum" type="number" min="0" step="0.1" value=${rule(r).weight} disabled=${!rule(r).on} onInput=${e => setRule(r, { weight: Math.max(0, Number(e.currentTarget.value) || 0) })} aria-label=${`Weight for ${r}`} /></label>
-          <span class="rule-row__desc">${RULE_TEXT[r]} · ${fmtInt(ev(r))} pieces of evidence</span>
+          <label class="check"><input type="checkbox" checked=${!!rule(r).on} onChange=${e => setRule(r, { on: e.currentTarget.checked })} /><span style="color:var(--text)">${ruleName(r)}</span></label>
+          <label class="field field--inline"><span class="visually-hidden">Weight for ${ruleName(r)}</span><input class="input tnum" type="number" min="0" step="0.1" value=${rule(r).weight} disabled=${!rule(r).on} onInput=${e => setRule(r, { weight: Math.max(0, Number(e.currentTarget.value) || 0) })} aria-label=${`Weight for ${ruleName(r)}`} /></label>
+          <span class="rule-row__desc">${RULE_TEXT[r]} · ${fmtInt(ev(r))} ${ev(r) === 1 ? 'piece' : 'pieces'} of evidence</span>
           ${r === 'adjacency' && rule(r).on && html`<label class="field" style="grid-column:1/-1"><span>Only when the next message comes within (minutes)</span><input class="input tnum" type="number" min="1" value=${rule(r).windowMin ?? 10} onInput=${e => setRule(r, { windowMin: Number(e.currentTarget.value) || 10 })} style="max-width:7rem;text-align:left" /></label>`}
           ${r === 'copresence' && rule(r).on && html`<label class="check" style="grid-column:1/-1"><input type="checkbox" checked=${rule(r).normalize !== false} onChange=${e => setRule(r, { normalize: e.currentTarget.checked })} />Divide each meeting's weight by its size (a 2-person call counts more than a 30-person all-hands)</label>`}
         </div>`)}
         ${!rulesWith.length && html`<p class="small text2">No construction evidence was found in this data.</p>`}
         ${rulesWithout.length > 0 && html`<details class="disclose"><summary>Rules with no evidence here (${rulesWithout.length})</summary>
-          <ul class="can-list">${rulesWithout.map(r => html`<li><span style="color:var(--text)">${r}</span>: ${RULE_TEXT[r]}. None of the imported sources records this.</li>`)}</ul></details>`}
+          <ul class="can-list">${rulesWithout.map(r => html`<li><span style="color:var(--text)">${ruleName(r)}</span> (${RULE_TEXT[r]}). ${noEvidenceReason(r, ds, evidence)}</li>`)}</ul></details>`}
       </div>
 
       <div class="section">
@@ -121,20 +137,20 @@ export function SettingsDrawer() {
 
       ${media.length > 1 && html`<div class="section">
         <p class="label">Media</p>
-        ${media.map(m => html`<label class="check" style="display:flex"><input type="checkbox" checked=${!mediaSel || mediaSel.has(m)} onChange=${e => { const n = new Set(mediaSel || media); if (e.currentTarget.checked) n.add(m); else n.delete(m); setS(x => ({ ...x, media: n.size === media.length ? null : [...n] })); }} />${m}</label>`)}
+        ${media.map(m => html`<label class="check" style="display:flex"><input type="checkbox" checked=${!mediaSel || mediaSel.has(m)} onChange=${e => { const n = new Set(mediaSel || media); if (e.currentTarget.checked) n.add(m); else n.delete(m); setS(x => ({ ...x, media: n.size === media.length ? null : [...n] })); }} />${MEDIA_TEXT[m] || m}</label>`)}
       </div>`}
 
       <div class="section">
         <p class="label">Bots</p>
         <label class="check"><input type="checkbox" checked=${!!s.excludeBots} onChange=${e => setS(x => ({ ...x, excludeBots: e.currentTarget.checked }))} />Leave out accounts marked as bots</label>
-        <p class="basis">${bots ? `${fmtInt(bots)} account(s) are marked as bots in this data.` : 'No account is marked as a bot.'}</p>
+        <p class="basis">${bots ? `${fmtInt(bots)} ${bots === 1 ? 'account is' : 'accounts are'} marked as bots in this data.` : 'No account is marked as a bot.'}</p>
       </div>
       <${ErrorLine} error=${err} />
     </div>
     <div class="drawer__foot">
-      <button class="btn btn--quiet" onClick=${reset}>Undo changes</button>
-      <button class="btn" onClick=${close}>Close</button>
-      <button class="btn btn--primary" onClick=${apply} disabled=${busy}>Apply and rebuild</button>
+      <button type="button" class="tlink tlink--quiet" onClick=${reset}>Undo changes</button>
+      <button type="button" class="tlink tlink--quiet" onClick=${close}>Close</button>
+      <button type="button" class="btn btn--primary" onClick=${apply} disabled=${busy}>${busy ? 'Rebuilding' : 'Apply and rebuild'}</button>
     </div>
   </aside>`;
 }

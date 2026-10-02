@@ -55,16 +55,20 @@ const CITE = {
   garlaschelli2004: 'Garlaschelli & Loffredo, 2004',
 };
 
-// Node metrics: plain-language definition and references.
+// Node metrics: plain-language definition and references. `directed` swaps in
+// the directed wording where the definition differs.
 const NODE_METRIC_TEXT = {
-  degree: ['Degree: number of distinct contacts.', ['freeman1978']],
+  contacts: ['Contacts: number of distinct people a node has a tie with, in either direction.', ['wasserman1994']],
+  degree: ['Degree: number of ties. On a directed network this is in-degree plus out-degree, so a two-way tie counts twice; contacts counts each person once.', ['freeman1978']],
   inDegree: ['In-degree: number of distinct people who directed ties to the node.', ['wasserman1994']],
   outDegree: ['Out-degree: number of distinct people the node directed ties to.', ['wasserman1994']],
   strength: ['Strength: sum of tie weights (weighted degree).', ['wasserman1994']],
   inStrength: ['In-strength: sum of incoming tie weights.', ['wasserman1994']],
   outStrength: ['Out-strength: sum of outgoing tie weights.', ['wasserman1994']],
   betweenness: ['Betweenness: share of shortest paths between other pairs that pass through the node, computed with Brandes\' algorithm.', ['freeman1977', 'brandes2001']],
+  betweennessWeighted: ['Weighted betweenness: as betweenness, with path length the sum of 1 / tie weight, so strong ties are short steps.', ['brandes2001']],
   closeness: ['Closeness (harmonic): mean of inverse shortest-path distances to all other nodes, which remains defined in disconnected networks.', ['marchiori2000', 'boldi2014']],
+  closenessWeighted: ['Weighted closeness (harmonic), with distance 1 / tie weight.', ['marchiori2000']],
   eigenvector: ['Eigenvector centrality: centrality proportional to the centrality of one\'s contacts.', ['bonacich1972', 'bonacich1987']],
   pagerank: ['PageRank: stationary probability of a random walk with teleportation.', ['page1999']],
   hits: ['Hubs and authorities (HITS).', ['kleinberg1999']],
@@ -75,6 +79,17 @@ const NODE_METRIC_TEXT = {
   effectiveSize: ['Effective size: number of contacts minus the redundancy among them.', ['burt1992']],
   egoDensity: ['Ego-network density: density of ties among a node\'s contacts.', ['wasserman1994']],
 };
+const UNDIRECTED_DEGREE = 'Degree: number of distinct contacts.';
+
+// Which measures use tie weights. Path measures (betweenness, closeness,
+// average path length) and clustering run on the unweighted network unless
+// their weighted versions are listed; saying so matters because changing the
+// weighting then leaves them unchanged (D9).
+const PATH_UNWEIGHTED = ['betweenness', 'closeness'];
+const SHORT = { betweenness: 'betweenness', closeness: 'closeness', strength: 'strength', inStrength: 'in-strength', outStrength: 'out-strength',
+  betweennessWeighted: 'weighted betweenness', closenessWeighted: 'weighted closeness', eigenvector: 'eigenvector centrality', pagerank: 'PageRank',
+  constraint: 'constraint', effectiveSize: 'effective size' };
+const WEIGHTED = ['strength', 'inStrength', 'outStrength', 'betweennessWeighted', 'closenessWeighted', 'eigenvector', 'pagerank', 'constraint', 'effectiveSize'];
 
 const NETWORK_STAT_TEXT = {
   density: ['density (share of possible ties present)', ['wasserman1994']],
@@ -90,20 +105,25 @@ const NETWORK_STAT_TEXT = {
   assortativity: ['degree assortativity', ['newman2002']],
 };
 
+const STAT_NAME = {
+  reciprocity: 'reciprocity', transitivity: 'transitivity', avgClustering: 'average clustering', modularity: 'modularity',
+  attrAssortativity: 'attribute assortativity', eiIndex: 'E-I index', density: 'density', assortativity: 'degree assortativity',
+};
+
 const RULE_TEXT = {
-  reply: 'a reply links the replier to the author of the message replied to',
-  mention: 'a mention links the author to each person mentioned',
-  dm: 'a direct message links sender and recipient(s)',
-  to: 'an email links the sender to each To recipient',
-  cc: 'an email links the sender to each Cc recipient',
-  bcc: 'an email links the sender to each Bcc recipient',
-  adjacency: 'consecutive messages by different people in the same channel within a time window link their authors',
-  copresence: 'attendance at the same meeting or membership of the same small group links the people present',
-  declared: 'a survey or hand-entered nomination links respondent and nominee',
-  repost: 'a repost links the reposter to the original author',
-  like: 'a like links the liker to the author',
-  follow: 'a follow links the follower to the followed account',
-  reaction: 'a reaction links the reacting person to the message author',
+  reply: ['Replies', 'a reply links the replier to the author of the message replied to'],
+  mention: ['Mentions', 'a mention links the author to each person mentioned'],
+  dm: ['Direct messages', 'a direct message links sender and recipient(s)'],
+  to: ['To recipients', 'an email links the sender to each To recipient'],
+  cc: ['Cc recipients', 'an email links the sender to each Cc recipient'],
+  bcc: ['Bcc recipients', 'an email links the sender to each Bcc recipient'],
+  adjacency: ['Turn-taking', 'consecutive messages by different people in the same channel within a time window link their authors'],
+  copresence: ['Co-presence', 'attendance at the same meeting or membership of the same small group links the people present'],
+  declared: ['Declared ties', 'a survey nomination, a hand-entered tie or a declared connection links the two people'],
+  repost: ['Reposts', 'a repost links the reposter to the original author'],
+  like: ['Likes', 'a like links the liker to the author'],
+  follow: ['Follows', 'a follow links the follower to the followed account'],
+  reaction: ['Reactions', 'a reaction links the reacting person to the message author'],
 };
 
 const VIEW_TEXT = {
@@ -114,14 +134,64 @@ const VIEW_TEXT = {
   [VIEWS.AUTHORED]: 'only what one account wrote',
 };
 
-const fmtDate = t => (typeof t === 'number' && Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : null);
+const VISIBILITY_TEXT = { public: 'public channels', private: 'private channels', direct: 'direct messages', group: 'group chats and meetings', unknown: 'unknown visibility' };
+
+// Display names for source formats (the importers' ids are lowercase).
+const FORMAT_NAME = {
+  slack: 'Slack', teams: 'Microsoft Teams', email: 'Email', mbox: 'Email (mbox)', gmail: 'Gmail', eml: 'Email (.eml)', pst: 'Outlook', calendar: 'Calendar', ics: 'Calendar (.ics)',
+  tabular: 'Spreadsheet', csv: 'Spreadsheet', profile: 'Attribute table', survey: 'Survey', graphml: 'GraphML', gexf: 'GEXF', gml: 'GML', pajek: 'Pajek', ucinet: 'UCINET',
+  'network-canvas': 'Network Canvas', 'x-archive': 'X archive', 'x-research': 'X research export', bluesky: 'Bluesky', mastodon: 'Mastodon', threads: 'Threads',
+  linkedin: 'LinkedIn', whatsapp: 'WhatsApp', imessage: 'iMessage', telegram: 'Telegram', meta: 'Facebook and Instagram', facebook: 'Facebook', instagram: 'Instagram',
+  discord: 'Discord', reddit: 'Reddit', draw: 'Hand-drawn network', drawn: 'Hand-drawn network', ego: 'Ego-network interview', roster: 'Roster', perceived: 'Perceived networks', generated: 'Generated',
+};
+const formatName = f => FORMAT_NAME[String(f || '').toLowerCase()] || (f ? String(f).charAt(0).toUpperCase() + String(f).slice(1) : 'Unknown format');
+
+// A source is an attribute table when it describes people (one row each) and
+// records no interactions: an HR roster joined to a Slack export, say. Its
+// "view" then says nothing about whose interactions are recorded.
+const isAttributeTable = src => src.tableKind === 'nodes' || src.role === 'attributes' || /^(profile|attributes?)$/i.test(src.format || '')
+  || (src.counts && Number(src.counts.events ?? src.counts.messages ?? 0) === 0 && Number(src.counts.nodes ?? src.counts.people ?? src.counts.rows ?? 0) > 0 && src.tableKind !== 'edges');
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtDate = t => {
+  if (typeof t !== 'number' || !Number.isFinite(t)) return null;
+  const d = new Date(t);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+};
 const fmtNum = x => (typeof x === 'number' ? x.toLocaleString('en-US') : String(x));
+const pct = (a, b) => (b > 0 ? `${Math.round((100 * a) / b)}%` : 'n/a');
+const list = xs => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+const uniq = xs => [...new Set(xs.filter(Boolean))];
+// Several runs of one kind may be recorded (input.nullModels, a single input.nullModel, ...).
+const runs = (many, one) => [...(Array.isArray(many) ? many : []), ...(one ? [].concat(one) : [])];
+
+function sourceLine(src) {
+  const name = formatName(src.format);
+  const files = (src.fileNames || []).length;
+  const counts = Object.entries(src.counts || {}).filter(([, v]) => typeof v === 'number').map(([k, v]) => `${fmtNum(v)} ${k}`).join(', ');
+  // Family, medium and context only where they add something the format name
+  // does not already say ("Email (email, email, workplace)" said nothing).
+  const said = name.toLowerCase();
+  const detail = uniq([src.medium, src.context].map(x => String(x || '').toLowerCase()))
+    .filter(x => x && x !== 'unknown' && !said.includes(x) && x !== String(src.format || '').toLowerCase());
+  const head = `- **${name}**${detail.length ? ` (${detail.join(', ')})` : ''}.`;
+  let role;
+  if (isAttributeTable(src)) role = ' An attribute table with one row per person: it adds attributes to people already in the data and records no interactions.';
+  else role = ` View: *${src.view}*, i.e. ${VIEW_TEXT[src.view] || 'unspecified'}.${src.egoKey ? ' The ego is the export owner.' : ''}`;
+  const window = src.window && (fmtDate(src.window.start) || fmtDate(src.window.end)) ? ` Covers ${fmtDate(src.window.start) || 'the start'} to ${fmtDate(src.window.end) || 'the end'}.` : '';
+  return `${head}${role}${files ? ` ${files} file${files === 1 ? '' : 's'} read.` : ''}${counts ? ` Records: ${counts}.` : ''}${src.tz ? ` Time zone: ${src.tz}.` : ''}${window}`;
+}
 
 // buildMethodsAppendix(input) -> markdown
 // input = { dataset | meta, settings, network, metrics: [names], networkStats: [names], approx: { [metric]: text },
-//           communities: { method, resolution, seed, runs }, groups: [attrKeys],
-//           nullModel: { stats, reps, seed }, resampling: { metric(s), reps, top, seed, scheme },
+//           communities: { method, resolution, seed, runs },
+//           groups: [attrKeys actually analyzed], attributeLabels: { key: label },
+//           nullModel | nullModels: [{ stats, reps, seed, attr, communities }],
+//           resampling: { metric(s), reps, top, seed, scheme } | [..],
 //           time: { window, start, end, metrics }, content: { affect, keywords, topics, coding }, software: { name, version } }
+// Only what is passed is described: the caller passes what was actually run
+// (the UI records it in store.methodsLog), never the defaults of views that
+// were not opened.
 export function buildMethodsAppendix(input = {}) {
   const used = new Set();
   const cite = keys => { keys.forEach(k => used.add(k)); return keys.length ? ` (${keys.map(k => CITE[k]).join('; ')})` : ''; };
@@ -129,8 +199,10 @@ export function buildMethodsAppendix(input = {}) {
   const sources = meta.sources || [];
   const s = input.settings || {};
   const net = input.network || null;
+  const directed = net ? !!net.directed : !!s.directed;
   const out = [];
   const sw = input.software || { name: 'Org Signal', version: '2' };
+  const attrLabel = k => input.attributeLabels?.[k] || k;
 
   out.push('# Methods appendix', '');
 
@@ -138,10 +210,14 @@ export function buildMethodsAppendix(input = {}) {
   out.push('## Data sources', '');
   if (!sources.length) out.push('No source information was recorded.', '');
   for (const src of sources) {
-    const files = (src.fileNames || []).length;
-    const counts = Object.entries(src.counts || {}).map(([k, v]) => `${fmtNum(v)} ${k}`).join(', ');
-    out.push(`- **${src.format}** (${src.family || 'unknown family'}, ${src.medium || 'unknown medium'}, ${src.context || 'unknown'} context). View: *${src.view}*, i.e. ${VIEW_TEXT[src.view] || 'unspecified'}.${src.egoKey ? ' The ego is the export owner.' : ''}${files ? ` ${files} file${files === 1 ? '' : 's'} read.` : ''}${counts ? ` Records: ${counts}.` : ''}${src.tz ? ` Time zone: ${src.tz}.` : ''}`);
+    out.push(sourceLine(src));
     for (const w of src.warnings || []) out.push(`  - Import note: ${w.message} (${fmtNum(w.count)}).`);
+  }
+  // Attribute joins: which column matched which identity, and how many matched.
+  for (const j of meta.profileJoins || []) {
+    const on = { email: 'email address', name: 'name', id: 'account id', key: 'account key' }[j.matchOn] || j.matchOn || 'identity';
+    const cols = (j.columns || []).filter(c => c !== j.keyColumn);
+    out.push(`- **Attribute join.** Rows were joined to people by matching the column \`${j.keyColumn}\` to each person's ${on}; ${fmtNum(j.matched ?? 0)} of ${fmtNum(j.rows ?? 0)} rows (${pct(j.matched ?? 0, j.rows ?? 0)}) matched exactly one person.${cols.length ? ` Columns added: ${cols.map(c => `\`${c}\``).join(', ')}.` : ''} Unmatched people have no value for these attributes.`);
   }
   if (input.dataset?.nodes) out.push('', `After identity matching the dataset contained ${fmtNum(input.dataset.nodes.count)} people or accounts and ${fmtNum(input.dataset.events?.count ?? 0)} events.`);
   out.push('');
@@ -155,7 +231,8 @@ export function buildMethodsAppendix(input = {}) {
       let extra = '';
       if (k === 'adjacency' && r.windowMin != null) extra = ` (window ${r.windowMin} minutes)`;
       if (k === 'copresence' && r.normalize) extra = ' (weights normalized by group size)';
-      out.push(`- ${k}: ${RULE_TEXT[k] || 'custom rule'}${extra}; weight ${r.weight ?? 1}.`);
+      const [label, text] = RULE_TEXT[k] || [k, 'custom rule'];
+      out.push(`- ${label}: ${text}${extra}; weight ${r.weight ?? 1}.`);
     }
     out.push('');
   }
@@ -163,10 +240,16 @@ export function buildMethodsAppendix(input = {}) {
   parts.push(`The network was treated as ${s.directed ? 'directed' : 'undirected'}`);
   if (s.weighting) parts.push(`tie weights were ${s.weighting === 'count' ? 'event counts' : s.weighting === 'log' ? 'log-transformed event counts, log(1 + count)' : 'binary (present or absent)'}`);
   if (s.minWeight != null && s.minWeight > 0) parts.push(`ties below weight ${s.minWeight} were dropped`);
-  if (s.maxRecipients != null) parts.push(`messages with more than ${s.maxRecipients} recipients were excluded, so broadcasts do not create ties`);
-  if (s.time && (fmtDate(s.time.start) || fmtDate(s.time.end))) parts.push(`only events from ${fmtDate(s.time.start) || 'the start of the data'} to ${fmtDate(s.time.end) || 'the end of the data'} were used`);
-  if (s.visibility?.length) parts.push(`contexts were limited to visibility ${s.visibility.join(', ')}`);
-  if (s.media?.length) parts.push(`media were limited to ${s.media.join(', ')}`);
+  if (s.maxRecipients) parts.push(`messages with more than ${s.maxRecipients} recipients were excluded, so broadcasts do not create ties`);
+  if (s.time && (fmtDate(s.time.start) || fmtDate(s.time.end))) parts.push(`only events from ${fmtDate(s.time.start) || 'the start of the data'} to ${fmtDate(s.time.end) ? `${fmtDate(s.time.end)} (exclusive)` : 'the end of the data'} were used`);
+  else if (input.dataset?.events?.t?.length) {
+    // No range set: say what the data covers, so the window is never implicit.
+    let lo = Infinity, hi = -Infinity;
+    for (const t of input.dataset.events.t) if (Number.isFinite(t)) { if (t < lo) lo = t; if (t > hi) hi = t; }
+    if (Number.isFinite(lo)) parts.push(`all events were used, from ${fmtDate(lo)} to ${fmtDate(hi)}`);
+  }
+  if (s.visibility?.length) parts.push(`contexts were limited to ${list(s.visibility.map(v => VISIBILITY_TEXT[v] || v))}`);
+  if (s.media?.length) parts.push(`media were limited to ${list(s.media)}`);
   if (s.excludeBots) parts.push('accounts flagged as bots were excluded');
   if (s.includeIsolates != null) parts.push(s.includeIsolates ? 'isolates were kept' : 'isolates were removed');
   out.push(parts.join('; ') + '.');
@@ -179,11 +262,19 @@ export function buildMethodsAppendix(input = {}) {
   if (metrics.length || nstats.length) {
     out.push('## Measures', '');
     for (const m of metrics) {
-      const [text, refs] = NODE_METRIC_TEXT[m];
+      const [text0, refs] = NODE_METRIC_TEXT[m];
+      const text = m === 'degree' && !directed ? UNDIRECTED_DEGREE : text0;
       const approx = input.approx?.[m] ? ` Approximation: ${input.approx[m]}.` : '';
       out.push(`- ${text}${cite(refs)}${approx}`);
     }
     if (nstats.length) out.push(`- Whole-network statistics: ${nstats.map(k => NETWORK_STAT_TEXT[k][0] + cite(NETWORK_STAT_TEXT[k][1])).join('; ')}.`);
+    // Path weighting, stated once: which measures the weighting choice reaches.
+    const unweighted = metrics.filter(m => PATH_UNWEIGHTED.includes(m));
+    const weighted = metrics.filter(m => WEIGHTED.includes(m));
+    if (unweighted.length || nstats.includes('avgPathLength')) {
+      const names = [...unweighted.map(m => SHORT[m]), ...(nstats.includes('avgPathLength') ? ['average path length'] : [])];
+      out.push(`- Path weighting: ${list(names)} ${names.length === 1 ? 'was' : 'were'} computed on shortest paths that ignore tie weights (every tie is one step), so the weighting choice does not change ${names.length === 1 ? 'it' : 'them'}.${weighted.length ? ` Tie weights enter ${list(weighted.map(m => SHORT[m]))}.` : ''}`);
+    }
     out.push('');
   }
 
@@ -191,43 +282,52 @@ export function buildMethodsAppendix(input = {}) {
   if (input.communities) {
     const c = input.communities;
     out.push('## Community detection', '');
-    out.push(`Communities were detected with the Louvain method${cite(['blondel2008'])}, which maximizes modularity${cite(['newman2004'])}, at resolution ${c.resolution ?? 1} with random seed ${c.seed ?? 'unspecified'}${c.runs ? ` over ${c.runs} runs` : ''}. Louvain partitions depend on the seed and can contain poorly connected communities${cite(['traag2019'])}, so community boundaries should be read as one plausible partition.`, '');
+    out.push(`Communities were detected with the Louvain method${cite(['blondel2008'])}, which maximizes modularity${cite(['newman2004'])}, at resolution ${c.resolution ?? 1} with random seed ${c.seed ?? 'unspecified'}${c.runs > 1 ? ` over ${c.runs} runs` : ''}. Louvain partitions depend on the seed and can contain poorly connected communities${cite(['traag2019'])}, so community boundaries should be read as one plausible partition.`, '');
   }
 
-  // 5. Groups
-  if (input.groups?.length) {
+  // 5. Groups: only the attributes actually analyzed.
+  const groups = uniq(input.groups || []);
+  if (groups.length) {
     out.push('## Group comparison', '');
-    out.push(`Groups were defined by the attribute${input.groups.length > 1 ? 's' : ''} ${input.groups.map(g => `\`${g}\``).join(', ')}. Mixing between groups was summarized by attribute assortativity${cite(['newman2003'])} and the E-I index, (external - internal) / (external + internal) ties${cite(['krackhardt1988'])}.`, '');
+    const named = groups.map(g => (g === 'community' ? 'the detected communities' : `\`${attrLabel(g)}\``));
+    out.push(`Groups were defined by ${groups.length > 1 ? 'each of ' : ''}${list(named)}. Mixing between groups was summarized by attribute assortativity${cite(['newman2003'])} and the E-I index, (external - internal) / (external + internal) ties${cite(['krackhardt1988'])}.`, '');
   }
 
-  // 6. Inference
-  if (input.nullModel || input.resampling) {
+  // 6. Inference: one sentence per run, with its own replicate count.
+  const nulls = runs(input.nullModels, input.nullModel);
+  const resamples = runs(input.resamplings, input.resampling);
+  if (nulls.length || resamples.length) {
     out.push('## Statistical comparison and robustness', '');
-    if (input.nullModel) {
-      const nm = input.nullModel;
-      out.push(`Observed whole-network statistics (${(nm.stats || []).join(', ')}) were compared with ${nm.reps} degree-preserving randomizations produced by edge swapping${cite(['maslov2002'])} (seed ${nm.seed ?? 'unspecified'}). We report the null mean, standard deviation, z-score and ${nm.pDefinition || 'p-value'}.`);
-    }
-    if (input.resampling) {
-      const r = input.resampling;
+    nulls.forEach((nm, i) => {
+      const stats = (nm.stats || []).map(x => STAT_NAME[x] || x);
+      const target = nm.attr ? ` for groups defined by \`${attrLabel(nm.attr)}\`` : nm.communities ? ' for the detected communities' : '';
+      const how = i === 0 ? ` degree-preserving randomizations produced by edge swapping${cite(['maslov2002'])}` : ' degree-preserving randomizations';
+      out.push(`Observed ${list(stats) || 'statistics'}${target} ${stats.length === 1 ? 'was' : 'were'} compared with ${fmtNum(nm.reps)}${how} (seed ${nm.seed ?? 'unspecified'}).`);
+    });
+    if (nulls.length) out.push(`We report the null mean, standard deviation, z-score and ${nulls[0].pDefinition || 'two-sided empirical p-value'}.`);
+    resamples.forEach((r, i) => {
       const ms = [].concat(r.metric || r.metrics || []).join(', ');
-      out.push(`Rank stability for ${ms || 'node rankings'} was assessed by recomputing the network on ${r.reps} resamples${r.scheme ? ` (${r.scheme})` : ' of events'}${cite(['efron1993'])} (seed ${r.seed ?? 'unspecified'}); we report each node's rank interval and how often it stayed in the top ${r.top ?? 'k'}. Centrality rankings are known to be sensitive to missing data${cite(['borgatti2006'])}.`);
-    }
+      out.push(`Rank stability for ${ms || 'node rankings'} was assessed by recomputing the network on ${fmtNum(r.reps)} resamples${r.scheme ? ` (${r.scheme})` : ' of events'}${i === 0 ? cite(['efron1993']) : ''} (seed ${r.seed ?? 'unspecified'}); we report each node's rank interval and how often it stayed in the top ${r.top ?? 'k'}.${i === 0 ? ` Centrality rankings are known to be sensitive to missing data${cite(['borgatti2006'])}.` : ''}`);
+    });
     out.push('');
   }
 
   // 7. Time
-  if (input.time) {
-    const t = input.time;
+  const times = runs(input.times, input.time);
+  if (times.length) {
     out.push('## Time windows', '');
-    out.push(`Measures${t.metrics?.length ? ` (${t.metrics.join(', ')})` : ''} were recomputed in consecutive ${t.window} windows${fmtDate(t.start) ? ` from ${fmtDate(t.start)}` : ''}${fmtDate(t.end) ? ` to ${fmtDate(t.end)}` : ''}, using the same construction rules in every window. A tie was counted as formed in the first window in which it appeared and dissolved in the first window after its last appearance.`, '');
+    for (const t of times) {
+      out.push(`Measures${t.metrics?.length ? ` (${t.metrics.join(', ')})` : ''} were recomputed in consecutive ${t.window ? `${t.window} ` : ''}windows${fmtDate(t.start) ? ` from ${fmtDate(t.start)}` : ''}${fmtDate(t.end) ? ` to ${fmtDate(t.end)}` : ''}, using the same construction rules in every window.`);
+    }
+    out.push('A tie was counted as formed in the first window in which it appeared and dissolved in the first window after its last appearance.', '');
   }
 
   // 8. Content
   const c = input.content;
   if (c && (c.affect || c.keywords || c.topics || c.coding)) {
     out.push('## Content analysis', '');
-    if (c.affect) out.push(`Message affect was scored with VADER${cite(['hutto2014'])}, a lexicon- and rule-based sentiment model; the compound score ranges from -1 to 1 and was aggregated by ${c.affect.by || 'network'}. VADER was built for English social-media text and is less reliable for other languages, domain jargon and sarcasm.`);
-    if (c.keywords) out.push(`Distinctive terms were ranked by TF-IDF weighting${cite(['sparckjones1972'])}${c.keywords.by ? ` within each ${c.keywords.by}` : ''}${c.keywords.k ? `, top ${c.keywords.k}` : ''}.`);
+    if (c.affect) out.push(`Message affect was scored with VADER${cite(['hutto2014'])}, a lexicon- and rule-based sentiment model; the compound score ranges from -1 to 1 and was aggregated by ${c.affect.by === 'group' && c.affect.attr ? `\`${attrLabel(c.affect.attr)}\`` : c.affect.by || 'network'}. VADER was built for English social-media text and is less reliable for other languages, domain jargon and sarcasm.`);
+    if (c.keywords) out.push(`Distinctive terms were ranked by TF-IDF weighting${cite(['sparckjones1972'])}${c.keywords.by ? ` within each ${c.keywords.by === 'group' && c.keywords.attr ? `\`${attrLabel(c.keywords.attr)}\` group` : c.keywords.by}` : ''}${c.keywords.k ? `, top ${c.keywords.k}` : ''}.`);
     if (c.topics) {
       const lda = !c.topics.method || /lda/i.test(c.topics.method);
       out.push(`Topics were estimated with ${lda ? 'latent Dirichlet allocation' : c.topics.method}${lda ? cite(['blei2003']) : ''} with ${c.topics.k} topics (seed ${c.topics.seed ?? 'unspecified'}).`);
@@ -251,14 +351,16 @@ export function buildMethodsAppendix(input = {}) {
     out.push('');
   }
 
-  // 9. Limitations implied by the data's views.
-  const views = new Set(sources.map(x => x.view));
+  // 9. Limitations implied by the data's views (attribute tables have none).
+  const views = new Set(sources.filter(x => !isAttributeTable(x)).map(x => x.view));
+  const interactionSources = sources.filter(x => !isAttributeTable(x));
   const lim = [];
   if (views.has(VIEWS.EGO)) lim.push('Ego-view sources record only the export owner\'s own interactions; ties among their contacts are unobserved, so whole-network statistics and the centrality of anyone but the ego are not interpretable from those sources alone.');
   if (views.has(VIEWS.CHAT)) lim.push('Chat-view sources cover single conversations and do not represent the participants\' wider networks.');
   if (views.has(VIEWS.SAMPLE)) lim.push('Sample-view sources are part of a larger population; network statistics depend on the sampling design and should not be read as population values.');
   if (views.has(VIEWS.AUTHORED)) lim.push('Authored-view sources contain only what one account wrote; incoming ties are missing.');
-  if (sources.length > 1) lim.push('Sources were merged by identity matching; unmatched or mismatched identities split or join people.');
+  if (interactionSources.length > 1) lim.push('Sources were merged by identity matching; unmatched or mismatched identities split or join people.');
+  if ((meta.profileJoins || []).length) lim.push('Attributes from joined tables are missing for people the join did not match; group comparisons leave them out or treat them as a separate "no value" group.');
   lim.push('Communication traces record observable interaction, not relationships, attitudes or individual traits; the measures describe structural positions and patterns of observed communication only.');
   out.push('## Limitations', '', ...lim.map(x => `- ${x}`), '');
 

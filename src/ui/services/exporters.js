@@ -45,7 +45,16 @@ export async function exportAs(id, { ds, settings, nodeMetrics, communities }) {
   const metrics = {};
   for (const [k, v] of Object.entries(nodeMetrics || {})) if (k !== 'meta' && v && v.length === net.n) metrics[k] = v;
   const text = await fn(ds, net, { nodeMetrics: metrics, communities: communities?.membership?.length === net.n ? communities : null });
-  const base = (ds.meta.name || 'network').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'network';
   const suffix = ['nodes', 'edges', 'metrics'].includes(id) ? `-${id}` : '';
-  return { text, filename: `${base}${suffix}.${f.ext}`, mime: f.mime };
+  return { text, filename: `${fileBase(ds)}${suffix}.${f.ext}`, mime: f.mime };
+}
+
+// Short file name stem from the dataset name (D17): the parenthetical detail
+// goes ("Synthetic workplace (slack, bridge-dependent, seed 1)" becomes
+// "synthetic-workplace"), at most four words and 32 characters.
+export function fileBase(ds, fallback = 'network') {
+  const words = String(ds?.meta?.name || '').replace(/\([^)]*\)/g, ' ').toLowerCase().match(/[a-z0-9]+/g) || [];
+  let out = '';
+  for (const w of words.slice(0, 4)) { if ((out ? out.length + 1 : 0) + w.length > 32) break; out = out ? `${out}-${w}` : w; }
+  return out || fallback;
 }

@@ -5,7 +5,7 @@
 
 import { html, render, useState, useEffect, useRef } from '../../vendor/preact.js';
 import { store, useStore } from './store.js';
-import { registerActions, VIEWS } from './actions.js';
+import { registerActions, VIEWS, formatProgress, shortName } from './actions.js';
 import { initEngine, engineStatus } from './services/engine.js';
 import { MOCK, mockSize } from './services/modules.js';
 import { Icon, Loading, ErrorLine, ViewHead } from './components/common.js';
@@ -25,6 +25,40 @@ const loaders = {
 };
 const loaded = {};
 
+// "Analyzing: <name>" and Start over, in the masthead whenever data is loaded
+// (decision 7). Start over asks first, because nothing is stored.
+function Loaded() {
+  const ds = useStore(s => s.dataset);
+  const [ask, setAsk] = useState(false);
+  const btn = useRef(null);
+  const box = useRef(null);
+  useEffect(() => {
+    if (!ask) return;
+    box.current?.querySelector('.tlink--quiet')?.focus();
+    const onKey = e => { if (e.key === 'Escape') { setAsk(false); btn.current?.focus(); } };
+    const onClick = e => { if (!box.current?.contains(e.target) && !btn.current?.contains(e.target)) setAsk(false); };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('click', onClick);
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('click', onClick); };
+  }, [ask]);
+  if (!ds) return null;
+  const name = ds.meta?.name || 'Untitled';
+  const n = ds.nodes?.count ?? 0;
+  return html`<div class="loaded">
+    <span class="loaded__name" title=${`${name}: ${n.toLocaleString('en-US')} people`}><span class="loaded__label">Analyzing: </span><strong>${shortName(name)}</strong></span>
+    <button type="button" class="tlink tlink--quiet" ref=${btn} aria-expanded=${String(ask)} aria-controls="startOver" onClick=${() => setAsk(!ask)}>Start over</button>
+    ${ask && html`<div class="confirm" id="startOver" ref=${box} role="dialog" aria-labelledby="startOverH">
+      <p id="startOverH"><strong style="color:var(--text)">Start over?</strong></p>
+      <p>This clears ${shortName(name, 48)}, the network and every result from this tab. Nothing is stored, so it cannot be brought back unless you save a project first.</p>
+      <div class="tlinks">
+        <button type="button" class="tlink tlink--danger" onClick=${() => { setAsk(false); store.actions.startOver(); }}>Clear everything</button>
+        <button type="button" class="tlink tlink--arrow" onClick=${() => { setAsk(false); store.actions.setView('methods'); store.actions.focus('#proj-h'); }}>Save a project first</button>
+        <button type="button" class="tlink tlink--quiet" onClick=${() => { setAsk(false); btn.current?.focus(); }}>Cancel</button>
+      </div>
+    </div>`}
+  </div>`;
+}
+
 function Header() {
   const view = useStore(s => s.view);
   const ds = useStore(s => s.dataset);
@@ -42,13 +76,23 @@ function Header() {
     document.addEventListener('click', onClick);
     return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('click', onClick); };
   }, [open]);
+  // Transparent until the page scrolls, then the rule and deeper ground (as on the site).
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const set = () => setScrolled(window.scrollY > 8);
+    set();
+    window.addEventListener('scroll', set, { passive: true });
+    return () => window.removeEventListener('scroll', set);
+  }, []);
   const go = (e, id) => { e.preventDefault(); store.actions.setView(id); };
-  return html`<header class="app-header">
+  return html`<header class="app-header" data-scrolled=${String(scrolled || open)}>
     <div class="app-header__inner">
       <a class="brand" href="#data" onClick=${e => go(e, 'data')}>
         <span class="brand__name">Org Signal</span>
         <span class="brand__desc">Network measurement from relational traces</span>
       </a>
+      <div class="app-header__end">
+      <${Loaded} />
       <button class="menu-btn" ref=${btn} type="button" aria-label="Menu" aria-expanded=${String(open)} aria-controls="appNav" onClick=${() => setOpen(!open)}>
         <span class="menu-btn__bars" aria-hidden="true"></span>
       </button>
@@ -57,7 +101,9 @@ function Header() {
           ${VIEWS.map(v => html`${v.sep && html`<li class="sep" aria-hidden="true"></li>`}<li><a href=${`#${v.id}`} aria-current=${view === v.id ? 'page' : undefined} aria-disabled=${v.id === 'content' && noText ? 'true' : undefined} title=${v.id === 'content' && noText ? 'This data has no message text' : undefined} onClick=${e => go(e, v.id)}>${v.label}</a></li>`)}
         </ul>
       </nav>
+      </div>
     </div>
+    <div class="loaded-row frame"><${Loaded} /></div>
   </header>`;
 }
 
@@ -69,6 +115,7 @@ function StatusBar() {
     document.documentElement.style.setProperty('--status-h', `${h}px`);
   }, [jobs.length]);
   if (!jobs.length) return null;
+  // Not a live region: progress is announced, throttled, through #announcer (actions.js).
   return html`<div class="status" ref=${ref} role="region" aria-label="Running jobs">
     ${jobs.map(j => {
       const indet = !(j.progress > 0);
@@ -76,9 +123,9 @@ function StatusBar() {
       return html`<div class="status__job" key=${j.id}>
         <span class=${`status__bar${indet ? ' status__bar--indet' : ''}`} style=${indet ? '' : `width:${Math.max(2, j.progress * 100)}%`} aria-hidden="true"></span>
         <span class="spinner" aria-hidden="true"></span>
-        <span class="status__label" role="status" aria-live="polite">${j.label}${j.message ? html`<span class="muted"> · ${j.message}</span>` : ''}</span>
+        <span class="status__label">${j.label}${j.message ? html`<span class="muted"> · ${formatProgress(j.message)}</span>` : ''}</span>
         <span class="status__pct">${pct}</span>
-        ${j.cancel && html`<button class="btn btn--sm" onClick=${() => j.cancel()}>Cancel</button>`}
+        ${j.cancel && html`<button type="button" class="btn btn--sm" onClick=${() => j.cancel()}>Cancel</button>`}
       </div>`;
     })}
   </div>`;
@@ -86,17 +133,25 @@ function StatusBar() {
 
 function Notices() {
   const notices = useStore(s => s.notices || []);
-  return html`<div class="notices" aria-live="polite" aria-relevant="additions">
-    ${notices.map(n => html`<div class=${`notice notice--${n.level}`} key=${n.id} role=${n.level === 'error' ? 'alert' : 'status'}>
+  const a = store.actions;
+  return html`<div class="notices" aria-live="polite" aria-relevant="additions"
+    onMouseEnter=${() => a.pauseNotices()} onMouseLeave=${e => { if (!e.currentTarget.contains(document.activeElement)) a.resumeNotices(); }}
+    onFocusIn=${() => a.pauseNotices()} onFocusOut=${e => { if (!e.currentTarget.contains(e.relatedTarget)) a.resumeNotices(); }}>
+    ${notices.map(n => html`<div class=${`notice notice--${n.level}`} key=${n.id} data-notice=${n.id} role=${n.level === 'error' ? 'alert' : 'status'}>
       <span class=${`flag flag--${n.level === 'warn' ? 'caution' : n.level === 'error' ? 'error' : 'ok'}`}>${n.level === 'warn' ? Icon.caution : n.level === 'error' ? Icon.error : Icon.info}</span>
-      <span class="grow">${n.text}</span>
-      <button class="btn btn--quiet btn--sm" aria-label="Dismiss notice" onClick=${() => store.actions.dismiss(n.id)}>${Icon.close}</button>
+      <div class="grow notice__body">
+        <span>${n.text}</span>
+        ${n.detail && html`<ul class="notice__list">${n.detail.map(d => html`<li>${d}</li>`)}</ul>`}
+        ${n.action && html`<span><button type="button" class="tlink" onClick=${() => { n.action.onClick(); a.dismiss(n.id); }}>${n.action.label}</button></span>`}
+      </div>
+      <button type="button" class="btn btn--quiet btn--sm" aria-label="Dismiss notice" onClick=${() => a.dismiss(n.id)}>${Icon.close}</button>
     </div>`)}
   </div>`;
 }
 
 function ViewHost() {
   const view = useStore(s => s.view);
+  const epoch = useStore(s => s.epoch || 0);
   const [, force] = useState(0);
   const [error, setError] = useState(null);
   useEffect(() => {
@@ -109,7 +164,7 @@ function ViewHost() {
   const C = loaded[view];
   if (error) return html`<div class="view view--col"><${ViewHead} title=${VIEWS.find(v => v.id === view)?.label} /><${ErrorLine} error=${`This view could not be loaded: ${error.message}`} /></div>`;
   if (!C) return html`<div class="view"><${Loading}>Opening view</${Loading}></div>`;
-  return html`<${C} key=${view} />`;
+  return html`<${C} key=${`${view}:${epoch}`} />`;
 }
 
 function Drawer() {
@@ -121,8 +176,8 @@ function Drawer() {
 
 function EngineBanner() {
   const st = engineStatus();
-  if (st.available) return MOCK ? html`<div class="notice-line" style="padding-inline:var(--pad-app);border-top:0"><span class="flag flag--info">${Icon.info}<span>Demo mode</span></span><span class="grow small">Synthetic data and a demo analysis engine (the <code>?mock</code> flag). Remove it from the address to use your own data.</span></div>` : null;
-  return html`<div class="notice-line" style="padding-inline:var(--pad-app);border-top:0" role="alert"><span class="flag flag--caution">${Icon.caution}<span>Engine unavailable</span></span><span class="grow small">${st.reason} Import and building still work; analysis views will stay empty until it is present.</span></div>`;
+  if (st.available) return MOCK ? html`<div class="frame"><div class="notice-line" style="border-top:0"><span class="flag flag--info">${Icon.info}<span>Demo mode</span></span><span class="grow small">Synthetic data and a demo analysis engine (the <code>?mock</code> flag). Remove it from the address to use your own data.</span></div></div>` : null;
+  return html`<div class="frame"><div class="notice-line" style="border-top:0" role="alert"><span class="flag flag--caution">${Icon.caution}<span>Engine unavailable</span></span><span class="grow small">${st.reason} Import and building still work; analysis views will stay empty until it is present.</span></div></div>`;
 }
 
 function App() {
@@ -132,7 +187,42 @@ function App() {
     <main id="main" tabindex="-1"><${ViewHost} /></main>
     <${Drawer} />
     <${Notices} />
-    <${StatusBar} />`;
+    <${StatusBar} />
+    <div id="announcer" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>`;
+}
+
+// Per-view document title (A16): "Network · Synthetic workplace · Org Signal".
+function syncTitle(s) {
+  const v = VIEWS.find(x => x.id === s.view)?.label || 'Data';
+  const ds = s.dataset ? shortName(s.dataset.meta?.name, 40) : null;
+  const t = [v, ds, 'Org Signal'].filter(Boolean).join(' \u00b7 ');
+  if (document.title !== t) document.title = t;
+  // Lets CSS size the sticky header (the loaded chip takes a row on phones).
+  document.documentElement.dataset.loaded = String(!!s.dataset);
+}
+
+// Leaving or reloading with data loaded loses it: nothing is stored (decision 7).
+// Browsers show their own wording; the masthead's Start over states ours.
+function warnBeforeLeaving(e) {
+  if (!store.get().dataset) return;
+  e.preventDefault();
+  e.returnValue = 'Nothing is stored; closing this tab erases the loaded data and results.';
+  return e.returnValue;
+}
+
+// Focus safety net (A8): when an action removes the focused control (a
+// button replaced by results, a closed panel), focus falls to <body> and a
+// keyboard or screen-reader user loses their place. Move it to the active
+// view's heading instead. Views that know a better target call
+// store.actions.focus(selector) themselves.
+function keepFocus(e) {
+  const gone = e.target;
+  setTimeout(() => {
+    if (gone.isConnected) return;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const h = document.querySelector('main .view__title, main h1');
+    if (h) { if (!h.hasAttribute('tabindex')) h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
+  }, 0);
 }
 
 async function boot() {
@@ -146,6 +236,10 @@ async function boot() {
   // Under ?mock the offline demo LLM provider is the default, so nothing is
   // ever sent to a real provider while developing or testing.
   if (MOCK) store.set({ llm: { ...store.get().llm, provider: 'demo', key: null } });
+  syncTitle(store.get());
+  store.subscribe(syncTitle);
+  window.addEventListener('beforeunload', warnBeforeLeaving);
+  document.addEventListener('focusout', keepFocus);
   await initEngine();
   render(html`<${App} />`, document.getElementById('app'));
   // ?mock: demo engine + synthetic data (UI development). ?demo: the real
@@ -157,7 +251,7 @@ async function boot() {
   }
 }
 
-// The demo organisation comes from the real generator: a bridge-dependent
+// The demo organization comes from the real generator: a bridge-dependent
 // workplace on Slack with light message text (fake names, generated messages).
 export async function demoDataset(size) {
   const { generate } = await import('../generator/index.js');

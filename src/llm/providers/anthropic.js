@@ -115,7 +115,7 @@ export const anthropic = {
   defaultMaxTokens: 64000,
   keyPlaceholder: 'sk-ant-...',
   keyUrl: 'https://platform.claude.com/settings/keys',
-  browser: 'Supported with the anthropic-dangerous-direct-browser-access header (sent automatically).',
+  browser: 'Requests go from this browser straight to Anthropic.',
 
   async listModels({ key, fetch, signal } = {}) {
     const models = [];

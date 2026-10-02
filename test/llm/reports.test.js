@@ -71,12 +71,12 @@ test('methods appendix: full analysis with every component', () => {
   for (const h of ['Data sources', 'Network construction', 'Measures', 'Community detection', 'Group comparison', 'Statistical comparison and robustness', 'Time windows', 'Content analysis', 'Limitations', 'References']) {
     assert.match(md, new RegExp(`^## ${h}$`, 'm'), h);
   }
-  assert.match(md, /reply: a reply links the replier.*weight 2\./);
-  assert.match(md, /adjacency: .*\(window 10 minutes\); weight 0\.5\./);
-  assert.ok(!/- dm:/.test(md), 'disabled rules are not listed');
+  assert.match(md, /Replies: a reply links the replier.*weight 2\./);
+  assert.match(md, /Turn-taking: .*\(window 10 minutes\); weight 0\.5\./);
+  assert.ok(!/- Direct messages:/.test(md), 'disabled rules are not listed');
   assert.match(md, /log-transformed/);
   assert.match(md, /more than 25 recipients/);
-  assert.match(md, /from 2026-01-01 to 2026-06-30/);
+  assert.match(md, /from 1 Jan 2026 to 30 Jun 2026/);
   assert.match(md, /\(Freeman, 1977; Brandes, 2001\) Approximation: sampled from 256 pivot nodes\./);
   assert.match(md, /Louvain method \(Blondel et al., 2008\)/);
   assert.match(md, /seed 42/);

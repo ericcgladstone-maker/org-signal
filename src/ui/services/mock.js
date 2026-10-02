@@ -42,7 +42,7 @@ const COMMON = ['meeting', 'today', 'update', 'thanks', 'plan', 'question', 'dra
 const POS = ['great', 'thanks', 'good', 'happy', 'nice', 'love', 'excellent'];
 const NEG = ['problem', 'late', 'worried', 'blocked', 'bad', 'frustrating', 'issue'];
 
-export function mockDataset({ n = 96, seed = 11, days = 180, name = 'Demo organisation (synthetic)' } = {}) {
+export function mockDataset({ n = 96, seed = 11, days = 180, name = 'Demo organization (synthetic)' } = {}) {
   const r = rng(seed);
   const b = new DatasetBuilder({ name });
   const t0 = Date.UTC(2026, 0, 5);
@@ -721,7 +721,7 @@ export function compareBeforeAfter(ds, settings, date, { metrics = ['degree', 's
   const key = (net, e) => `${net.nodeIds[net.edges.src[e]]}-${net.nodeIds[net.edges.dst[e]]}`;
   const kb = new Set(), ka = new Set(); for (let e = 0; e < before.edges.count; e++) kb.add(key(before, e)); for (let e = 0; e < after.edges.count; e++) ka.add(key(after, e));
   let kept = 0; for (const x of ka) if (kb.has(x)) kept++;
-  return { date, span, before: { start: date - span, end: date, nodes: before.n, ties: before.edges.count }, after: { start: date, end: date + span, nodes: after.n, ties: after.edges.count }, node, network, ties: { formed: ka.size - kept, dissolved: kb.size - kept, persisted: kept, jaccard: kept / (ka.size + kb.size - kept || 1) }, meta: { test: 'paired sign-flip permutation test on per-person differences', reps, effectSize: "Cohen's d_z = mean difference / sd of differences" } };
+  return { date, span, before: { start: date - span, end: date, nodes: before.n, ties: before.edges.count }, after: { start: date, end: date + span, nodes: after.n, ties: after.edges.count }, node, network, ties: { formed: ka.size - kept, dissolved: kb.size - kept, persisted: kept, jaccard: kept / (ka.size + kb.size - kept || 1) }, cautions: [], meta: { test: 'paired sign-flip permutation test on per-person differences', reps, effectSize: "Cohen's d_z = mean difference / sd of differences" } };
 }
 
 // --- content ---

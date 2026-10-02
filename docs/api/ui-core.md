@@ -9,11 +9,57 @@ Serve `app/` as static files (`python3 -m http.server 8787` from `app/`) and ope
 | URL flag | Effect |
 |---|---|
 | none | Real modules: import pipeline worker, analysis engine worker, LLM layer, exporters. |
-| `?demo` | Real modules, plus a small synthetic organisation loaded at start (fake names, generated messages). `&n=5000` sets its size. |
+| `?demo` | Real modules, plus a small synthetic organization loaded at start (fake names, generated messages). `&n=5000` sets its size. |
 | `?mock` | Development only. The demo engine and fake pipeline in `src/ui/services/mock.js` stand in for the engine and pipeline; the Ask view defaults to an offline demo provider whose `chat()` follows the provider contract, so the real analyst, citation check, reports and coding run without a network. |
 | `&empty` | With `?mock` or `?demo`: start with nothing loaded (empty states). |
 
-The Data view's empty state also offers "Load a small synthetic organisation", which loads the same demo data into the real engine.
+The Data view's empty state also offers "Load a small synthetic organization", which loads the same demo data into the real engine.
+
+## Design system (UX pass 2026-10-02)
+
+Tokens live in `assets/theme.css` (type, frame, site colors) and the data palette in `assets/app.css`; the shared classes below are in `assets/app.css`. View stylesheets (`views-*.css`, `build.css`) use these and keep no tokens or control styles of their own. Names are stable; ask F4 before adding a look-alike.
+
+**Tokens.** Type: `--fs-h1` (view title, clamp 1.9-2.4rem), `--fs-h2` (section heading 1.125rem), `--fs-body` 1rem, `--fs-lead` 1.0625rem, `--fs-small` .875rem, `--fs-foot` .8125rem, `--fs-mono` .75rem with `--ls-mono` .12em, `--fs-mono-th` .6875rem with `--ls-mono-th` .08em (table headers), `--lh-body` 1.6. Frame: `--w-frame` 90rem, `--w-col` 62rem, `--measure` 66ch, `--pad-app`, `--header-h`, `--status-h`, `--target` 24px (minimum hit size). Colors: the site tokens (`--bg`, `--bg-deep`, `--text`, `--text-2`, `--text-muted`, `--rule`, `--rule-strong`, `--accent`, `--accent-dim`, `--edge`, `--node`) plus `--panel`, `--warn`, `--critical`.
+
+**Frame.**
+- `.view`: every view's root. The same 90rem centered wrap as the masthead, with `--pad-app` gutters. Never full-bleed.
+- `.view--col`: a reading view (Data, Ask, Methods). Children cap at 62rem, left-aligned in the frame (same left edge as every other view).
+- `.col` (one block capped at 62rem inside a full-width view), `.measure` (prose at 66ch), `.frame` (the wrap on its own).
+- `html` has `scroll-padding-top` for the sticky header, so `scrollIntoView({ block: 'start' })` lands below it.
+
+**View head.** `ViewHead` (components/common.js) renders `header.view__head > .grow > h1.view__title + p.view__intro`, then `.view__actions`. The title names the view exactly as the nav does. `.view__actions` holds a row of `.tlink`s and at most one `.btn--primary`.
+
+**Actions** (design rule 4: at most one boxed primary per view; square corners everywhere).
+- `.btn.btn--primary`: the one boxed primary action of a view (mint text, accent border).
+- `.btn`: neutral boxed button, only for controls that are not actions in prose (dialog footers, Cancel in the status bar, zoom buttons). `.btn--sm`, `.btn--quiet` (icon buttons), `.btn--danger`.
+- `.tlink`: every secondary action, on `<a>` or `<button>` (resets button chrome): weight 600, `--fs-small`, mint, `--accent-dim` underline. Modifiers: `.tlink--arrow` (→, when it navigates), `.tlink--down` (↓, downloads), `.tlink--quiet` (ink instead of mint), `.tlink--danger`. Disabled via `disabled` or `aria-disabled="true"`. `.tlinks` lays several out in a wrapping row.
+- Buttons need `type="button"` unless they submit a form (A26).
+
+**Labels and text.**
+- `.label`: mono section label (uppercase, .75rem, .12em, muted). Section labels, metadata and captions only; never a form label.
+- `.meta`: mono metadata in the same spec.
+- `.section` + `.section__title` (or `.section > h2`): section heading, 1.125rem/600.
+- `.field > span` or `.field__label`: form field labels, sans .8125rem muted, sentence case.
+- `.prose`, `.small`, `.basis` and `.foot` (footnotes, muted .8125rem), `.reading` (plain-language reading with a mint rule). All cap at `--measure`.
+
+**Inputs** (design rule 5).
+- `.input`, `.select`, `textarea.input`: `--panel` fill, 1px `--rule-strong` border, radius 0, .875rem. `.select` draws its own chevron; use it on every `<select>` (the `Select` component does).
+- `.check`: label wrapping a checkbox or radio plus text.
+- All `input[type=checkbox]` and `input[type=radio]` are drawn by the theme (1rem square or round, accent fill when checked, no OS grey). No class needed.
+- `.radios` (a `fieldset`, with `legend`) holding `.radio` rows (`label.radio > input + span` with an optional `.radio__desc`; `.radio--disabled` with the reason in the description): for more than five choices or choices that need a description.
+- `.seg`: up to five choices. Buttons with `aria-pressed`; it sizes to its content (`width:auto`), never stretches. The `Seg` component renders it.
+
+**Tabs.** `.tabs` with `button[role=tab][aria-selected]` (or `a[aria-current=page]`): .875rem `--text-2`; the active tab is `--text`, 600, with a 2px mint underline.
+
+**Dialogs.** `.dialog-backdrop > .dialog` (with `.dialog__head`): modal dialogs sit above the masthead and the drawer and scroll inside the viewport, so a title and Close are never under the header.
+
+**Notices and focus** (store.actions, see below). `notify()` stacks at the bottom right, above the status bar.
+
+**Data color** (design rule 9). Every group in every view uses `--cat-1..8` in fixed order and `--cat-other` for the rest (read them with `tokens()` / `categoricalScale()` in `src/ui/lib/palette.js`). A single series uses `--cat-1`. Text never takes a series color. See "Palette" below for validation and the all-pairs limit.
+
+**Mint budget.** Mint (`--accent`) marks the current location, the one primary action, links and focus. Not headings, not data, not decoration.
+
+**Words.** American spelling, sentence case, "person/people" and "tie(s)", dates `6 Jan 2025`, weeks "week of 6 Jan 2025".
 
 ## Shell and store
 
@@ -24,15 +70,20 @@ The Data view's empty state also offers "Load a small synthetic organisation", w
 | Action | Behaviour |
 |---|---|
 | `loadDataset(ds, { mode: 'replace' \| 'add', name })` | With `add`, merges with the current dataset through `mergeDatasets`. Loads into the engine, builds with `defaultSettings`, computes node and network metrics, communities (ordered by size), applicability and the import report. Resolves when done; throws on failure. |
-| `rebuild(settings)` | Rebuild the network and every metric with new construction settings. |
+| `rebuild(settings, { quiet })` | Rebuild the network and every metric with new construction settings. Communities keep their numbers by overlap with the previous partition. Unless `quiet`, a notice states the before/after counts, how many people changed community and which settings changed (also stored as `lastRebuild = { at, lines, changes }`). |
 | `replaceDataset(ds)` | Load a derived dataset (identity merges, profile joins) and keep the list of loaded sources. |
 | `setView(view)` | Switch view, update the hash, move focus to the view heading. |
 | `select(nodes)` | Shared selection, dataset node indices. |
-| `notify(level, text)` / `dismiss(id)` | Notices: `info`, `warn`, `error`. |
+| `notify(level, text, { timeout, detail, action })` / `dismiss(id)` | Notices: `info`, `warn`, `error`, at the bottom right. Errors stay until dismissed; info (6 s, 10 s with `detail`) and warnings (12 s) pause while the pointer or focus is in the stack. `detail` is a list of lines, `action` is `{ label, onClick }` shown as a text link. |
+| `announce(text)` | Speak through the shell's permanent polite live region (`#announcer`). Jobs announce start, quarter marks, phase changes (at most every 2.5 s) and the end on their own. |
+| `focus(target, { fallback, scroll })` | After an action, move focus to a selector or element once the view has re-rendered; falls back to the view heading. The shell also moves focus to the heading whenever the focused control is removed and focus would drop to the page body. |
+| `startOver()` | Clear everything loaded in this tab (dataset, network, results, `generated`, notices), remount the views and return to Data. The masthead's "Start over" asks first. |
 | `runJob(label, fn(signal, progress))` | Status-bar entry with progress and a Cancel button that aborts `signal`. |
 | `openDrawer()` / `closeDrawer()` | Construction settings drawer. |
 
-Store keys written by ui-core besides those in `store.js`: `report` (import report), `communities` (`{ membership (network order), modularity, count, sizes, ... }`, renumbered by size so colour slot 1 is the largest group), `applicability`, `metrics = { node: { metric: Float64Array (network order) }, network: {...}, meta }`, `network = { n, edgeCount, directed, nodeIds, summary, settings, version }`, `notices`, and `ui = { drawer, menuOpen, profile, profileFile }`. `store.llm` holds `provider`, `model` and `remember` only; API keys live in `src/llm/keys.js` `createKeyStore()` and never in the store.
+Shell behavior: the masthead shows "Analyzing: <short name>" with Start over whenever data is loaded (a row under the bar below 1060px, with `--header-h` growing to match); leaving or reloading the page with data loaded asks first (`beforeunload`); `document.title` is "<View> · <dataset> · Org Signal".
+
+Store keys written by ui-core besides those in `store.js`: `methodsLog` (analyses run on the current network, recorded by `services/engine.js` and read by the methods appendix: `{ groups, nullModel, resampling, time, affect, keywords, topics, diffusion }`, each a list of the options used; cleared on load and rebuild), `lastRebuild`, `epoch` (bumped by Start over), `llm.codes` (Ask: send names as codes, default on), `report` (import report), `communities` (`{ membership (network order), modularity, count, sizes, ... }`, renumbered by size so color slot 1 is the largest group), `applicability`, `metrics = { node: { metric: Float64Array (network order) }, network: {...}, meta }`, `network = { n, edgeCount, directed, nodeIds, summary, settings, version }`, `notices`, and `ui = { drawer, menuOpen, profile, profileFile }`. `store.llm` holds `provider`, `model` and `remember` only; API keys live in `src/llm/keys.js` `createKeyStore()` and never in the store.
 
 ## Services layer (`src/ui/services/`)
 
@@ -42,9 +93,9 @@ Every call into another owner's module goes through these adapters, so an API ch
 
 **`pipeline.js`**: over `src/core/pipeline.js` `importInWorker(files, { choices, options, name, progress, signal, detectOnly })`, `src/core/report.js` `importReport`, `src/core/identity.js` `suggestMatches`, `src/core/merge.js` `mergeDatasets` / `applyMerges`, `src/importers/tabular.js` `suggestMapping` / `parseCSV`, `src/importers/profile.js` `joinProfiles`, `src/core/fileset.js` (to recover files the import left unclaimed, including inside zips, for the profile join). Each input (file, zip or folder) is detected and imported separately; several inputs are merged.
 
-**`llm.js`**: over `src/llm/` (providers registry, `createKeyStore`, `createAnalyst`, `writeReport`, `coding.js`, `estimate.js`, `methods.js` `buildMethodsAppendix`). `analystEngine()` builds the tools engine interface from the UI engine adapter and translates two differences: tools pass network indices to `egoMetrics` (the engine takes dataset indices), and tools expect `edgeEvidence` to return an array.
+**`llm.js`**: `pseudonymize(ds)` and `decodeNames(text, ds)` implement the Ask view's "Replace names with codes": the analyst, reports and coding get a copy whose keys and labels are `P1..Pn`, identifying attribute columns (name, email, phone, manager, id...) and email-like values removed, and every text the engine returns (tie evidence, keywords, topics, affect) and the question with the data's names replaced and email addresses removed; answers are decoded locally. Over `src/llm/` (providers registry, `createKeyStore`, `createAnalyst`, `writeReport`, `coding.js`, `estimate.js`, `methods.js` `buildMethodsAppendix`). `analystEngine()` builds the tools engine interface from the UI engine adapter and translates two differences: tools pass network indices to `egoMetrics` (the engine takes dataset indices), and tools expect `edgeEvidence` to return an array.
 
-**`exporters.js`**: over `src/exporters/{graphml,gexf,gml,pajek,ucinet,csv}.js`, each `exportX(ds, net, { nodeMetrics, communities })`. The full Network comes from the engine's `network()` if it returns edge arrays, otherwise from `buildNetwork(ds, settings)` on the main thread (deterministic, so it matches the views).
+**`exporters.js`**: `fileBase(ds)` gives the short file-name stem used for every download (D17). Also over `src/exporters/{graphml,gexf,gml,pajek,ucinet,csv}.js`, each `exportX(ds, net, { nodeMetrics, communities })`. The full Network comes from the engine's `network()` if it returns edge arrays, otherwise from `buildNetwork(ds, settings)` on the main thread (deterministic, so it matches the views).
 
 **`glossary.js`**: `gloss(key)` returns `{ label, meaning, reliability }` from the engine glossary, with fallbacks so no metric is shown without a meaning.
 
@@ -56,15 +107,16 @@ Every call into another owner's module goes through these adapters, so an API ch
 
 Shared pieces in `src/ui/components/`: `common.js` (tooltips, `MetricName` with glossary and applicability, flags, `useEngine` results cached per network version), `charts.js` (line, bar, histogram, heatmap, sparkline), `vtable.js` (virtualised table). `src/ui/lib/`: formatting, palette, dataset readers, Markdown rendering (to Preact nodes, never `innerHTML`), and the shared layout cache.
 
-Rules the views follow: a measure with applicability `na` is hidden by default (People table toggle) or labelled; `caution` carries its reason; nothing is called a finding without a null-model or resampling basis shown beside it; colours never carry meaning alone (legends, labels, icon + text flags).
+Rules the views follow: a measure with applicability `na` is hidden by default (People table toggle) or labelled; `caution` carries its reason; nothing is called a finding without a null-model or resampling basis shown beside it; colors never carry meaning alone (legends, labels, icon + text flags).
 
 ## Palette
 
-`assets/app.css` overrides theme.css's provisional data palette with tokens validated against the site ground `#071A2B` (dataviz validator, OKLab, Machado 2009):
+`assets/app.css` holds the data palette, validated against the site ground `#071A2B` and `--bg-deep` `#051521` with the dataviz validator (OKLab, Machado 2009, all pairs):
 
-- **Categorical** `--cat-1..8`: `#13aa89 #bb881a #9470cd #d36757 #21a3bc #6ba04b #528ed9 #c96598`. Slot 1 is the mint accent family. Adjacent CVD dE 10.6, normal-vision dE 15.5, all inside the dark lightness band, at least 3:1 on the ground. The first three slots pass all-pairs. More than eight groups fold into "Other" (`--cat-other`).
-- **Sequential** `--seq-0..5`: one hue (mint), lightness monotone, darkest step 2.15:1 on the ground.
-- **Diverging** `--div-*`: blue to coral through a slate midpoint.
+- **Categorical** `--cat-1..8`: `#228f61 #9f74f8 #dd5d94 #b48d17 #4a9ec6 #5055d3 #8c5485 #bc4001`. All 28 pairs pass: worst protan/deutan dE 8.3, tritan 8.7, normal vision 15.5, all inside the dark lightness band and at least 3:1 on the ground. Any slot may touch any other, so the network map can show eight groups. Slot 1 is the accent's green-mint family. More than eight groups fold into "Other" (`--cat-other` `#444c52`, a quiet gray at least dE 9.7 from every slot under every simulation; always labeled).
+- **Sequential** `--seq-0..5`: one hue (mint), lightness monotone, darkest step 2.15:1 on the ground. `--seq-zero` `#0d2a35` is a near-ground step for "none" (matrices).
+- **Diverging** `--div-cool-2, --div-cool-1, --div-mid, --div-warm-1, --div-warm-2`: blue to coral through a slate midpoint. The old `--div-neg-*` (cool) and `--div-pos-*` (warm) names remain as aliases until the views move over.
+- Search and validation scripts: `SCRATCH/ux/fix-f4/search.mjs`, `report.mjs`.
 
 ## QA
 

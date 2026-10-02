@@ -33,6 +33,6 @@ export function BuildMount() {
 }
 
 export function GenerateMount() {
-  return html`<${Mount} title="Generate" intro="Generate a synthetic organisation or community with planted structure, then analyse it or download it as native export files."
+  return html`<${Mount} title="Generate" intro="Generate a synthetic organization or community with planted structure, then analyze it or download it as native export files."
     load=${() => import('../generate/index.js').then(m => m.GenerateView || m.default)} />`;
 }

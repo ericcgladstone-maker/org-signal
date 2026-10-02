@@ -26,6 +26,7 @@
 
 import { MOCK, tryImport, pickFn } from './modules.js';
 import { setEngineGlossary } from './glossary.js';
+import { store } from '../store.js';
 
 let impl = null;          // the underlying engine object
 let pureDefaults = null;  // defaultSettings(ds) from src/analysis/index.js when available
@@ -89,6 +90,33 @@ function setNodeIds(nodeIds, datasetCount) {
 export function netIndex(dsNode) { return current.toNet?.[dsNode] ?? -1; }
 export function dsIndex(netNode) { return current.nodeIds?.[netNode] ?? -1; }
 
+// ---- methods log -------------------------------------------------------------------
+// Every optional analysis that completes on the current network is recorded
+// in store.methodsLog, so the methods appendix describes what was actually run
+// (which grouping attribute, how many null-model replicates, which time
+// window), not the defaults (D12). Recorded here because every view and the
+// LLM tools go through this adapter. actions.js clears the log whenever the
+// network is rebuilt or replaced.
+//   methodsLog = { groups: [{ attr }], nullModel: [{ stats, reps, seed, attr, communities }],
+//                  resampling: [{ metric, reps, top, seed }], time: [{ window, metrics, attr }],
+//                  affect: [{ by, attr, window }], keywords: [{ by, attr, k }], topics: [{ k, seed }], diffusion: [{ terms }] }
+const PLAIN = v => v == null || ['string', 'number', 'boolean'].includes(typeof v) || (Array.isArray(v) && v.every(x => ['string', 'number'].includes(typeof x)));
+
+function record(kind, opts, keys) {
+  const entry = {};
+  for (const k of keys) if (opts?.[k] !== undefined && PLAIN(opts[k])) entry[k] = opts[k];
+  if (kind === 'nullModel' && opts?.membership) entry.communities = true;
+  const log = store.get().methodsLog || {};
+  const list = log[kind] || [];
+  const id = JSON.stringify(entry);
+  if (list.some(x => JSON.stringify(x) === id)) return;
+  store.set({ methodsLog: { ...log, [kind]: [...list, entry] } });
+}
+
+function logged(kind, keys, fn) {
+  return async (opts = {}) => { const r = await fn(opts); record(kind, opts, keys); return r; };
+}
+
 // ---- adapter API used by the views ---------------------------------------------
 
 export const engine = {
@@ -133,18 +161,18 @@ export const engine = {
     return normaliseRender(r);
   },
 
-  groups: (attrKey, opts = {}) => call(['groupMetrics', 'groups'], attrKey, opts),
+  groups: async (attrKey, opts = {}) => { const r = await call(['groupMetrics', 'groups'], attrKey, opts); record('groups', { attr: attrKey }, ['attr']); return r; },
   // Dataset node indices, as src/analysis/groups.js egoMetrics expects.
   ego: (dsNode, opts = {}) => call(['egoMetrics', 'ego'], dsNode, opts),
-  nullModel: (opts = {}) => call(['nullModel'], opts),
-  resampleRanks: (opts = {}) => call(['resampleRanks'], opts),
-  timeSeries: (opts = {}) => call(['timeSeries'], opts),
+  nullModel: logged('nullModel', ['stats', 'reps', 'seed', 'attr'], opts => call(['nullModel'], opts)),
+  resampleRanks: logged('resampling', ['metric', 'reps', 'top', 'seed'], opts => call(['resampleRanks'], opts)),
+  timeSeries: logged('time', ['window', 'metrics', 'attr'], opts => call(['timeSeries'], opts)),
   shifts: (series, opts = {}) => call(['detectShifts', 'shifts'], series, opts),
   beforeAfter: (date, opts = {}) => call(['compareBeforeAfter', 'beforeAfter'], date, opts),
-  affect: (opts = {}) => call(['affect'], opts),
-  keywords: (opts = {}) => call(['keywords'], opts),
-  topics: (opts = {}) => call(['topics'], opts),
-  diffusion: (opts = {}) => call(['diffusion'], opts),
+  affect: logged('affect', ['by', 'attr', 'window'], opts => call(['affect'], opts)),
+  keywords: logged('keywords', ['by', 'attr', 'k'], opts => call(['keywords'], opts)),
+  topics: logged('topics', ['k', 'seed'], opts => call(['topics'], opts)),
+  diffusion: logged('diffusion', ['terms'], opts => call(['diffusion'], opts)),
   // Dataset node indices, as src/analysis/construct.js edgeEvidence expects.
   async edgeEvidence(dsA, dsB, opts = {}) {
     const r = await call(['edgeEvidence'], dsA, dsB, opts);
@@ -203,5 +231,5 @@ export function normaliseRender(r) {
     (r.edges || []).forEach((e, k) => { src[k] = pos.get(e.source) ?? e.source; dst[k] = pos.get(e.target) ?? e.target; w[k] = e.weight ?? e.w ?? 1; });
     return { nodeIds: ids, x, y, src, dst, w, byRule: r.byRule || {}, layerMask: r.layerMask || new Uint8Array(m), directed: !!r.directed };
   }
-  throw new Error('graphForRender returned an unrecognised shape');
+  throw new Error('graphForRender returned an unrecognized shape');
 }

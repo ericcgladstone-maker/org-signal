@@ -76,8 +76,139 @@ export async function redact(text) {
   return fn ? fn(text) : text;
 }
 
+// ---- names to codes -------------------------------------------------------------------
+// The Ask view's "Replace names with codes" option (D8). The LLM layer reads
+// people's names and keys from the dataset it is given and message excerpts,
+// keywords and topics from the engine, so the swap happens here, at the
+// boundary: the model gets a copy of the dataset whose keys and labels are
+// codes (P1, P2, ...) with identifying attributes left out, and every free
+// text it can receive (tie evidence, content summaries, the question) has the
+// dataset's names replaced by codes and email addresses removed. Answers come
+// back in codes and are turned into names on this computer (decodeNames).
+// Matching is by the names in the data: nicknames, misspellings and people
+// outside the data are not caught, which the view says.
+
+const IDENTIFYING_ATTR = /(^|_|\b)(name|first|last|full|email|e-mail|mail|phone|mobile|manager|reports?_?to|supervisor|address|login|user(name)?|handle|ssn|employee_?id|id)(\b|_|$)/i;
+const EMAIL_RE = /[\w.+-]+@[\w-]+(\.[\w-]+)+/g;
+const coded = new WeakMap();
+
+const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export function codeFor(i) { return `P${i + 1}`; }
+
+// { ds (coded copy), scrub(text), encodeQuestion(text), codeKey(dsIndex), labels }
+export function pseudonymize(ds) {
+  if (coded.has(ds)) return coded.get(ds);
+  const n = ds.nodes.count;
+  const codes = Array.from({ length: n }, (_, i) => codeFor(i));
+  // Full names (case-insensitive) map to their person; single name parts
+  // (case-sensitive, as written in the data) map to their person when only one
+  // person has that part, otherwise to a neutral "[name]".
+  const full = new Map(), parts = new Map();
+  for (let i = 0; i < n; i++) {
+    const label = String(ds.nodes.labels[i] ?? '').trim();
+    const key = String(ds.nodes.keys[i] ?? '');
+    const local = key.slice(key.indexOf(':') + 1);
+    for (const f of [label, local]) if (f.length >= 3 && !/^P\d+$/.test(f)) full.set(f.toLowerCase(), full.has(f.toLowerCase()) && full.get(f.toLowerCase()) !== codes[i] ? '[name]' : codes[i]);
+    for (const w of label.split(/[^\p{L}'-]+/u)) {
+      if (w.length < 3) continue;
+      parts.set(w, parts.has(w) && parts.get(w) !== codes[i] ? '[name]' : codes[i]);
+    }
+  }
+  const fullRe = full.size ? new RegExp(`(?<![\\p{L}\\p{N}])(${[...full.keys()].sort((a, b) => b.length - a.length).map(esc).join('|')})(?![\\p{L}\\p{N}])`, 'giu') : null;
+  const partRe = parts.size ? new RegExp(`(?<![\\p{L}\\p{N}])(${[...parts.keys()].sort((a, b) => b.length - a.length).map(esc).join('|')})(?![\\p{L}\\p{N}])`, 'gu') : null;
+  const memo = new Map();
+  const scrub = (text) => {
+    if (typeof text !== 'string' || !text) return text;
+    if (memo.has(text)) return memo.get(text);
+    let t = text.replace(EMAIL_RE, '[email]');
+    if (fullRe) t = t.replace(fullRe, m => full.get(m.toLowerCase()) || '[name]');
+    if (partRe) t = t.replace(partRe, m => parts.get(m) || '[name]');
+    if (memo.size < 50000) memo.set(text, t);
+    return t;
+  };
+  const schema = (ds.attributeSchema || []).filter(a => !IDENTIFYING_ATTR.test(a.key));
+  const keep = new Set(schema.map(a => a.key));
+  const attrs = Array.from({ length: n }, (_, i) => {
+    const o = {};
+    for (const [k, v] of Object.entries(ds.nodes.attrs?.[i] || {})) if (keep.has(k) && !(typeof v === 'string' && v.includes('@'))) o[k] = v;
+    return o;
+  });
+  const keyIndex = new Map(ds.nodes.keys.map((k, i) => [k, i]));
+  const sources = (ds.meta?.sources || []).map(src => ({
+    ...src, fileNames: [], warnings: [],
+    egoKey: src.egoKey && keyIndex.has(src.egoKey) ? codes[keyIndex.get(src.egoKey)] : undefined,
+    egoKeys: undefined,
+  }));
+  // Message text is scrubbed lazily, on the few events the LLM layer reads
+  // (content coding samples), not across the whole dataset.
+  const text = ds.events?.text ? new Proxy(ds.events.text, { get: (t, p) => (typeof p === 'string' && /^\d+$/.test(p) ? scrub(t[p]) : Reflect.get(t, p)) }) : ds.events?.text;
+  const out = {
+    ds: {
+      ...ds,
+      meta: { ...ds.meta, name: 'Dataset', sources },
+      nodes: { ...ds.nodes, keys: codes, labels: codes, attrs, platformIds: codes.map(() => ({})) },
+      attributeSchema: schema,
+      contexts: ds.contexts ? { ...ds.contexts, names: (ds.contexts.names || []).map(scrub) } : ds.contexts,
+      events: ds.events ? { ...ds.events, text } : ds.events,
+    },
+    scrub,
+    encodeQuestion: scrub,
+    codeKey: i => codes[i],
+    labels: ds.nodes.labels,
+  };
+  coded.set(ds, out);
+  return out;
+}
+
+// Codes in an answer back to the names they stand for (local only).
+export function decodeNames(text, ds) {
+  if (!text || !ds) return text;
+  return String(text).replace(/\bP(\d{1,7})\b/g, (m, d) => { const l = ds.nodes.labels[Number(d) - 1]; return l != null ? String(l) : m; });
+}
+
+// Deep copy with every string scrubbed (content summaries: terms, topics).
+function scrubDeep(v, scrub, depth = 0) {
+  if (typeof v === 'string') return scrub(v);
+  if (v == null || typeof v !== 'object' || depth > 8 || ArrayBuffer.isView(v)) return v;
+  if (Array.isArray(v)) return v.map(x => scrubDeep(x, scrub, depth + 1));
+  const o = {};
+  for (const [k, x] of Object.entries(v)) o[k] = scrubDeep(x, scrub, depth + 1);
+  return o;
+}
+
 // The tools.js engine interface, built over the UI engine adapter.
-export function analystEngine() {
+// With `codes` (from pseudonymize), every text the engine returns is scrubbed
+// and per-person series keyed by real keys are re-keyed by code.
+export function analystEngine(codes = null) {
+  const base = plainAnalystEngine();
+  if (!codes) return base;
+  const ds = store.get().dataset;
+  const keyIndex = ds ? new Map(ds.nodes.keys.map((k, i) => [k, i])) : new Map();
+  const content = fn => async o => scrubDeep(await fn(o), codes.scrub);
+  return {
+    ...base,
+    affect: content(base.affect), keywords: content(base.keywords), topics: content(base.topics),
+    edgeEvidence: async (a, b, o) => (await base.edgeEvidence(a, b, o)).map(e => ({
+      ...e, actorLabel: Number.isInteger(e.actor) ? codes.codeKey(e.actor) : codes.scrub(e.actorLabel), context: codes.scrub(e.context), text: codes.scrub(e.text),
+    })),
+    timeSeries: async o => {
+      const ts = await base.timeSeries(o);
+      if (!ts?.node) return ts;
+      const node = {};
+      for (const [m, series] of Object.entries(ts.node)) {
+        if (series && typeof series === 'object' && !Array.isArray(series) && !ArrayBuffer.isView(series)) {
+          const re = {};
+          for (const [k, v] of Object.entries(series)) re[keyIndex.has(k) ? codes.codeKey(keyIndex.get(k)) : k] = v;
+          node[m] = re;
+        } else node[m] = series;
+      }
+      return { ...ts, node };
+    },
+  };
+}
+
+function plainAnalystEngine() {
   const memo = new Map();
   const once = (k, f) => { if (!memo.has(k)) memo.set(k, Promise.resolve(f())); return memo.get(k); };
   return {
@@ -109,18 +240,32 @@ export function analystEngine() {
   };
 }
 
-export async function createAnalystSession({ provider, key, model, dataset }) {
+// With codes: true the session sees the coded dataset; ask() encodes names in
+// the question, and results carry `codes` so the view can decode them.
+export async function createAnalystSession({ provider, key, model, dataset, codes = false }) {
   const m = await tryImport('../../llm/analyst.js');
   const create = pickFn(m, ['createAnalyst']);
   if (!create) throw new Error('The analyst (src/llm/analyst.js) is not available in this build.');
-  return create({ provider, key, model, engine: analystEngine(), dataset });
+  const pc = codes ? pseudonymize(dataset) : null;
+  const session = create({ provider, key, model, engine: analystEngine(pc), dataset: pc ? pc.ds : dataset });
+  if (!pc) return session;
+  return {
+    ...session,
+    ask: (question, opts) => session.ask(pc.encodeQuestion(question), opts),
+    reset: () => session.reset(),
+    codes: true,
+  };
 }
 
-export async function writeReport({ scope, target, provider, key, model, dataset, onText, signal }) {
+// target: a node's dataset index for scope 'node', an attribute key for 'group'.
+export async function writeReport({ scope, target, provider, key, model, dataset, onText, signal, codes = false }) {
   const m = await tryImport('../../llm/reports.js');
   const fn = pickFn(m, ['writeReport']);
   if (!fn) throw new Error('Reports (src/llm/reports.js) are not available in this build.');
-  return fn({ scope, target, provider, key, model, engine: analystEngine(), dataset, onText, signal });
+  const pc = codes ? pseudonymize(dataset) : null;
+  const ds = pc ? pc.ds : dataset;
+  const t = scope === 'node' && Number.isInteger(target) ? ds.nodes.keys[target] : target;
+  return fn({ scope, target: t, provider, key, model, engine: analystEngine(pc), dataset: ds, onText, signal });
 }
 
 export async function codingModule() { return tryImport('../../llm/coding.js'); }
