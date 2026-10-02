@@ -19,7 +19,7 @@
 //   nodeMetrics({ which })         -> { [metric]: Float64Array by network node }
 //   communities({ resolution, seed }) -> { membership, modularity, count }
 //   groupMetrics(attrKey)          -> { groups[], mixing, assortativity, eiIndex }
-//   egoMetrics(netNode)            -> { size, density, effectiveSize, constraint, diversity, homophily }
+//   egoMetrics(node, { attr })     -> { size, density, effectiveSize, constraint, diversity, homophily }   (node = dataset index)
 //   nullModel({ stats, reps, seed }) -> { [stat]: { observed, mean, sd, z, p } }
 //   resampleRanks({ metric, reps, top, seed }) -> [{ node, rank, lo, hi, topShare }]
 //   applicability()                -> { [metric]: { level, reason } }
@@ -218,8 +218,9 @@ export const TOOL_DEFINITIONS = [
       type: 'object',
       properties: {
         measure: { type: 'string', enum: ['affect', 'keywords', 'topics'] },
-        by: { type: 'string', enum: ['network', 'node', 'group', 'context', 'time'] },
-        target: { type: 'string', description: 'Node key, attribute key (for by=group), or context name to focus on.' },
+        by: { type: 'string', enum: ['network', 'node', 'group', 'context', 'visibility', 'time'] },
+        target: { type: 'string', description: 'For by=group: the attribute key to group by (defaults to the first categorical attribute). For by=node: a node to focus on.' },
+        window: { type: 'string', enum: ['day', 'week', 'month'], description: 'For by=time: window size (default week).' },
         k: { type: 'integer', minimum: 1, maximum: 50 },
       },
       required: ['measure'],
@@ -264,9 +265,10 @@ export function publicDefinitions(defs) {
 
 // ---- handlers ----------------------------------------------------------------
 
+// The engine's result also carries a `meta` key (approximation flags); keep only metric arrays.
 async function metricsFor(engine, which) {
-  const m = await engine.nodeMetrics({ which });
-  return m || {};
+  const m = (await engine.nodeMetrics({ which })) || {};
+  return Object.fromEntries(Object.entries(m).filter(([, v]) => ArrayBuffer.isView(v) || Array.isArray(v)));
 }
 
 function percentile(arr, v) {
@@ -345,7 +347,7 @@ const HANDLERS = {
       metrics[m] = { value: arr[ni], percentile: percentile(arr, arr[ni]) };
     }
     const out = { ...base, inNetwork: true, metrics };
-    if (typeof engine.egoMetrics === 'function') out.ego = await engine.egoMetrics(ni);
+    if (typeof engine.egoMetrics === 'function') out.ego = await engine.egoMetrics(r.index); // dataset index
     if (typeof engine.communities === 'function') {
       const c = await engine.communities({});
       if (c?.membership) out.community = c.membership[ni];
@@ -417,21 +419,31 @@ const HANDLERS = {
     return out;
   },
 
-  async content_summary({ engine, ds }, { measure, by = 'network', target, k = 10 }) {
+  async content_summary({ engine, ds }, { measure, by = 'network', target, window = 'week', k = 10 }) {
     const fn = engine[CONTENT_METHODS[measure]];
     if (typeof fn !== 'function') return { error: `${measure} is not available.` };
-    const byArg = by === 'group' ? (target ? { attribute: target } : 'group') : by;
-    const r = measure === 'topics' ? await fn.call(engine, { k, seed: 1 }) : measure === 'keywords' ? await fn.call(engine, { by: byArg, k }) : await fn.call(engine, { by: byArg });
+    // Map the tool's vocabulary onto the analysis API's `by` units.
+    const opts = { by: { network: 'overall', node: 'node', group: 'group', context: 'context', visibility: 'visibility', time: 'window' }[by] };
+    if (by === 'group') {
+      const attr = target || (ds.attributeSchema || []).find(a => a.type === 'categorical')?.key;
+      if (!attr) return { error: 'Grouping needs a categorical node attribute, and this dataset has none.' };
+      opts.attr = attr;
+    }
+    if (by === 'time') opts.window = window;
+    let r;
+    if (measure === 'topics') r = await fn.call(engine, { k, seed: 1, ...(opts.attr ? { attr: opts.attr } : {}), ...(opts.window ? { window: opts.window } : {}) });
+    else if (measure === 'keywords') r = await fn.call(engine, { ...opts, k });
+    else r = await fn.call(engine, opts);
     let out = r;
-    // Narrow to one node when asked, if the result is keyed by node.
+    // Narrow to one node when asked. Node rows are keyed by dataset index.
     if (by === 'node' && target && r && typeof r === 'object') {
       const n = resolveNode(ds, target);
       if (n.error) return n;
-      const key = ds.nodes.keys[n.index];
-      const hit = r[key] ?? r[n.index] ?? r.byNode?.[key] ?? r.byNode?.[n.index];
-      out = hit !== undefined ? { node: nodeRef(ds, n.index), value: hit } : r;
+      const rows = r.groups || r.by?.node || r.units || r.byNode || [];
+      const hit = rows.find(x => x.key === n.index);
+      out = hit ? { node: nodeRef(ds, n.index), value: hit } : { node: nodeRef(ds, n.index), note: 'No text from this node in the data.' };
     }
-    return { measure, by, target, method: measure === 'affect' ? 'VADER (Hutto & Gilbert 2014)' : undefined, result: out };
+    return { measure, by, target: opts.attr || target, method: measure === 'affect' ? 'VADER (Hutto & Gilbert 2014); lexicon-based, approximate' : undefined, result: out };
   },
 
   async edge_evidence({ engine, ds }, { a, b, limit = 10 }) {
@@ -548,8 +560,8 @@ export function engineFromAnalysis(analysis, ds, net) {
   };
   if (a.detectCommunities) e.communities = (o = {}) => once(`c:${o.resolution ?? 1}:${o.seed ?? 1}`, () => a.detectCommunities(net, { resolution: o.resolution ?? 1, seed: o.seed ?? 1 }));
   if (a.groupMetrics) e.groupMetrics = attr => a.groupMetrics(net, ds, attr);
-  if (a.egoMetrics) e.egoMetrics = node => a.egoMetrics(net, node);
-  if (a.nullModel) e.nullModel = o => a.nullModel(net, o);
+  if (a.egoMetrics) e.egoMetrics = (node, o = {}) => a.egoMetrics(net, node, { ds, ...o });
+  if (a.nullModel) e.nullModel = o => a.nullModel(net, { ds, ...o });
   if (a.resampleRanks) e.resampleRanks = o => a.resampleRanks(ds, net.settings, o);
   if (a.applicability) e.applicability = () => once('ap', () => a.applicability(ds, net));
   if (a.timeSeries) e.timeSeries = o => a.timeSeries(ds, net.settings, o);
