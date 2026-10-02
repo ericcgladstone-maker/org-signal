@@ -23,7 +23,7 @@ function checkStandard(ds, source) {
   assert.deepEqual(ana.platformIds, { slack: 'U01ANARUIZ0' });
   assert.equal(node(ds, 'slack:W01BENOKAF0').label, 'Ben Okafor'); // W-prefixed id
   assert.equal(node(ds, 'slack:U01CHENLI00').attrs.guest, 'multi-channel');
-  assert.equal(node(ds, 'slack:U01DANAPARK').attrs.deleted, true);
+  assert.equal(node(ds, 'slack:U01DANAPARK').attrs.deactivated, true);
   assert.equal(node(ds, 'slack:U01BOTUSER0').isBot, true);
   assert.equal(node(ds, 'slack:bot:B01DEPLOYBOT').isBot, true);
   assert.equal(node(ds, 'slack:bot:B01DEPLOYBOT').label, 'deploybot');

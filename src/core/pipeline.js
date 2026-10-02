@@ -76,11 +76,15 @@ function itemRoots(fs) {
   return roots.size > 1 || (roots.size === 1 && fs.entries.some(e => !e.rel.startsWith([...roots][0]))) ? [...roots].slice(0, 32) : [];
 }
 
-export async function detectImports(fs, { importers = IMPORTERS, signal } = {}) {
+export async function detectImports(fs, { importers = IMPORTERS, signal, progress } = {}) {
   const out = [];
   const roots = ['', ...itemRoots(fs)];
   const views = roots.map(r => [r, rootedFileSet(fs, r)]);
-  for (const imp of importers) {
+  const nFiles = fs.entries.length;
+  for (let k = 0; k < importers.length; k++) {
+    const imp = importers[k];
+    // Big exports take seconds to check; say what is happening and how far along.
+    progress?.(k / importers.length, `Checking ${nFiles.toLocaleString('en-US')} file${nFiles === 1 ? '' : 's'}: ${imp.label} (${k + 1} of ${importers.length} formats)`);
     for (const [root, view] of views) {
       if (signal?.aborted) throw abortError();
       let r;
@@ -138,13 +142,16 @@ export function planImports(detections, choices, allRels = []) {
   return { plan, unclaimed: allRels.filter(r => !claimed.has(r.toLowerCase())) };
 }
 
-// runImport(input, { choices, options: { [importerId]: {...} }, progress, signal, name, importers })
+// runImport(input, { choices, options: { [importerId]: {...} }, progress, signal, name, importers, detections })
 // -> { dataset, report, detections, plan, unclaimed }
-export async function runImport(input, { choices, options = {}, progress, signal, name, importers = IMPORTERS } = {}) {
+// detections: the result of an earlier detectImports over the same files (the
+// Data view detects first, then imports); passing it skips a second pass.
+export async function runImport(input, { choices, options = {}, progress, signal, name, importers = IMPORTERS, detections: known } = {}) {
   const prog = typeof progress === 'function' ? progress : () => {};
   const fs = await toFileSet(input);
   prog(0, 'Detecting formats');
-  const detections = await detectImports(fs, { importers, signal });
+  const detections = Array.isArray(known) && known.length ? known
+    : await detectImports(fs, { importers, signal, progress: (f, m) => prog(0.1 * f, m) });
   const allRels = fs.entries.map(e => e.rel);
   const { plan, unclaimed } = planImports(detections, choices, allRels);
   if (!plan.length) {
@@ -187,6 +194,12 @@ export async function runImport(input, { choices, options = {}, progress, signal
     const e = errors[0].error;
     throw new Error(plan.length === 1 ? e.message : `Every importer failed. First error (${errors[0].id}): ${e.message}`, { cause: e });
   }
+  // Say which inner zips were opened, so a zip-in-zip download is not a mystery.
+  for (const u of fs.unwrapped || []) {
+    for (const src of builder.sources) {
+      if (!src.warnings.some(w => w.code === 'nested-zip')) src.warnings.push({ code: 'nested-zip', message: `${u.inner} was opened from inside ${u.outer.split('/').pop()}.`, count: 1 });
+    }
+  }
   prog(1, 'Building dataset');
   const dataset = builder.build();
   const report = importReport(dataset);
@@ -202,10 +215,10 @@ function defaultName(fs) {
 // ---- worker front end (browser) --------------------------------------------------
 //
 // files: File[] or [{ blob, path }] (structured-cloneable; a FileSet is not).
-// opts: { choices, options, name, progress(fraction, message), signal, detectOnly }
+// opts: { choices, options, name, progress(fraction, message), signal, detectOnly, detections }
 // Returns a Promise of { dataset, report, detections, plan, unclaimed }
 // (or { detections } with detectOnly), with .cancel() which terminates the worker.
-export function importInWorker(files, { choices, options, name, progress, signal, detectOnly = false, workerUrl } = {}) {
+export function importInWorker(files, { choices, options, name, progress, signal, detectOnly = false, workerUrl, detections } = {}) {
   if (files instanceof FileSet) throw new Error('importInWorker needs File objects or { blob, path } items, not a FileSet.');
   const items = [...files].map(x => (x && x.blob ? { blob: x.blob, path: x.path } : { blob: x, path: x.webkitRelativePath || x.name || 'file' }));
   const worker = new Worker(workerUrl || new URL('../workers/import.worker.js', import.meta.url), { type: 'module' });
@@ -231,7 +244,7 @@ export function importInWorker(files, { choices, options, name, progress, signal
   });
   const cancel = () => { if (!done) { finish(); rejectFn(abortError()); } };
   if (signal) { if (signal.aborted) cancel(); else signal.addEventListener('abort', cancel, { once: true }); }
-  if (!done) worker.postMessage({ type: detectOnly ? 'detect' : 'run', files: items, opts: { choices, options, name } });
+  if (!done) worker.postMessage({ type: detectOnly ? 'detect' : 'run', files: items, opts: { choices, options, name, detections } });
   promise.cancel = cancel;
   return promise;
 }

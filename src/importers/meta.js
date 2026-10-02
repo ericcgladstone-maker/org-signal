@@ -176,7 +176,7 @@ async function importMeta(fs, { builder, options = {}, progress, signal } = {}) 
         if (!k) return -1;
         if (DEACTIVATED_RE.test(k.replace(/\s+/g, ' '))) {
           builder.warn('deactivated-users', 'Deactivated accounts share a placeholder name; each thread\'s placeholder is kept as a separate person.');
-          return builder.node(`${ns}:deactivated:${thread}`, { label: name });
+          return builder.node(`${ns}:deactivated:${thread}`, { label: name, attrs: { deactivated: true } });
         }
         return builder.node(`${ns}:${k}`, { label: name });
       };

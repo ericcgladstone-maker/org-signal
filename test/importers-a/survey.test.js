@@ -174,3 +174,22 @@ test('all events are declared ties with declared targets', async () => {
     assert.ok(ev.every(e => e.targets.length === 1 && e.targets[0][1] === 'declared'));
   }
 });
+
+test('roster forms use the Roster builder combine rules; union by default (P7)', async () => {
+  // advice_form.csv q1: Jordan names Avery and Avery names Jordan (one pair, mutual); q2: Jordan names Avery.
+  const union = await runImporter(survey, fixture('survey', 'forms'));
+  assert.equal(union.source.directed, false);
+  assert.equal(union.source.combine, 'union');
+  assert.equal(union.ds.events.count, 3); // nominations stay as reported, for evidence
+  assert.equal(union.source.counts.ties, 2);
+  assert.equal(union.source.counts.reciprocatedPairs, 1);
+  assert.match(warning(union.source, 'combine-rule').message, /"Union" rule.*3 nominations, 1 pair named each other, 2 ties/);
+  const both = await runImporter(survey, fixture('survey', 'forms'), { combine: 'intersection' });
+  assert.equal(both.source.directed, false);
+  assert.deepEqual(events(both.ds).map(e => e.context), ['survey:advice_form.csv#q1', 'survey:advice_form.csv#q1']);
+  assert.match(warning(both.source, 'combine-rule').message, /1 one-sided nomination left out/);
+  const asIs = await runImporter(survey, fixture('survey', 'forms'), { combine: 'respondent' });
+  assert.equal(asIs.source.directed, true);
+  assert.equal(asIs.ds.events.count, 3);
+  assert.equal(asIs.source.counts.ties, 3);
+});

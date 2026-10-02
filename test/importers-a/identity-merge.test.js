@@ -194,7 +194,9 @@ test('importReport: per-source counts, time range, views, warnings by severity',
   assert.deepEqual(s.counts.contextsByVisibility, { public: 1 });
   assert.equal(s.counts.messagesWithText, 2);
   assert.deepEqual(s.timeRange, { start: Date.UTC(2024, 2, 4), end: Date.UTC(2024, 2, 7) });
-  assert.deepEqual(s.bots, { nodes: 1, events: 1 });
+  assert.deepEqual(s.bots, { nodes: 1, events: 1, names: ['deploybot'] });
+  assert.equal(s.label, 'Slack');
+  assert.equal(m.label, 'Email');
   assert.equal(s.unresolvedParents, 1);
   assert.ok(s.cannotShow.some(l => /public-channels-only/.test(l)));
   assert.equal(s.tz.status, 'exact');
@@ -207,6 +209,78 @@ test('importReport: per-source counts, time range, views, warnings by severity',
   assert.equal(warningSeverity({ code: 'auto-mapping' }), 'info');
   assert.equal(warningSeverity({ code: 'something-new' }), 'warn');
   assert.equal(warningSeverity({ code: 'x', severity: 'info' }), 'info');
+});
+
+test('suggestMatches: an address owner who carries the name is not "several people" (D5)', () => {
+  // A Slack account with its own email, and an HR row with the same name: the
+  // email spells exactly one other person's name, so the pair is medium.
+  const b = new DatasetBuilder();
+  b.beginSource({ format: 'slack' });
+  b.node('slack:U1', { label: 'Ana Ruiz', attrs: { email: 'ana.ruiz@example.org' } });
+  b.node('slack:U2', { label: 'Ben Okafor', attrs: { email: 'ben.okafor@example.org' } });
+  b.beginSource({ format: 'tabular' });
+  b.node('csv:Ana Ruiz', { label: 'Ana Ruiz' });
+  b.node('csv:Ben Okafor', { label: 'Ben Okafor' });
+  const m = suggestMatches(b.build());
+  const ana = m.find(x => x.keyA === 'slack:U1' && x.keyB === 'csv:Ana Ruiz');
+  assert.ok(ana);
+  assert.equal(ana.confidence, 'medium');
+  assert.ok(ana.evidence.every(e => !/several people/.test(e)), ana.evidence.join('; '));
+  // Two other people with the name is ambiguous, and says so.
+  const c = new DatasetBuilder();
+  c.beginSource({ format: 'email' });
+  c.node('email:ana.ruiz@example.org', { label: 'ana.ruiz@example.org', attrs: { email: 'ana.ruiz@example.org' } });
+  c.beginSource({ format: 'tabular' });
+  c.node('csv:1', { label: 'Ana Ruiz' });
+  c.node('csv:2', { label: 'Ana Ruiz' });
+  const m2 = suggestMatches(c.build()).filter(x => x.keyA === 'email:ana.ruiz@example.org' || x.keyB === 'email:ana.ruiz@example.org');
+  assert.equal(m2.length, 2);
+  assert.ok(m2.every(x => x.confidence === 'low' && x.evidence.some(e => /several people/.test(e))));
+});
+
+test('importReport: deactivated accounts, text on messages only, empty sources, survey self-reports', () => {
+  const b = new DatasetBuilder();
+  b.beginSource({ format: 'slack', family: 'workplace', medium: 'slack', view: 'full' });
+  const a = b.node('slack:U1', { label: 'Saoirse Zhou', attrs: { deactivated: true } });
+  const z = b.node('slack:U2', { label: 'Idris Dimitriou' });
+  b.node('slack:U3', { label: 'Never Active', attrs: { deactivated: true } });
+  const c = b.context('slack:C1', { name: 'general', kind: 'channel', visibility: 'public' });
+  b.event({ type: 'message', t: 1, actor: a, targets: [[z, 'mention']], context: c, text: 'hello' });
+  b.event({ type: 'reaction', t: 2, actor: z, targets: [[a, 'subject']], context: c, text: ':tada:' });
+  b.beginSource({ format: 'tabular', family: 'tabular', fileNames: ['empty.csv'] });
+  b.beginSource({ format: 'google-forms', family: 'survey', view: 'full' });
+  const r1 = b.node('survey:ana', { label: 'Ana' }), r2 = b.node('survey:ben', { label: 'Ben' });
+  b.event({ type: 'declared', t: 3, actor: r1, targets: [[r2, 'declared']] });
+  const r = importReport(b.build());
+  const [slack, empty, survey] = r.sources;
+  assert.equal(slack.counts.messages, 1);
+  assert.equal(slack.counts.messagesWithText, 1); // the reaction's text is not a message
+  assert.deepEqual(slack.deactivated, { nodes: 1, names: ['Saoirse Zhou'], keys: ['slack:U1'] });
+  assert.equal(r.totals.deactivated, 2);
+  assert.equal(r.totals.deactivatedInEvents, 1);
+  assert.deepEqual(r.totals.deactivatedNames, ['Saoirse Zhou']);
+  assert.ok(r.notes.some(n => /deactivated/.test(n) && /Saoirse Zhou/.test(n)));
+  assert.deepEqual(empty.canShow, []);
+  assert.ok(r.notes.some(n => /Nothing was read from one source: empty\.csv/.test(n)));
+  assert.equal(survey.reported, true);
+  assert.equal(slack.reported, false);
+  assert.equal(survey.label, 'Google Forms survey');
+});
+
+test('importReport: personal exports are named, and merges are counted in people', () => {
+  const b = new DatasetBuilder();
+  b.beginSource({ format: 'email', family: 'workplace', view: 'ego', variant: 'takeout' });
+  b.event({ type: 'message', t: 1, actor: b.node('email:a@x.org'), targets: [[b.node('email:b@x.org'), 'to']] });
+  for (let k = 0; k < 3; k++) {
+    b.beginSource({ format: 'whatsapp', family: 'personal', view: 'chat' });
+    b.event({ type: 'message', t: 1, actor: b.node('whatsapp:me'), targets: [[b.node(`whatsapp:p${k}`), 'dm']] });
+  }
+  let ds = b.build();
+  let r = importReport(ds);
+  assert.ok(r.notes.some(n => /^Gmail and 3 WhatsApp chats are personal exports/.test(n)), r.notes.join(' | '));
+  ds = applyMerges(ds, [{ keyA: 'email:a@x.org', keyB: 'whatsapp:me' }]);
+  r = importReport(ds);
+  assert.ok(r.notes.some(n => /1 record was folded into 1 person after review/.test(n)), r.notes.join(' | '));
 });
 
 test('suggestMatches normalises phones and emails from platformIds (iMessage, Telegram, WhatsApp, LinkedIn)', () => {

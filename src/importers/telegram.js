@@ -176,7 +176,8 @@ async function importTelegram(fs, { builder, options = {}, progress, signal } = 
     if (fid === undefined || fid === null || fid === '') return -1;
     const key = peerKey(fid);
     const label = nameField ?? (nameField === null ? 'Deleted account' : undefined);
-    const i = personNode(key, label);
+    // A null display name marks a deleted account (docs/formats/telegram.md).
+    const i = personNode(key, label, nameField === null ? { attrs: { deactivated: true } } : {});
     if (nameField) c.names.set(nameKey(nameField), key);
     c.members.add(i);
     return i;

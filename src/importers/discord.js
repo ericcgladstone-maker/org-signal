@@ -134,11 +134,13 @@ async function detect(fs) {
     }
     return { score: 0.8, reason: 'Discord data package layout (channel folders with channel.json)' };
   }
-  let n = 0;
-  for (const e of fs.entries) {
-    if (!/\.(json|csv|html?)$/i.test(e.rel)) continue;
-    if (await sniffDce(e)) n++;
-    if (n >= 1) return { score: 0.95, reason: 'DiscordChatExporter export' };
+  // detect() must stay cheap: a Slack export holds thousands of JSON files.
+  // DiscordChatExporter names files "<Guild> - <Channel> [<id>].<ext>", so
+  // those are sniffed first, then a bounded sample of the rest.
+  const cands = fs.entries.filter(e => /\.(json|csv|html?)$/i.test(e.rel));
+  const named = cands.filter(e => /\[\d{6,}\]\.(json|csv|html?)$/i.test(e.rel));
+  for (const e of [...named.slice(0, 20), ...cands.filter(e => !named.includes(e)).slice(0, 20)]) {
+    if (await sniffDce(e)) return { score: 0.95, reason: 'DiscordChatExporter export' };
   }
   return { score: 0, reason: '' };
 }

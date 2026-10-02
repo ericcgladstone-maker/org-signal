@@ -66,17 +66,25 @@ async function hasZstMagic(e) {
 }
 
 // Sort the FileSet into GDPR CSVs, dump files and zstd files.
-async function scan(fs) {
+// Peeks are bounded so detection stays cheap on exports with thousands of
+// JSON files (a Slack export): files named like dumps are always checked,
+// other CSV and JSON files only up to a sample. import() scans everything.
+const SNIFF_CSV = 60, SNIFF_JSON = 20;
+
+async function scan(fs, { bounded = false } = {}) {
   const out = { csv: [], dumps: [], zst: [] };
+  let csvSeen = 0, jsonSeen = 0;
   for (const e of fs.entries) {
     const name = e.rel.split('/').pop();
     if (isZstName(name)) { out.zst.push(e); continue; }
     if (/\.csv$/i.test(name)) {
+      if (bounded && ++csvSeen > SNIFF_CSV) continue;
       const kind = classifyCsvHeader(firstLine(await peek(e, 2048)));
       if (kind) out.csv.push({ e, kind });
       continue;
     }
     const dumpName = /^R[CS]_\d{4}-\d{2}$/.test(name) || /_(comments|submissions)$/i.test(name);
+    if (bounded && !dumpName && /\.(ndjson|jsonl|json)$/i.test(name) && ++jsonSeen > SNIFF_JSON) continue;
     if (dumpName || /\.(ndjson|jsonl|json)$/i.test(name)) {
       // A dump renamed without its .zst extension is still compressed: check the magic bytes.
       if (dumpName && await hasZstMagic(e)) { out.zst.push(e); continue; }
@@ -88,7 +96,7 @@ async function scan(fs) {
 }
 
 async function detect(fs) {
-  const s = await scan(fs);
+  const s = await scan(fs, { bounded: true });
   const gdpr = s.csv.filter(c => ['comments', 'messages', 'chat', 'posts'].includes(c.kind));
   if (s.dumps.length) return { score: 0.9, reason: `Reddit dump (${s.dumps.map(d => d.kind).join(', ')})` };
   if (gdpr.length) return { score: 0.9, reason: `Reddit data request export (${[...new Set(gdpr.map(c => c.kind))].join(', ')})` };

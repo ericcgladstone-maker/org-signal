@@ -326,8 +326,20 @@ function tieWeight(raw, noTie) {
 }
 
 // respondents: [{ key, label, attrs, t }]; questions: [{ id, text, cols: [{ name, values[] per respondent }] }]
+// How the two answers about a pair become a tie: the same rules, labels and
+// default as the Roster builder (src/builders/roster.js MERGE_RULES), so a
+// form dropped on Data and the same form imported in Build give one network.
+// Nominations stay as reported events (so every tie traces to who named whom);
+// the rule decides which are kept and whether the source is undirected.
+export const COMBINE_RULES = [
+  { value: 'union', label: 'Union: a tie if either person names the other (undirected)', text: 'a tie exists if either person named the other; ties are undirected, and a pair who named each other has two reports behind its tie' },
+  { value: 'intersection', label: 'Reciprocated only: both name each other (undirected)', text: 'a tie exists only if both people named each other; ties are undirected' },
+  { value: 'respondent', label: 'As reported: directed from respondent to the person named', text: 'each tie runs from the respondent to the person they named, exactly as answered' },
+];
+
 function writeRoster(builder, { format, fileName, respondents, questions, respondentUnmatched, options }) {
-  startSource(builder, { format, view: 'full', fileNames: [fileName] });
+  const rule = COMBINE_RULES.find(r => r.value === options.combine) || COMBINE_RULES[0];
+  startSource(builder, { format, view: 'full', fileNames: [fileName], directed: rule.value === 'respondent', combine: rule.value });
   const noTie = new Set(String(options.noTieValues ?? DEFAULT_NO_TIE).split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
   const roster = new Map(); // normalised name -> node index
   for (const q of questions) for (const c of q.cols) {
@@ -343,20 +355,40 @@ function writeRoster(builder, { format, fileName, respondents, questions, respon
   }
   const all = [...new Set([...roster.values(), ...resp])];
   builder.context(`survey:${fileName}`, { name: fileName, kind: 'survey', visibility: 'private', medium: 'survey', members: all });
-  let self = 0;
+  let self = 0, nominations = 0, ties = 0, mutual = 0, dropped = 0;
   for (const q of questions) {
     const ctx = builder.context(`survey:${fileName}#${q.id}`, { name: q.text || q.id, kind: 'survey', visibility: 'private', medium: 'survey', members: all });
+    const noms = [];
     respondents.forEach((r, ri) => {
       for (const c of q.cols) {
         const w = tieWeight(c.values[ri], noTie);
         if (!w) continue;
         const target = roster.get(normName(c.name));
         if (target === resp[ri]) { self++; continue; }
-        builder.event({ type: 'declared', t: r.t, actor: resp[ri], targets: [[target, 'declared']], context: ctx, weight: w });
-        builder.stat('declaredTies');
+        noms.push({ t: r.t, actor: resp[ri], target, w });
       }
     });
+    const said = new Set(noms.map(n => n.actor + '|' + n.target));
+    const pairs = new Set();
+    for (const n of noms) {
+      const back = said.has(n.target + '|' + n.actor);
+      const pair = Math.min(n.actor, n.target) + '|' + Math.max(n.actor, n.target);
+      if (back) { if (!pairs.has(pair)) mutual++; }
+      if (!pairs.has(pair) && (back || rule.value !== 'intersection')) ties++;
+      pairs.add(pair);
+      nominations++;
+      if (rule.value === 'intersection' && !back) { dropped++; continue; }
+      builder.event({ type: 'declared', t: n.t, actor: n.actor, targets: [[n.target, 'declared']], context: ctx, weight: n.w });
+      builder.stat('declaredTies');
+    }
   }
+  if (rule.value === 'respondent') ties = nominations;
+  builder.stat('nominations', nominations);
+  builder.stat('reciprocatedPairs', mutual);
+  builder.stat('ties', ties);
+  const label = rule.label.split(':')[0];
+  const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
+  builder.warn('combine-rule', `Answers about each pair were combined with the "${label}" rule: ${rule.text}. ${n(nominations, 'nomination')}, ${n(mutual, 'pair')} named each other, ${n(ties, 'tie')}${dropped ? `; ${n(dropped, 'one-sided nomination')} left out` : ''}. Change "Combine the two answers about each pair" in the import options to use another rule.`, ties);
   if (self) builder.warn('self-nominations', 'Respondents who picked themselves in a roster question (ignored)', self);
   if (respondentUnmatched) {
     builder.warn('respondents-unmatched', 'No respondent name column was found, so respondents are identified by response id and cannot be matched to roster names; the network has nominations out of respondents but none into them. Set the respondent column option if one exists.', 1);
@@ -548,6 +580,7 @@ export default {
     { key: 'aaRegex', label: 'Pattern for alter-alter pair columns in one-row-per-ego files (named groups src, tgt)', type: 'string', default: DEFAULT_AA_REGEX },
     { key: 'timeZone', label: 'Time zone of survey timestamps that carry none (IANA name)', type: 'string', default: 'UTC' },
     { key: 'noTieValues', label: 'Roster answers meaning "no tie" (comma-separated)', type: 'string', default: DEFAULT_NO_TIE },
+    { key: 'combine', label: 'Combine the two answers about each pair', type: 'choice', default: 'union', choices: COMBINE_RULES.map(({ value, label }) => ({ value, label })) },
   ],
   import: importSurvey,
 };

@@ -18,7 +18,8 @@ const CODES = {
     'teams-free-no-messages', 'spreadsheet-unsupported'],
   info: ['auto-mapping', 'multiple-egos', 'matrix-duplicate', 'pair-values-as-weights', 'self-nominations', 'self-loops',
     'direction-assumed', 'interval-end-dropped', 'edge-attrs-dropped', 'node-times-dropped', 'dynamic-attr-flattened',
-    'slack-usergroup-mentions', 'teams-channel-visibility-unknown', 'mbox-preamble', 'empty-mbox', 'empty-file', 'duplicate-sessions-skipped'],
+    'slack-usergroup-mentions', 'teams-channel-visibility-unknown', 'mbox-preamble', 'empty-mbox', 'empty-file', 'duplicate-sessions-skipped',
+    'combine-rule', 'spam-trash-excluded', 'automated-excluded', 'automated-included', 'owner-from-chat-title', 'nested-zip'],
 };
 const CODE_SEV = new Map(Object.entries(CODES).flatMap(([sev, list]) => list.map(c => [c, sev])));
 const SEVERITY = {
@@ -34,6 +35,29 @@ export function warningSeverity(w) {
   for (const re of SEVERITY.error) if (re.test(code)) return 'error';
   for (const re of SEVERITY.info) if (re.test(code)) return 'info';
   return 'warn';
+}
+
+// Names people know the sources by. Importer ids and format strings are
+// lower-case codes ("linkedin", "x-archive"); the report and the Data view
+// show these instead. Unknown formats fall back to a capitalised code.
+const FORMAT_LABELS = {
+  slack: 'Slack', teams: 'Microsoft Teams', email: 'Email', mbox: 'Email', eml: 'Email', calendar: 'Calendar',
+  whatsapp: 'WhatsApp', linkedin: 'LinkedIn', 'x-archive': 'X archive', 'x-research': 'X research data', x: 'X',
+  bluesky: 'Bluesky', mastodon: 'Mastodon', threads: 'Threads', telegram: 'Telegram', imessage: 'iMessage',
+  meta: 'Messenger or Instagram', messenger: 'Messenger', instagram: 'Instagram', discord: 'Discord', reddit: 'Reddit',
+  tabular: 'Spreadsheet', 'google-forms': 'Google Forms survey', qualtrics: 'Qualtrics survey', 'egor-long': 'egor survey',
+  'egor-wide': 'egor survey', egoweb: 'EgoWeb survey', 'network-canvas': 'Network Canvas interview', 'ego-interview': 'Ego interview',
+  roster: 'Roster', drawn: 'Drawn network', perceived: 'Perceived networks', graphml: 'GraphML', gexf: 'GEXF', gml: 'GML',
+  pajek: 'Pajek', ucinet: 'UCINET', dl: 'UCINET', 'ucinet-dl': 'UCINET', edgelist: 'Edge list', 'csv-edgelist': 'Edge list', 'gephi-csv': 'Edge list', 'csv-matrix': 'Adjacency matrix',
+  fullmatrix: 'Adjacency matrix', synthetic: 'Synthetic',
+};
+
+export function formatLabel(format, variant) {
+  const f = String(format || '');
+  if (f === 'email' && variant === 'takeout') return 'Gmail';
+  if (FORMAT_LABELS[f]) return FORMAT_LABELS[f];
+  if (!f) return 'Source';
+  return f.replace(/[-_]+/g, ' ').replace(/^\w/, c => c.toUpperCase());
 }
 
 function tzStatus(tz) {
@@ -66,6 +90,11 @@ const VIEW_LINES = {
   },
 };
 
+const SURVEY_FULL = {
+  can: ['Structure of the whole group as its members report it: who names whom, brokers, clusters, and how central each person is.'],
+  cannot: ['Ties outside the questions asked, and ties of people on the roster who did not answer, except as others named them.'],
+};
+
 function familyLines(s, stats) {
   const can = [], cannot = [];
   const fmt = String(s.format || '');
@@ -74,7 +103,9 @@ function familyLines(s, stats) {
   if (fmt.startsWith('teams') && /purview/i.test(String(s.variant || ''))) cannot.push('Who said what to whom: the Purview item report lists the participants of each transcript only.');
   if (s.family === 'survey') {
     can.push('Ties people reported themselves (who they go to, feel close to, and so on).');
-    cannot.push('Observed behaviour: these are self-reports, and ties between alters are the respondent\'s perception.');
+    cannot.push(s.view === VIEWS.EGO
+      ? 'Observed behavior: these are self-reports, and ties between the people a respondent named are that respondent\'s perception.'
+      : 'Observed behavior: these are self-reports, and people who did not respond named nobody.');
   }
   if (s.family === 'network') cannot.push('How the ties were measured: the file holds declared ties whose origin and time window are not recorded.');
   if (stats.undated === stats.events && stats.events > 0) cannot.push('Change over time: no event has a timestamp.');
@@ -94,6 +125,7 @@ export function importReport(ds) {
     tMin: Infinity, tMax: -Infinity, undated: 0, withText: 0, nodes: new Set(), contexts: new Set(), botEvents: 0, bots: new Set(),
     unresolved: 0, noTargets: 0,
   }));
+  const MESSAGE = EVENT_TYPES.indexOf('message');
   for (let i = 0; i < e.count; i++) {
     const p = per[e.source[i]];
     if (!p) continue;
@@ -101,7 +133,9 @@ export function importReport(ds) {
     p.byType[EVENT_TYPES[e.type[i]]]++;
     const t = e.t[i];
     if (Number.isFinite(t)) { if (t < p.tMin) p.tMin = t; if (t > p.tMax) p.tMax = t; } else p.undated++;
-    if (e.text[i]) p.withText++;
+    // Reactions and system notices can carry text too (an emoji name, a join
+    // notice); counting them made "messages with text" exceed the messages.
+    if (e.text[i] && e.type[i] === MESSAGE) p.withText++;
     const a = e.actor[i];
     p.nodes.add(a);
     if (ds.nodes.isBot[a]) { p.botEvents++; p.bots.add(a); }
@@ -113,8 +147,12 @@ export function importReport(ds) {
     }
   }
 
+  const isDeactivated = i => !!(ds.nodes.attrs[i] && ds.nodes.attrs[i].deactivated);
+  // Distinct labels, sorted (two bot accounts can share a name).
+  const namesOf = list => [...new Set(list.map(i => ds.nodes.labels[i]))].sort((a, b) => String(a).localeCompare(String(b)));
   const sources = ds.meta.sources.map((s, sid) => {
     const p = per[sid];
+    const gone = [...p.nodes].filter(isDeactivated);
     const byVisibility = Object.fromEntries(VISIBILITY.map(v => [v, 0]));
     const byKind = {};
     for (const c of p.contexts) {
@@ -125,10 +163,13 @@ export function importReport(ds) {
       .sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity] || b.count - a.count || a.code.localeCompare(b.code));
     const unresolved = warnings.find(w => w.code === 'unresolved-parent')?.count || 0;
     const stats = { events: p.events, byType: p.byType, withText: p.withText, undated: p.undated, byVisibility };
-    const view = VIEW_LINES[s.view] || { can: [], cannot: ['The kind of slice this source shows is not recorded, so which measures apply is unclear.'] };
+    // A roster survey is a full network of reports, not of observed talk.
+    const view = s.family === 'survey' && s.view === VIEWS.FULL ? SURVEY_FULL : VIEW_LINES[s.view] || { can: [], cannot: ['The kind of slice this source shows is not recorded, so which measures apply is unclear.'] };
     const fam = familyLines(s, stats);
-    const canShow = [...view.can, ...fam.can];
-    const cannotShow = [...view.cannot, ...fam.cannot];
+    let canShow = [...view.can, ...fam.can];
+    let cannotShow = [...view.cannot, ...fam.cannot];
+    // An empty source must not claim it can show the structure of anything.
+    if (p.events === 0) { canShow = []; cannotShow = ['Anything yet: no messages, ties or other events were read from it.']; }
     if (p.undated && p.undated < p.events) cannotShow.push(`Timing for ${p.undated} of ${p.events} events, which have no usable timestamp.`);
     const tz = tzStatus(s.tz);
     if (tz.status === 'assumed') cannotShow.push('Reliable time-of-day patterns, until the time zone is confirmed.');
@@ -137,6 +178,10 @@ export function importReport(ds) {
       id: sid,
       format: s.format, family: s.family, medium: s.medium, view: s.view, context: s.context,
       variant: s.variant ?? null, directed: s.directed ?? null,
+      label: formatLabel(s.format, s.variant), title: s.title ?? null,
+      // Every event is a self-report (survey nominations, declared network
+      // files): the UI words counts as responses and reported ties.
+      reported: p.events > 0 && p.byType.declared === p.events,
       fileNames: s.fileNames || [],
       ego: s.egoKey ? { key: s.egoKey, label: egoIdx >= 0 ? ds.nodes.labels[egoIdx] : s.egoKey, inferredFrom: s.egoInferredFrom ?? null } : null,
       // Ego-interview sources with several respondents list them all (egoKey is then null).
@@ -148,9 +193,12 @@ export function importReport(ds) {
         eventsByType: Object.fromEntries(Object.entries(p.byType).filter(([, v]) => v)),
         targetsByRole: Object.fromEntries(Object.entries(p.byRole).filter(([, v]) => v)),
         contexts: p.contexts.size, contextsByVisibility: Object.fromEntries(Object.entries(byVisibility).filter(([, v]) => v)), contextsByKind: byKind,
-        messagesWithText: p.withText, undatedEvents: p.undated, eventsWithoutTargets: p.noTargets,
+        messages: p.byType.message, messagesWithText: p.withText, undatedEvents: p.undated, eventsWithoutTargets: p.noTargets,
       },
-      bots: { nodes: p.bots.size, events: p.botEvents },
+      bots: { nodes: p.bots.size, events: p.botEvents, names: namesOf([...p.bots]).slice(0, 20) },
+      // Accounts the export marks as deactivated (attrs.deactivated): people
+      // who left keep their history and can still rank high on measures.
+      deactivated: { nodes: gone.length, names: namesOf(gone).slice(0, 50), keys: gone.map(i => ds.nodes.keys[i]) },
       selfMessages: s.counts?.['self-messages'] ?? 0,
       unresolvedParents: unresolved,
       importerCounts: { ...(s.counts || {}) },
@@ -163,12 +211,23 @@ export function importReport(ds) {
   let tMin = Infinity, tMax = -Infinity;
   for (const s of sources) if (s.timeRange) { tMin = Math.min(tMin, s.timeRange.start); tMax = Math.max(tMax, s.timeRange.end); }
   const notes = [];
-  const egoSources = sources.filter(s => s.view === VIEWS.EGO);
-  if (egoSources.length > 1) notes.push(`${egoSources.length} sources are personal (ego) views. Combined, they still show only the parts of the network those owners took part in.`);
+  // Personal exports: ego views plus single chats exported from one phone.
+  // Several chats from one app are one export to the person who made them.
+  const personal = sources.filter(s => s.view === VIEWS.EGO || (s.view === VIEWS.CHAT && s.family === 'personal'));
+  if (personal.length > 1) {
+    const kinds = new Map();
+    for (const s of personal) kinds.set(s.label, (kinds.get(s.label) || 0) + 1);
+    const parts = [...kinds].map(([label, n]) => (n > 1 && personal.find(s => s.label === label).view === VIEWS.CHAT ? `${n} ${label} chats` : n > 1 ? `${n} ${label} exports` : label));
+    notes.push(`${parts.length > 1 ? `${listJoin(parts)} are` : `${parts[0]} are`} personal exports. Each holds only the conversations its owner (usually you) took part in, so the combined network centers on the owners and shows little of how their contacts know each other.`);
+  }
   if (new Set(sources.map(s => s.view)).size > 1) notes.push('Sources with different views were combined. Measures are checked against the narrowest view before they are shown.');
-  if (ds.meta.merges?.length) notes.push(`${ds.meta.merges.reduce((n, m) => n + m.groups.length, 0)} identities were merged by hand; see the merge log.`);
+  if (ds.meta.merges?.length) {
+    let groups = 0, folded = 0;
+    for (const m of ds.meta.merges) for (const g of m.groups) { groups++; folded += g.from.length; }
+    notes.push(`${folded === 1 ? '1 record was' : `${folded} records were`} folded into ${groups === 1 ? '1 person' : `${groups} people`} after review (same email, name or account). The merge log is under Who is who.`);
+  }
   const empty = sources.filter(s => s.counts.events === 0);
-  if (empty.length) notes.push(`${empty.length} source(s) produced no events.`);
+  if (empty.length) notes.push(`Nothing was read from ${empty.length === 1 ? 'one source' : `${empty.length} sources`}: ${empty.slice(0, 5).map(s => s.title || s.fileNames[0] || s.label).join(', ')}${empty.length > 5 ? ', ...' : ''}.`);
   // People listed in an export (users.json, a roster) may never act or be
   // addressed; count those who appear in events separately so totals and the
   // per-source rows (which count only people in events) agree visibly.
@@ -178,11 +237,26 @@ export function importReport(ds) {
     for (let j = e.tOff[i]; j < e.tOff[i + 1]; j++) inEvents[e.tgt[j]] = 1;
   }
   let nodesInEvents = 0, botsInEvents = 0;
-  for (let i = 0; i < ds.nodes.count; i++) if (inEvents[i]) { nodesInEvents++; if (ds.nodes.isBot[i]) botsInEvents++; }
+  const gone = [], goneInEvents = [];
+  for (let i = 0; i < ds.nodes.count; i++) {
+    if (inEvents[i]) { nodesInEvents++; if (ds.nodes.isBot[i]) botsInEvents++; }
+    if (isDeactivated(i)) { gone.push(i); if (inEvents[i]) goneInEvents.push(i); }
+  }
+  if (goneInEvents.length) notes.push(`${goneInEvents.length === 1 ? '1 account is' : `${goneInEvents.length} accounts are`} marked as deactivated in the export (${namesOf(goneInEvents).slice(0, 5).join(', ')}${goneInEvents.length > 5 ? ', ...' : ''}). Their past activity still counts, so a person who has left can rank high; check when they were last active before reading a measure as current.`);
+  const contextsByVisibility = {};
+  for (let c = 0; c < ds.contexts.count; c++) {
+    const v = VISIBILITY[ds.contexts.visibility[c]];
+    contextsByVisibility[v] = (contextsByVisibility[v] || 0) + 1;
+  }
+  let messages = 0, messagesWithText = 0;
+  for (const p of per) { messages += p.byType.message; messagesWithText += p.withText; }
   return {
     totals: {
       nodes: ds.nodes.count, nodesInEvents, events: e.count, contexts: ds.contexts.count, sources: S,
+      messages, messagesWithText, contextsByVisibility,
       bots: ds.nodes.isBot.reduce((a, b) => a + b, 0), botsInEvents,
+      botNames: namesOf([...Array(ds.nodes.count).keys()].filter(i => ds.nodes.isBot[i] && inEvents[i])).slice(0, 20),
+      deactivated: gone.length, deactivatedInEvents: goneInEvents.length, deactivatedNames: namesOf(goneInEvents).slice(0, 50),
       timeRange: Number.isFinite(tMin) ? { start: tMin, end: tMax } : null,
       warnings: { error: 0, warn: 0, info: 0, ...countSev(sources) },
     },
@@ -194,4 +268,8 @@ function countSev(sources) {
   const c = {};
   for (const s of sources) for (const w of s.warnings) c[w.severity] = (c[w.severity] || 0) + 1;
   return c;
+}
+
+function listJoin(parts) {
+  return parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }

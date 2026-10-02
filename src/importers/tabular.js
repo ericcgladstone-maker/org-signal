@@ -253,6 +253,7 @@ const ALIASES = {
 };
 
 const norm = h => String(h ?? '').trim().toLowerCase().replace(/[\s.-]+/g, '_');
+const OTHER_PERSON = /(^|_)(manager|supervisor|boss|reports_?to|line_?manager|mentor|parent|lead_by|approver)(_|$)/;
 
 function headerScore(h, role) {
   const n = norm(h);
@@ -318,8 +319,14 @@ export function suggestMapping(headers, sampleRows = []) {
     // Undo event-ish picks that make no sense for a node table.
     for (const r of ['actor', 'targets', 'timestamp', 'text', 'context', 'type', 'directed']) if (roles[r]) { taken.delete(roles[r].col.header); delete roles[r]; }
     delete roles.weight; taken.clear();
-    roles.id = pick('id', c => (c.prof.distinct === c.prof.count && c.prof.count ? 0.2 : 0));
-    roles.label = pick('label');
+    // A column that names someone else (manager, mentor) is never the row's
+    // own id or name, however name-like its header. Among id candidates a
+    // unique email column wins: it is what other sources can be matched on.
+    const other = c => (OTHER_PERSON.test(norm(c.header)) ? -1 : 0);
+    const unique = c => c.prof.distinct === c.prof.count && c.prof.count;
+    roles.id = pick('id', c => (unique(c) ? 0.2 : 0) + (unique(c) && c.prof.emails > 0.9 ? 0.35 : 0) + other(c));
+    roles.label = pick('label', other);
+    for (const c of cols) if (OTHER_PERSON.test(norm(c.header))) notes.push(`"${c.header}" names another person; it is kept as an attribute, not used as this row's id or name.`);
     if (!roles.id && cols.length) {
       const c = cols.find(c => c.prof.distinct === c.prof.count && c.prof.count) || cols[0];
       taken.add(c.header); roles.id = { col: c, confidence: 0.3 };
@@ -531,8 +538,8 @@ export default {
   },
   options: [
     { key: 'mapping', label: 'Column mapping', type: 'mapping', default: null },
-    { key: 'kind', label: 'Each row is', type: 'choice', default: null, choices: ['events', 'edges', 'nodes'] },
-    { key: 'view', label: 'What the table covers', type: 'choice', default: 'full', choices: ['full', 'ego', 'sample'] },
+    { key: 'kind', label: 'Each row is', type: 'choice', default: null, choices: [{ value: 'events', label: 'An event (message, meeting)' }, { value: 'edges', label: 'A tie between two people' }, { value: 'nodes', label: 'A person' }] },
+    { key: 'view', label: 'Who the table covers', type: 'choice', default: 'full', choices: [{ value: 'full', label: 'Everyone in a bounded group' }, { value: 'ego', label: "One person's contacts" }, { value: 'sample', label: 'A sample of a larger group' }] },
   ],
   async import(fs, { builder, options = {}, progress, signal }) {
     const det = await this.detect(fs);

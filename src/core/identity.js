@@ -221,18 +221,22 @@ export function suggestMatches(ds, { maxBucket = 50 } = {}) {
         for (const cand of [parts.join(' '), [...parts].reverse().join(' ')]) {
           const list = nameIndex.get(cand) || [];
           if (list.length > maxBucket) continue;
-          for (const j of list) if (j !== i && !seen.has(j)) {
+          // The address owner may carry the name itself (a Slack account with
+          // its own email): only other people with the name make it ambiguous.
+          const others = list.filter(j => j !== i);
+          for (const j of others) if (!seen.has(j)) {
             seen.add(j);
-            const ambiguous = list.length > 1;
+            const ambiguous = others.length > 1;
             propose(i, j, ambiguous || isAlter(j) ? 'low' : 'medium', `email ${email} spells the name "${ds.nodes.labels[j]}"${ambiguous ? ' (several people have that name)' : ''}`);
           }
         }
       }
       const compact = parts.join('');
-      for (const { i: j, how } of compactIndex.get(compact) || []) {
-        if (j === i || seen.has(j)) continue;
+      const compactOthers = (compactIndex.get(compact) || []).filter(x => x.i !== i);
+      const many = new Set(compactOthers.map(x => x.i)).size > 1;
+      for (const { i: j, how } of compactOthers) {
+        if (seen.has(j)) continue;
         seen.add(j);
-        const many = (compactIndex.get(compact) || []).length > 1;
         const conf = how === 'full' && !many && !isAlter(j) ? 'medium' : 'low';
         propose(i, j, conf, how === 'full' ? `email ${email} spells the name "${ds.nodes.labels[j]}"` : `email ${email} matches the initial and surname of "${ds.nodes.labels[j]}"`);
       }

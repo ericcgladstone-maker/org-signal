@@ -344,3 +344,17 @@ test('rename notice with a colon makes the chat a group and adds no fake author 
   assert.equal(source(ds).counts.systemMessages, 1);
   assert.equal(source(ds).counts.messages, 2);
 });
+
+test('a one-to-one chat names its owner: the participant the chat is not named after', async () => {
+  const fs = await fsFromFixtures('whatsapp/WhatsApp Chat with Marcus Oyelaran.txt');
+  const { ds } = await runImport(whatsapp, fs);
+  assert.equal(source(ds).egoKey, 'whatsapp:leo brandt');
+  assert.equal(source(ds).egoInferredFrom, 'chat-title');
+  assert.equal(source(ds).title, 'Marcus Oyelaran');
+  // An explicit name wins over the inference.
+  const r = await runImport(whatsapp, await fsFromFixtures('whatsapp/WhatsApp Chat with Marcus Oyelaran.txt'), { egoName: 'Marcus Oyelaran' });
+  assert.equal(source(r.ds).egoKey, 'whatsapp:marcus oyelaran');
+  // Groups name no owner.
+  const g = await runImport(whatsapp, await fsFromFixtures('whatsapp/WhatsApp Chat - Project Falcon.zip'));
+  assert.equal(source(g.ds).egoKey, null);
+});

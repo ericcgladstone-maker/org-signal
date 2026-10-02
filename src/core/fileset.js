@@ -33,17 +33,19 @@ export class FileSet {
   // name as a prefix only when more than one item was given.
   static async from(items) {
     const entries = [];
+    const unwrapped = [];
     const multi = items.length > 1;
     for (const { blob, path } of items) {
       if (/\.zip$/i.test(path) && await isZip(blob)) {
-        const zipEntries = await openZip(blob);
         const prefix = multi ? path.replace(/\.zip$/i, '') + '/' : '';
-        for (const z of zipEntries) entries.push({ ...z, path: prefix + z.path, stream: z.stream, bytes: z.bytes, text: z.text });
+        entries.push(...await zipEntries(blob, prefix, path, unwrapped));
       } else {
         entries.push(blobEntry(blob, path));
       }
     }
-    return new FileSet(entries, { names: items.map(i => i.path) });
+    const fs = new FileSet(entries, { names: items.map(i => i.path) });
+    fs.unwrapped = unwrapped;
+    return fs;
   }
 
   // Browser: from an <input type=file> FileList or a drop's files. Folder uploads
@@ -85,6 +87,35 @@ export class FileSet {
   }
 
   get totalSize() { return this.entries.reduce((s, e) => s + (e.size || 0), 0); }
+}
+
+// A zip's entries. A zip that holds nothing but other zips (a download that
+// wraps the export, such as a generated "native" Slack export, or a folder of
+// chat zips zipped again) is opened one level further: nobody means "import
+// this zip file" when they hand us a zip of zips. One inner zip is unwrapped
+// in place; several keep their names as folders. Records each unwrap in
+// `unwrapped` as { outer, inner } so the import can say what it opened.
+async function zipEntries(blob, prefix, name, unwrapped, depth = 0) {
+  const list = await openZip(blob);
+  const real = list.filter(z => !z.isDir && !isJunk(z.path));
+  if (depth < 2 && real.length && real.every(z => /\.zip$/i.test(z.path))) {
+    const inner = [];
+    for (const z of real) {
+      const b = new Blob([await z.bytes()]);
+      if (!await isZip(b)) { inner.length = 0; break; }
+      inner.push({ z, b });
+    }
+    if (inner.length) {
+      const out = [];
+      for (const { z, b } of inner) {
+        const sub = inner.length > 1 ? prefix + z.path.replace(/\.zip$/i, '') + '/' : prefix;
+        unwrapped.push({ outer: name, inner: z.path });
+        out.push(...await zipEntries(b, sub, z.path, unwrapped, depth + 1));
+      }
+      return out;
+    }
+  }
+  return list.map(z => ({ ...z, path: prefix + z.path, stream: z.stream, bytes: z.bytes, text: z.text }));
 }
 
 function* walk(fs, path, dir) {

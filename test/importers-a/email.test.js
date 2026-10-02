@@ -38,6 +38,7 @@ test('Gmail Takeout zip: messages, roles, threads, times, lists, ego', async () 
   // 8 messages in the file; the Spam one is skipped by default.
   assert.equal(source.counts['messages-read'], 8);
   assert.equal(source.counts['spam-trash-skipped'], 1);
+  assert.equal(warning(source, 'spam-trash-excluded').count, 1); // said, not silent (S26)
   assert.equal(evs.length, 7);
   assert.ok(evs.every(e => e.type === 'message'));
 

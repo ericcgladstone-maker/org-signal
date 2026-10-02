@@ -304,6 +304,9 @@ const PST_ADVICE = 'Outlook PST/OST/MSG files cannot be read in the browser yet 
 
 async function importEmail(fs, { builder, options = {}, progress = () => {}, signal } = {}) {
   const opt = { keepText: true, headersOnly: false, excludeLists: false, excludeAutomated: false, includeSpamTrash: false, maxRecipients: 50, egoAddress: '', ...options };
+  // The UI offers one choice (`content`) instead of two booleans that could
+  // contradict each other; keepText / headersOnly still work for callers.
+  if (options.content === 'headers') { opt.headersOnly = true; opt.keepText = false; }
   const groups = { mbox: [], eml: [], pst: [] };
   for (const e of fs.entries) {
     const k = await classify(e);
@@ -522,9 +525,20 @@ function finish(st) {
     builder.node(key, { attrs: { email: ego, domain: ego.slice(ego.lastIndexOf('@') + 1), is_ego: true }, platformIds: { email: ego } });
     builder.source.egoKey = key;
     builder.source.egoInferredFrom = how;
-    if (how === 'most-frequent-recipient') builder.warn('ego-guessed', `The mailbox owner was guessed as ${ego} (the most frequent recipient). Set the "Mailbox owner address" option if this is wrong.`);
+    if (how === 'most-frequent-recipient') builder.warn('ego-guessed', `The mailbox owner was guessed as ${ego} (the most frequent recipient). Set "Your email address" in the import options if this is wrong.`);
   } else {
-    builder.warn('ego-unknown', 'Could not tell whose mailbox this is. Set the "Mailbox owner address" option.');
+    builder.warn('ego-unknown', 'Could not tell whose mailbox this is. Set "Your email address" in the import options.');
+  }
+  // Say what the options left out, so a file named "Including Spam and Trash"
+  // or a missing newsletter is not a surprise.
+  const c = builder.source.counts;
+  const named = (builder.source.fileNames || []).some(f => /spam and trash/i.test(f));
+  if (!opt.includeSpamTrash && (c['spam-trash-skipped'] || named)) builder.warn('spam-trash-excluded', `Messages labelled Spam or Trash are left out${named ? ', although the Takeout file name says "Including Spam and Trash"' : ''} (${c['spam-trash-skipped'] || 'none'} found). Tick "Include Gmail Spam and Trash" to keep them.`, c['spam-trash-skipped'] || 0);
+  // Kept by default (the generator's round trip and earlier projects rely on
+  // it), so say how much of the mailbox is newsletters and notifications.
+  if (c.automated) {
+    if (opt.excludeAutomated) builder.warn('automated-excluded', 'Bulk and automated messages (newsletters, notifications) were left out. Untick "Leave out bulk and automated mail" to keep them.', c.automated);
+    else builder.warn('automated-included', 'Bulk and automated messages (newsletters, notifications) are included and tie you to their senders. Tick "Leave out bulk and automated mail" to drop them.', c.automated);
   }
 }
 
@@ -534,9 +548,8 @@ export default {
   family: 'workplace',
   detect,
   options: [
-    { key: 'egoAddress', label: 'Mailbox owner address', type: 'string', default: '' },
-    { key: 'keepText', label: 'Keep message text', type: 'boolean', default: true },
-    { key: 'headersOnly', label: 'Headers only (faster, no text)', type: 'boolean', default: false },
+    { key: 'egoAddress', label: 'Your email address (helps recognize you; leave blank to work it out from the mail)', type: 'string', default: '' },
+    { key: 'content', label: 'Message content', type: 'choice', default: 'text', choices: [{ value: 'text', label: 'Keep message text' }, { value: 'headers', label: 'Headers only (faster, no text)' }] },
     { key: 'excludeLists', label: 'Leave out mailing-list mail', type: 'boolean', default: false },
     { key: 'excludeAutomated', label: 'Leave out bulk and automated mail', type: 'boolean', default: false },
     { key: 'includeSpamTrash', label: 'Include Gmail Spam and Trash', type: 'boolean', default: false },

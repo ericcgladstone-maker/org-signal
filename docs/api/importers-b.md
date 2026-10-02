@@ -94,8 +94,8 @@ Tests: `node --test 'test/importers-b/**/*.test.js'` (102 tests). Fixtures are s
 ## whatsapp: chat export (.txt, or zip with `_chat.txt`)
 
 - **Detect:** chat-named file plus at least 60% of the first 50 non-empty lines matching the header grammar 0.95; content only 0.8; name with weak content 0.6; name only 0.3.
-- **Options:** `timezone` (IANA, default `unknown`: wall clock read as UTC, source tz `unknown`, warning), `dateOrder` (`auto` | `day-first` | `month-first`), `egoName` (resolves "You" and sets `egoKey`).
-- **Source:** one per chat file, view `chat`, medium `whatsapp`.
+- **Options:** `timezone` (type `timezone`, IANA, default `unknown`: wall clock read as UTC, source tz `unknown`, warning; the Data view pre-fills the browser's zone), `dateOrder` (`auto` | `day-first` | `month-first`), `egoName` (resolves "You" and sets `egoKey`).
+- **Source:** one per chat file, view `chat`, medium `whatsapp`, `title` = the chat title. In a one-to-one chat without `egoName`, the owner is the participant the chat is not named after: `egoKey` set, `egoInferredFrom: 'chat-title'`. Groups name no owner.
 - **Grammar:** iOS `[date, time] Name: text` and Android `date, time - Name: text`; 12/24 h; U+202F, U+200E/U+200F, BOM, U+2068/U+2069 mention isolates; `~ Name`; multi-line continuation; media-omitted (both capitalizations) and other attachment markers; edit and deleted markers; system messages including the 2024+ iOS style where the chat name is the author, and Android authorless notices containing ": " (`authorlessSystem`). Day/month order inferred over the whole file as whatsapp-chat-parser does (its 12 formats and date tests are reproduced in the tests); year-first dates always read Y-M-D.
 - **Nodes:** `whatsapp:<nameKey>` or `whatsapp:+<digits>`; attrs `is_phone_number`, `is_saved_contact`.
 - **Contexts:** `whatsapp:<dm|group_dm>:<hash of title + first timestamp>`; group when a group notice appears or more than 2 authors; members include people named in join / leave notices.

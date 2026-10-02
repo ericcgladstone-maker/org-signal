@@ -34,6 +34,8 @@ async function page(width) {
   await p.setViewport({ width, height: width < 600 ? 844 : 900, deviceScaleFactor: 1 });
   p.on('console', m => { if (m.type() === 'error') problems.push(`[${width}] console error: ${m.text()}`); });
   p.on('pageerror', e => problems.push(`[${width}] page error: ${e.message}`));
+  // The shell asks before leaving a page with data loaded (beforeunload); QA navigates on purpose.
+  p.on('dialog', d => d.accept().catch(() => {}));
   p.on('requestfailed', r => problems.push(`[${width}] request failed: ${r.url()} ${r.failure()?.errorText}`));
   p.on('response', r => { if (r.status() >= 400) problems.push(`[${width}] HTTP ${r.status()}: ${r.url()}`); });
   return p;
@@ -183,9 +185,9 @@ if (!process.env.QA_SKIP_REAL) {
   // Every export runs without an error notice.
   const client = await p.target().createCDPSession();
   await client.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: OUT }).catch(() => {});
-  const nButtons = await p.evaluate(() => [...document.querySelectorAll('button')].filter(b => /^Download \./.test(b.textContent.trim())).length);
+  const nButtons = await p.evaluate(() => [...document.querySelectorAll('button')].filter(b => /^Download /.test(b.getAttribute('aria-label') || '')).length);
   for (let k = 0; k < nButtons; k++) {
-    await p.evaluate(i => [...document.querySelectorAll('button')].filter(b => /^Download \./.test(b.textContent.trim()))[i].click(), k);
+    await p.evaluate(i => [...document.querySelectorAll('button')].filter(b => /^Download /.test(b.getAttribute('aria-label') || ''))[i].click(), k);
     await sleep(700);
   }
   await clickText(p, 'button', 'Network figure'); await sleep(500);
@@ -211,18 +213,14 @@ if (!process.env.QA_SKIP_REAL) {
   await input.uploadFile(zipPath);
   await sleep(500); await p.waitForFunction(() => !document.querySelector('.loading'), { timeout: 60000 }).catch(() => problems.push('detection did not finish'));
   await idle(p, 500); await shot(p, 'real-1440-import-detected');
-  await clickText(p, 'button', 'Import'); await sleep(500); await idle(p, 1000);
+  await clickText(p, '.dv-actions button', 'Import'); await sleep(500); await idle(p, 1000);
+  // The unclaimed HR table is offered for joining in the review, matched by name.
+  await p.waitForFunction(() => /rows matched/.test(document.querySelector('.dv-join')?.textContent || ''), { timeout: 20000 }).catch(() => problems.push('real import: the HR table join was not previewed'));
   await shot(p, 'real-1440-import-review');
-  const loaded = await p.evaluate(() => { const b = [...document.querySelectorAll('button')].find(e => /^(Merge \d+ and load|Load into analysis)/.test(e.textContent.trim())); if (b) b.click(); return !!b; });
+  const loaded = await p.evaluate(() => { const b = [...document.querySelectorAll('.dv-actions button')].find(e => /^(Merge \d+ and load|Load into analysis)/.test(e.textContent.trim())); if (b) b.click(); return !!b; });
   await sleep(500); await idle(p, 1500);
   await overflow(p, 'real import'); await shot(p, 'real-1440-import-loaded');
-  // The unclaimed HR table opens in the profile join.
-  await p.select('select', 'name').catch(() => {});
-  await sleep(200);
-  const match = await p.$$('select');
-  if (match[1]) await match[1].select('name').catch(() => {});
-  await clickText(p, 'button', 'Preview the join'); await idle(p, 600); await shot(p, 'real-1440-profile-join');
-  await clickText(p, 'button', 'Apply and rebuild'); await idle(p, 1500);
+  await go(p, 'data'); await idle(p, 600); await shot(p, 'real-1440-profile-join');
   await go(p, 'network'); await idle(p, 2000); await shot(p, 'real-1440-imported-network');
   await go(p, 'groups'); await idle(p, 1500); await shot(p, 'real-1440-imported-groups');
   if (!loaded) problems.push('real import: could not load the imported data');

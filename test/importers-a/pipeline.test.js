@@ -171,3 +171,34 @@ test('import worker: runs the pipeline on Blobs and transfers a usable dataset',
 test('import worker: errors come back as messages', async () => {
   await assert.rejects(runWorker({ type: 'run', files: [] }), /No files to import/);
 });
+
+test('a zip that holds only a zip is opened one level further (P2)', async () => {
+  const { zipSync, strToU8 } = await import('../../vendor/fflate.js');
+  const inner = zipSync({ 'export/hr.csv': strToU8('source,target\nAna,Ben\nBen,Chen\n') });
+  const outer = zipSync({ 'download.zip': inner, '__MACOSX/._download.zip': strToU8('x') });
+  const fs = await FileSet.from([{ blob: new Blob([outer]), path: 'wrapped.zip' }]);
+  assert.deepEqual(fs.entries.map(e => e.rel), ['hr.csv']);
+  assert.deepEqual(fs.unwrapped, [{ outer: 'wrapped.zip', inner: 'download.zip' }]);
+  const res = await runImport([{ blob: new Blob([outer]), path: 'wrapped.zip' }], {});
+  assert.equal(res.dataset.events.count, 2);
+  assert.ok(res.dataset.meta.sources[0].warnings.some(w => w.code === 'nested-zip' && /download\.zip/.test(w.message)));
+  // Several inner zips keep their names as folders; a zip with other files is left alone.
+  const two = zipSync({ 'a.zip': inner, 'b.zip': inner });
+  const fs2 = await FileSet.from([{ blob: new Blob([two]), path: 'two.zip' }]);
+  assert.deepEqual(fs2.entries.map(e => e.path).sort(), ['a/export/hr.csv', 'b/export/hr.csv']);
+  const mixed = zipSync({ 'a.zip': inner, 'notes.txt': strToU8('hi') });
+  const fs3 = await FileSet.from([{ blob: new Blob([mixed]), path: 'mixed.zip' }]);
+  assert.deepEqual(fs3.entries.map(e => e.rel).sort(), ['a.zip', 'notes.txt']);
+});
+
+test('detection reports progress, and its result can be reused by the import', async () => {
+  const fs = await FileSet.fromPaths([fixture('slack', 'standard')]);
+  const seen = [];
+  const det = await detectImports(fs, { progress: (f, m) => seen.push([f, m]) });
+  assert.ok(seen.length > 5 && /Checking \d+ files/.test(seen[0][1]), seen[0]?.[1]);
+  let calls = 0;
+  const counting = (await import('../../src/importers/registry.js')).IMPORTERS.map(i => ({ ...i, detect: async f => { calls++; return i.detect(f); } }));
+  const res = await runImport(fs, { detections: det, importers: counting });
+  assert.equal(calls, 0);
+  assert.equal(res.plan[0].id, 'slack');
+});

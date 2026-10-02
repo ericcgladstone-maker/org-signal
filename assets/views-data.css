@@ -1,1 +1,111 @@
-/* Data view and import flow (UX pass, 2026-10-02). Loaded after app.css. */
+/* Data view and import flow (UX pass, 2026-10-02). Loaded after app.css.
+   Only Data-view layout lives here; buttons, links, inputs, .seg and tabs
+   come from the shared classes in theme.css / app.css. */
+
+/* Drop target: rules above and below, no dashed box; mint only while a file
+   is dragged over it. */
+.dv-drop{border:0;border-block:1px solid var(--rule);padding:clamp(1.1rem,3vw,1.75rem) 0;gap:.75rem;background:none}
+.dv-drop[data-over='true']{border-color:var(--accent);background:none}
+.dv-drop--compact{border-top:0;padding:.9rem 0;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.dv-drop--compact .drop__title{font-size:var(--fs-small);font-weight:600;margin:0}
+.dv-drop__row{gap:.5rem 1.5rem;align-items:center}
+.dv-dropline{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1.25rem;padding:.6rem 0;border-block:1px solid transparent;font-size:var(--fs-small)}
+.dv-dropline[data-over='true']{border-color:var(--accent)}
+.dv-dropline__text{color:var(--text-2)}
+.dv-more{padding-top:1.1rem}
+.dv-stored{margin-top:.6rem;max-width:66ch}
+.dv-stored .tlink{margin-left:.35rem}
+
+/* Empty state */
+.dv-empty{max-width:var(--w-col);padding-top:.25rem}
+.dv-empty .lead{max-width:54ch}
+.dv-privacy{display:flex;flex-wrap:wrap;gap:.5rem;align-items:baseline;margin-top:1.1rem;font-size:1rem;color:var(--text)}
+.dv-empty__drop{margin-top:1.5rem}
+.dv-sources{margin-top:1rem;max-width:66ch}
+.dv-howto{max-width:66ch;margin-top:.9rem}
+.dv-howto__list{margin:.25rem 0 .5rem;display:grid;gap:.55rem}
+.dv-howto__list dt{font-weight:600;font-size:var(--fs-small);color:var(--text)}
+.dv-howto__list dd{margin:0;font-size:var(--fs-small);color:var(--text-2)}
+.dv-demo{margin-top:.9rem}
+
+/* Inputs waiting to be imported */
+.dv-inputs{margin-top:.5rem}
+.dv-input__name{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline;min-width:0}
+.dv-input__name .src__title{overflow-wrap:anywhere}
+.dv-input__status{margin-top:.4rem}
+.dv-recog{display:flex;flex-wrap:wrap;gap:.25rem .6rem;align-items:baseline;font-size:var(--fs-small);color:var(--text-2)}
+.dv-why{display:inline-block}
+.dv-why > summary{cursor:pointer;color:var(--text-muted);font-size:var(--fs-small);text-decoration:underline;text-decoration-color:var(--rule-strong);text-underline-offset:3px}
+.dv-why[open]{display:block;flex-basis:100%}
+.dv-why .can-list{margin-top:.3rem}
+.dv-opts{margin-top:.75rem;align-items:end}
+.dv-opts__head{grid-column:1/-1;margin:.4rem 0 0}
+.dv-opts__note{margin-top:.6rem}
+.dv-check{align-self:end}
+.dv-hint{margin-top:.3rem;max-width:44ch}
+.dv-use{margin-top:.75rem;display:grid;gap:.4rem}
+.dv-files__list{list-style:none;margin:.25rem 0 0;padding:0;max-height:22rem;overflow:auto}
+.dv-files__list li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:.75rem;align-items:baseline;padding:.3rem 0;border-bottom:1px solid var(--rule);font-size:var(--fs-small)}
+.dv-files__list li span:first-child{overflow-wrap:anywhere}
+
+/* Column mapper */
+.dv-mapper{margin-top:1rem}
+.dv-mapper__row{margin-bottom:.6rem;align-items:end}
+.dv-mapper__tbl th{min-width:9rem;vertical-align:bottom}
+.dv-mapper__col{margin-bottom:.3rem;text-transform:none;letter-spacing:0;font-family:var(--sans);font-size:var(--fs-foot);color:var(--text)}
+.dv-mapper__off{opacity:.5}
+
+/* Action bar: stays in reach at the bottom of long lists (56 chats). */
+.dv-actions{position:sticky;bottom:0;z-index:5;display:flex;flex-wrap:wrap;gap:.6rem 1.5rem;align-items:center;justify-content:space-between;margin-top:1rem;padding:.75rem 0;border-top:1px solid var(--rule-strong);background:var(--bg)}
+.dv-actions__note{flex:1 1 16rem;margin:0;max-width:60ch}
+.dv-actions__btns{display:flex;gap:1.25rem;align-items:center;margin-left:auto}
+
+/* Review */
+.dv-name{max-width:32rem;margin-bottom:1rem}
+.dv-h3{font-size:var(--fs-h3,1.125rem);font-weight:600;margin:0 0 .4rem}
+.dv-p{margin-bottom:.6rem}
+.dv-strong{color:var(--text)}
+.dv-owners{padding-block:1rem 1.25rem;margin-bottom:.5rem;border-block:1px solid var(--rule)}
+.dv-owners__list{list-style:none;margin:.6rem 0;padding:0;display:grid;gap:.15rem}
+.dv-owners .check{font-size:var(--fs-small)}
+.dv-matches input[type='checkbox']{accent-color:var(--accent)}
+.dv-manual{margin-top:1.25rem}
+.dv-manual__row{align-items:end;gap:.75rem 1rem;margin-top:.5rem}
+.dv-manual__row .field{min-width:min(100%,14rem)}
+.dv-manual__add{min-height:var(--target,2.25rem)}
+.dv-manual__list{list-style:none;margin:.6rem 0 0;padding:0}
+.dv-manual__list li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.5rem 1rem;padding:.35rem 0;border-bottom:1px solid var(--rule);font-size:var(--fs-small)}
+.dv-radio{display:flex}
+.dv-join{margin-top:.75rem}
+.dv-join__headline{display:flex;flex-wrap:wrap;gap:.4rem .75rem;align-items:baseline}
+.dv-fieldset{border:0;padding:0;margin:0}
+.dv-measure{max-width:66ch}
+
+/* Import report */
+.dv-totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr));gap:1rem 2rem;margin:.5rem 0 1rem}
+.dv-totals > div{min-width:0}
+.dv-totals dt{margin:0}
+.dv-totals dd{margin:.1rem 0 0}
+.dv-totals__v{font-size:1.125rem;color:var(--text)}
+.dv-notes{list-style:none;margin:0 0 .5rem;padding:0;display:grid;gap:.35rem;font-size:var(--fs-small);color:var(--text-2);max-width:72ch}
+.dv-notes li{display:flex;gap:.5rem;align-items:baseline}
+.dv-source .src__title{overflow-wrap:anywhere}
+.dv-sub{font-weight:400}
+.dv-files-line{margin-top:.25rem;overflow-wrap:anywhere}
+.dv-kv{max-width:36rem;margin-top:.6rem}
+.dv-kv dd{white-space:normal}
+.dv-gone{margin-top:.6rem;max-width:72ch}
+.dv-warn{margin-top:.9rem}
+.dv-chats .tbl{margin-top:.25rem}
+.dv-log{margin-bottom:.5rem}
+
+.dv-current__name{overflow-wrap:anywhere}
+
+@media (max-width:520px){
+  .dv-actions__btns{width:100%;justify-content:space-between}
+  .dv-drop--compact{flex-direction:column;align-items:flex-start}
+}
+
+/* The view head already draws a rule; the first section under it does not repeat it. */
+.dv > .view__head + .section,.dv > .view__head + p + .section{border-top:0;padding-top:0}
+.dv-inputs > .src:first-child{border-top:0}

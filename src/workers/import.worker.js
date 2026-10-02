@@ -5,6 +5,7 @@
 // Messages in:  { type: 'run' | 'detect', files: [{ blob, path }], opts: { choices, options, name } }
 // Messages out: { type: 'progress', fraction, message }
 //               { type: 'done', result }   result = { dataset, report, detections, plan, unclaimed }
+//                                          (detect: { detections, files } with the number of files seen)
 //               { type: 'error', message, name, stack }
 // Cancel = the main thread terminates the worker; nothing here needs to clean up.
 
@@ -14,23 +15,21 @@ import { toTransfer } from '../core/model.js';
 // Exported so tests can drive the worker logic without a Worker.
 export async function handle(msg, post) {
   try {
+    let last = 0;
+    // Throttle: progress messages are cheap but thousands per second still flood the main thread.
+    const progress = (fraction, message) => {
+      const now = Date.now();
+      if (now - last < 50 && fraction < 1) return;
+      last = now;
+      post({ type: 'progress', fraction, message });
+    };
     if (msg.type === 'detect') {
       const fs = await toFileSet(msg.files);
-      post({ type: 'done', result: { detections: await detectImports(fs) } });
+      post({ type: 'done', result: { detections: await detectImports(fs, { progress }), files: fs.entries.length } });
       return;
     }
     if (msg.type !== 'run') throw new Error(`Unknown message type "${msg.type}".`);
-    let last = 0;
-    const result = await runImport(msg.files, {
-      ...(msg.opts || {}),
-      // Throttle: progress messages are cheap but thousands per second still flood the main thread.
-      progress: (fraction, message) => {
-        const now = Date.now();
-        if (now - last < 50 && fraction < 1) return;
-        last = now;
-        post({ type: 'progress', fraction, message });
-      },
-    });
+    const result = await runImport(msg.files, { ...(msg.opts || {}), progress });
     const { payload, transfer } = toTransfer(result.dataset);
     post({ type: 'done', result: { ...result, dataset: payload } }, transfer);
   } catch (e) {

@@ -146,7 +146,9 @@ async function importSlack(fs, { builder, options = {}, progress = () => {}, sig
       const attrs = {
         name: labelOf(u), handle: u.name, title: p.title, tz: u.tz, tz_offset: u.tz_offset, team_id: u.team_id,
         email: p.email ? String(p.email).toLowerCase() : undefined,
-        deleted: u.deleted ? true : undefined,
+        // users.json `deleted` = deactivated account (docs/formats/slack.md). Shared name
+        // across importers: attrs.deactivated, which the report and views badge.
+        deactivated: u.deleted ? true : undefined,
         guest: u.is_ultra_restricted ? 'single-channel' : u.is_restricted ? 'multi-channel' : undefined,
         admin: u.is_admin || u.is_owner ? true : undefined,
         workspaces: u.enterprise_user?.teams?.length ? u.enterprise_user.teams.join(';') : undefined,

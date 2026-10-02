@@ -200,6 +200,20 @@ async function importChat(entry, fs, { builder, options, progress, signal }) {
     if (!authors.has(k)) addPerson(a.chatTitle, parseAuthor(a.chatTitle).phone, false);
   }
   if (!isGroup && people.size < 2) builder.warn('direct-partner-unknown', 'Only one person wrote in this one-to-one chat and the file name does not name the other; their messages have no recipient.');
+  // The exporter of a one-to-one chat is the participant the chat is not
+  // named after ("WhatsApp Chat - Dana Sato": the other person wrote it). This
+  // names the owner without asking, so several chats from one phone share an
+  // owner and "Are these all you?" can offer them together.
+  if (!builder.source.egoKey && !isGroup && people.size === 2 && a.chatTitle) {
+    const tk = nameKey(a.chatTitle.replace(/^~\s*/, ''));
+    const keys = [...people.keys()];
+    const named = keys.filter(k => nameKey(people.get(k).name.replace(/^~\s*/, '')) === tk || (people.get(k).phone && parseAuthor(a.chatTitle).phone === people.get(k).phone));
+    if (named.length === 1) {
+      builder.source.egoKey = keys.find(k => k !== named[0]);
+      builder.source.egoInferredFrom = 'chat-title';
+    }
+  }
+  if (a.chatTitle) builder.source.title = a.chatTitle;
 
   const idx = new Map();
   for (const [k, p] of people) {
@@ -274,9 +288,9 @@ export default {
   family: 'personal',
   detect,
   options: [
-    { key: 'timezone', label: "Time zone of the exporting phone (IANA name, e.g. Europe/Berlin). 'unknown' reads times as UTC", type: 'timezone', default: 'unknown' },
+    { key: 'timezone', label: 'Time zone of the exporting phone', type: 'timezone', default: 'unknown' },
     { key: 'dateOrder', label: 'Date order', type: 'select', default: 'auto', choices: ['auto', 'day-first', 'month-first'] },
-    { key: 'egoName', label: 'Your name as it appears in the chat (optional; resolves "You" in system notices)', type: 'text', default: '' },
+    { key: 'egoName', label: 'Your name as it appears in the chat (optional)', type: 'text', default: '' },
   ],
   async import(fs, ctx) {
     const files = chatEntries(fs);

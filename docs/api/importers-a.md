@@ -7,9 +7,9 @@ Tests: `node --test 'test/importers-a/**/*.test.js'` (110 tests). Fixtures: `tes
 ## Import pipeline (`src/core/pipeline.js`)
 
 ```js
-runImport(input, { choices, options, progress, signal, name, importers }) -> Promise<{ dataset, report, detections, plan, unclaimed }>
-importInWorker(files, { choices, options, name, progress, signal, detectOnly }) -> Promise<same>  (has .cancel())
-detectImports(fs, { importers, signal }) -> Promise<[{ id, label, family, score, reason, root, files|null, options[] }]>
+runImport(input, { choices, options, progress, signal, name, importers, detections }) -> Promise<{ dataset, report, detections, plan, unclaimed }>
+importInWorker(files, { choices, options, name, progress, signal, detectOnly, detections }) -> Promise<same>  (has .cancel())
+detectImports(fs, { importers, signal, progress }) -> Promise<[{ id, label, family, score, reason, root, files|null, options[] }]>
 planImports(detections, choices, allRels) -> { plan: [{ id, root, files|null }], unclaimed: [rel] }
 toFileSet(input) / subsetFileSet(fs, rels) / rootedFileSet(fs, root)
 ```
@@ -17,7 +17,10 @@ toFileSet(input) / subsetFileSet(fs, rels) / rootedFileSet(fs, root)
 - `input`: a `FileSet`, `File[]`/`FileList`, or `[{ blob, path }]`. `importInWorker` needs File objects or `{ blob, path }` items (structured-cloneable), not a FileSet.
 - `choices`: omit for automatic. Otherwise `['slack', ...]`, `[{ id, files }]`, or `{ slack: true }`.
 - `options`: `{ [importerId]: { ...option values } }`. Defaults come from each importer's `options[].default`.
-- `progress(fraction 0..1, message)`. Within one import it never goes backwards and ends at 1.
+- `progress(fraction 0..1, message)`. Within one import it never goes backwards and ends at 1. Detection reports progress too ("Checking 11,870 files: Slack export (1 of 20 formats)"); the worker's `detect` message posts it and returns `{ detections, files }` (files = entries seen).
+- `detections`: the result of an earlier `detectImports` over the same files. `runImport` then skips detection (the Data view detects first, then imports).
+- **Zip in zip.** `FileSet.from` opens a zip whose only entries are zips one level further (two levels at most): one inner zip in place, several as folders named after them. `fs.unwrapped` lists `{ outer, inner }`, and each source gets an info warning `nested-zip`.
+- **Detection cost.** `detect()` stays bounded on big exports: Discord sniffs at most 40 files, Reddit at most 60 CSV and 20 JSON files (dump-named files always); `import()` still reads everything.
 - Cancel: abort `signal`, or call `.cancel()` on the worker promise. Both terminate the worker and reject with an `AbortError`.
 - **File claiming.** Each file goes to the highest-scoring importer that lists it in `detect().files`. An importer with no `files` list gets every file nobody else claimed. Scores below 0.5 are used only when nothing else matched; the spreadsheet mapper is the fallback.
   - Example: a Takeout zip is split between `email` (Mail) and `calendar` (Calendar).
@@ -81,8 +84,8 @@ toFileSet(input) / subsetFileSet(fs, rels) / rootedFileSet(fs, root)
 | | `egoKey` | none |
 | | `purviewDateFormat` | `mdy` (or `dmy`) |
 | email | `egoAddress` | none |
-| | `keepText` | true |
-| | `headersOnly` | false |
+| | `content` | `text` (or `headers`; the one choice the UI shows) |
+| | `keepText`, `headersOnly` | true, false (still accepted) |
 | | `excludeLists` | false |
 | | `excludeAutomated` | false |
 | | `includeSpamTrash` | false |
@@ -100,6 +103,7 @@ toFileSet(input) / subsetFileSet(fs, rels) / rootedFileSet(fs, root)
 | | `aaRegex` | named groups `src`, `tgt` |
 | | `timeZone` | `UTC` |
 | | `noTieValues` | as listed in the option |
+| | `combine` | `union` (or `intersection`, `respondent`): roster forms, same rules and default as the Roster builder. Nominations stay events; union and intersection make the source `directed: false`, intersection drops one-sided nominations. Stated as info warning `combine-rule`; counts `nominations`, `reciprocatedPairs`, `ties` |
 | tabular | `mapping` | none |
 | | `kind` | `events` / `edges` / `nodes` |
 | | `view` | `full` |
@@ -219,12 +223,21 @@ Each entry in `sources` has these fields:
 | `ego`, `egos` | `ego` is `{ key, label, inferredFrom }`; `egos` is the respondent count |
 | `timeRange` | `{ start, end }` |
 | `tz` | `{ value, status: exact\|assumed\|zone, note }` |
-| `counts` | `nodes`, `events`, `eventsByType`, `targetsByRole`, `contexts`, `contextsByVisibility`, `contextsByKind`, `messagesWithText`, `undatedEvents`, `eventsWithoutTargets` |
-| `bots` | `{ nodes, events }` |
+| `label`, `title` | the name people know the source by (`formatLabel(format, variant)`: "Gmail", "LinkedIn", "WhatsApp"), and the source's own title (a chat name) or null |
+| `reported` | true when every event is a self-reported tie (surveys, network files); the UI words counts as nominations |
+| `counts` | `nodes`, `events`, `eventsByType`, `targetsByRole`, `contexts`, `contextsByVisibility`, `contextsByKind`, `messages`, `messagesWithText` (messages only, never reactions), `undatedEvents`, `eventsWithoutTargets` |
+| `bots` | `{ nodes, events, names }` |
+| `deactivated` | `{ nodes, names, keys }`: people in this source's events with `attrs.deactivated` |
 | `selfMessages`, `unresolvedParents`, `importerCounts` | counts |
 | `warnings` | `[{ code, message, count, severity }]`, sorted error, then warn, then info |
 | `worst` | the most severe warning level present |
 | `canShow`, `cannotShow` | plain-language lines derived from view, family and data coverage |
+
+`totals` also has `nodesInEvents`, `messages`, `messagesWithText`, `contextsByVisibility`, `botsInEvents`, `botNames`, `deactivated`, `deactivatedInEvents`, `deactivatedNames`. Notes name personal exports ("Gmail, LinkedIn and 56 WhatsApp chats are personal exports..."), deactivated accounts, merges ("N records were folded into M people") and empty sources by name. A source with no events can show nothing.
+
+`formatLabel(format, variant)` is exported for the UI.
+
+**Deactivated accounts** are `attrs.deactivated = true` in every importer that knows: Slack (`users.json` `deleted`; the attribute used to be `deleted`), Telegram (null display name), Messenger / Instagram placeholders.
 
 `runImport` also adds `report.unclaimed`.
 

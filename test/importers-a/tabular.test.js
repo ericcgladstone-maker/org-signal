@@ -174,3 +174,18 @@ test('mapping that names a missing column fails clearly', async () => {
   const fs = await FileSet.fromPaths([fixture('tabular', 'edges.tsv')]);
   await assert.rejects(importTabular(fs, { mapping: { actor: 'From', targets: 'Target' }, kind: 'edges' }), /Column "From"/);
 });
+
+test('suggestMapping on an HR roster: unique email is the id, the employee (not the manager) is the name (D2)', () => {
+  const headers = ['Employee Name', 'Work Email', 'Dept', 'Job Title', 'Manager Name', 'Hire Date', 'Office'];
+  const rows = [
+    ['Ugo Valdivia', 'ugo.valdivia@x.example', 'Executive', 'CEO', '', '2022-07-07', 'Harbor City'],
+    ['Ines Mwangi', 'ines.mwangi@x.example', 'Engineering', 'VP Engineering', 'Ugo Valdivia', '2020-01-06', 'Harbor City'],
+    ['Ana Ruiz', 'ana.ruiz@x.example', 'Engineering', 'Engineer', 'Ines Mwangi', '2021-03-01', 'Remote'],
+  ];
+  const s = suggestMapping(headers, rows);
+  assert.equal(s.kind, 'nodes');
+  assert.equal(s.mapping.id, 'Work Email');
+  assert.equal(s.mapping.label, 'Employee Name');
+  assert.ok(s.mapping.attrs.includes('Manager Name'));
+  assert.ok(s.notes.some(n => /Manager Name/.test(n)));
+});
