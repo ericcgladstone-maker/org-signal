@@ -1,0 +1,123 @@
+[
+ {
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#teams('team-1')/channels('19%3Ageneral%40thread.tacv2')/messages",
+  "value": [
+   {
+    "id": "1709560000000",
+    "replyToId": null,
+    "etag": "1709560000000",
+    "messageType": "message",
+    "createdDateTime": "2024-03-04T13:46:40.000Z",
+    "lastModifiedDateTime": "2024-03-04T13:46:40.000Z",
+    "lastEditedDateTime": null,
+    "deletedDateTime": null,
+    "subject": null,
+    "chatId": null,
+    "channelIdentity": {
+     "teamId": "team-1",
+     "channelId": "19:general@thread.tacv2"
+    },
+    "importance": "normal",
+    "locale": "en-us",
+    "from": {
+     "application": null,
+     "device": null,
+     "user": {
+      "id": "11111111-2222-3333-4444-555555555555",
+      "displayName": "Ana Ruiz",
+      "userIdentityType": "aadUser",
+      "tenantId": "tttt"
+     }
+    },
+    "body": {
+     "contentType": "text",
+     "content": "Release plan"
+    },
+    "mentions": [],
+    "reactions": [],
+    "attachments": [],
+    "messageHistory": [],
+    "eventDetail": null,
+    "policyViolation": null
+   }
+  ]
+ },
+ {
+  "value": [
+   {
+    "id": "1709560100000",
+    "replyToId": "1709560000000",
+    "etag": "1709560100000",
+    "messageType": "message",
+    "createdDateTime": "2024-03-04T13:48:20.000Z",
+    "lastModifiedDateTime": "2024-03-04T13:48:20.000Z",
+    "lastEditedDateTime": null,
+    "deletedDateTime": null,
+    "subject": null,
+    "chatId": null,
+    "channelIdentity": {
+     "teamId": "team-1",
+     "channelId": "19:general@thread.tacv2"
+    },
+    "importance": "normal",
+    "locale": "en-us",
+    "from": {
+     "application": null,
+     "device": null,
+     "user": {
+      "id": "66666666-7777-8888-9999-000000000000",
+      "displayName": "Ben Okafor",
+      "userIdentityType": "aadUser"
+     }
+    },
+    "body": {
+     "contentType": "text",
+     "content": "looks good"
+    },
+    "mentions": [],
+    "reactions": [],
+    "attachments": [],
+    "messageHistory": [],
+    "eventDetail": null,
+    "policyViolation": null
+   },
+   {
+    "id": "1709560200000",
+    "replyToId": "1709000000000",
+    "etag": "1709560200000",
+    "messageType": "message",
+    "createdDateTime": "2024-03-04T13:50:00.000Z",
+    "lastModifiedDateTime": "2024-03-04T13:50:00.000Z",
+    "lastEditedDateTime": null,
+    "deletedDateTime": null,
+    "subject": null,
+    "chatId": null,
+    "channelIdentity": {
+     "teamId": "team-1",
+     "channelId": "19:general@thread.tacv2"
+    },
+    "importance": "normal",
+    "locale": "en-us",
+    "from": {
+     "application": null,
+     "device": null,
+     "user": {
+      "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "displayName": "Chen Li",
+      "userIdentityType": "federatedUser"
+     }
+    },
+    "body": {
+     "contentType": "text",
+     "content": "late reply"
+    },
+    "mentions": [],
+    "reactions": [],
+    "attachments": [],
+    "messageHistory": [],
+    "eventDetail": null,
+    "policyViolation": null
+   }
+  ]
+ }
+]

@@ -1,0 +1,5 @@
+Item Identity,ConversationId,Conversation name,ConversationType,Participants,Recipients,Date,FileClass,MessageKind,TeamsChannelName
+i1,conv-1,"Ana Ruiz <ana@example.org>, Ben Okafor <ben@example.org>",Group,Ana Ruiz <ana@example.org>; Ben Okafor <ben@example.org>,Ben Okafor <ben@example.org>,2024-03-04T11:20:34Z,Conversation,"microsoftteams , im",
+i2,conv-1,dup copy,Group,Ana Ruiz <ana@example.org>; Ben Okafor <ben@example.org>,,2024-03-04T11:20:34Z,Conversation,"microsoftteams , im",
+i3,conv-2,"Apollo,General",Channel,Ana Ruiz <ana@example.org>; Ben Okafor <ben@example.org>; Chen Li,,3/5/2024 2:30:00 PM,Conversation,"microsoftteams , im",General
+i4,,,,Ana Ruiz <ana@example.org>,,2024-03-06T00:00:00Z,Email,email,

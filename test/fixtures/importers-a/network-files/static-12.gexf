@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gexf xmlns="http://www.gexf.net/1.2draft" xmlns:viz="http://www.gexf.net/1.2draft/viz" version="1.2">
+  <meta lastmodifieddate="2026-10-02"><creator>Test</creator></meta>
+  <graph mode="static" defaultedgetype="undirected">
+    <attributes class="node">
+      <attribute id="0" title="team" type="string"/>
+      <attribute id="1" title="msgs" type="integer"><default>0</default></attribute>
+      <attribute id="2" title="manager" type="boolean"/>
+    </attributes>
+    <attributes class="edge">
+      <attribute id="0" title="channel" type="string"/>
+    </attributes>
+    <nodes>
+      <node id="u1" label="Avery Lin"><attvalues><attvalue for="0" value="Design"/><attvalue for="1" value="42"/><attvalue for="2" value="true"/></attvalues><viz:color r="70" g="90" b="200"/><viz:size value="8"/></node>
+      <node id="u2" label="北京 Office"/>
+      <node id="u3" label="Sam"/>
+    </nodes>
+    <edges>
+      <edge id="e1" source="u1" target="u2" weight="4.0"><attvalues><attvalue for="0" value="#launch"/></attvalues></edge>
+      <edge id="e2" source="u2" target="u3"/>
+      <edge id="e3" source="u1" target="u2" weight="2" kind="mentor"/>
+    </edges>
+  </graph>
+</gexf>

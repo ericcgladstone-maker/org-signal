@@ -1,0 +1,74 @@
+{
+ "userId": "8:live:.cid.owner0000",
+ "exportDate": "2024-03-05T10:00",
+ "conversations": [
+  {
+   "id": "19:3c1fbook@thread.v2",
+   "displayName": "Book club",
+   "version": 1709551234567.0,
+   "properties": {
+    "conversationblocked": false,
+    "lastimreceivedtime": "2024-03-04T11:20:34.567Z"
+   },
+   "threadProperties": {
+    "membercount": 3,
+    "topic": "Book club",
+    "members": "[\"8:live:.cid.owner0000\",\"8:live:.cid.bbbb\",\"8:live:.cid.cccc\"]"
+   },
+   "MessageList": [
+    {
+     "id": "1709551234567",
+     "conversationid": "19:3c1fbook@thread.v2",
+     "from": "8:live:.cid.bbbb",
+     "displayName": "Bea Stone",
+     "originalarrivaltime": "2024-03-04T11:20:34.567Z",
+     "messagetype": "RichText",
+     "content": "Chapter 3 by <b>Friday</b>?",
+     "properties": null,
+     "amsreferences": null,
+     "version": 1709551234567.0
+    },
+    {
+     "id": "1709551300000",
+     "conversationid": "19:3c1fbook@thread.v2",
+     "from": "8:live:.cid.owner0000",
+     "displayName": "",
+     "originalarrivaltime": "2024-03-04T11:21:40.000Z",
+     "messagetype": "Text",
+     "content": "Yes",
+     "properties": null,
+     "version": 1709551300000.0
+    },
+    {
+     "id": "1709551400000",
+     "conversationid": "19:3c1fbook@thread.v2",
+     "from": "8:live:.cid.cccc",
+     "displayName": "Cal Moss",
+     "originalarrivaltime": "2024-03-04T11:23:20.000Z",
+     "messagetype": "ThreadActivity/AddMember",
+     "content": "<addmember/>",
+     "properties": null
+    }
+   ]
+  },
+  {
+   "id": "8:live:.cid.bbbb",
+   "displayName": "Bea Stone",
+   "version": 1.0,
+   "properties": {},
+   "threadProperties": null,
+   "MessageList": [
+    {
+     "id": "1709600000000",
+     "conversationid": "8:live:.cid.bbbb",
+     "from": "https://emea.ng.msg.teams.microsoft.com/v1/users/ME/contacts/8:live:.cid.owner0000",
+     "displayName": "",
+     "originalarrivaltime": "2024-03-05T00:53:20.000Z",
+     "messagetype": "RichText",
+     "content": "see you",
+     "properties": null
+    }
+   ]
+  }
+ ]
+}

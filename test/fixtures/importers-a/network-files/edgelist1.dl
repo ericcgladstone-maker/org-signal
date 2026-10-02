@@ -1,0 +1,6 @@
+dl n=4 format=edgelist1
+labels embedded
+data:
+Avery Jordan 4
+Jordan Sam
+Avery Sam 2

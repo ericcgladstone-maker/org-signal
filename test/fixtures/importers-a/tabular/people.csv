@@ -1,0 +1,4 @@
+employee_id,name,department,level,start_date,remote
+E1,José Pérez,Engineering,3,2019-04-01,yes
+E2,Ana Ruiz,Design,2,2021-09-15,no
+E3,Ben Okafor,Engineering,4,2018-01-10,no

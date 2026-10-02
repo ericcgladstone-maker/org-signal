@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:nc="http://schema.networkcanvas.com/xmlns">
+  <key id="networkCanvasUUID" for="all" attr.name="networkCanvasUUID" attr.type="string"/>
+  <graph edgedefault="undirected"><node id="1"><data key="networkCanvasUUID">a</data></node></graph>
+</graphml>

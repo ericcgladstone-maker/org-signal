@@ -1,0 +1,67 @@
+[
+ {
+  "id": "1709551234567",
+  "replyToId": null,
+  "etag": "1709551234567",
+  "messageType": "message",
+  "createdDateTime": "2024-03-04T11:20:34.567Z",
+  "lastModifiedDateTime": "2024-03-04T11:20:34.567Z",
+  "lastEditedDateTime": null,
+  "deletedDateTime": null,
+  "subject": null,
+  "chatId": "19:aaaabbbbccccdddd0000111122223333@thread.v2",
+  "channelIdentity": null,
+  "importance": "normal",
+  "locale": "en-us",
+  "from": {
+   "application": null,
+   "device": null,
+   "user": {
+    "id": "11111111-2222-3333-4444-555555555555",
+    "displayName": "Ana Ruiz",
+    "userIdentityType": "aadUser",
+    "tenantId": "tttt"
+   }
+  },
+  "body": {
+   "contentType": "html",
+   "content": "<div>Thanks <at id=\"0\">Ben Okafor</at>, merging now &amp; done.</div>"
+  },
+  "mentions": [
+   {
+    "id": 0,
+    "mentionText": "Ben Okafor",
+    "mentioned": {
+     "application": null,
+     "device": null,
+     "conversation": null,
+     "user": {
+      "id": "66666666-7777-8888-9999-000000000000",
+      "displayName": "Ben Okafor",
+      "userIdentityType": "aadUser"
+     }
+    }
+   }
+  ],
+  "reactions": [
+   {
+    "reactionType": "like",
+    "displayName": "Like",
+    "createdDateTime": "2024-03-04T11:25:02.100Z",
+    "user": {
+     "application": null,
+     "device": null,
+     "user": {
+      "id": "66666666-7777-8888-9999-000000000000",
+      "displayName": null,
+      "userIdentityType": "aadUser"
+     }
+    }
+   }
+  ],
+  "attachments": [],
+  "messageHistory": [],
+  "eventDetail": null,
+  "policyViolation": null
+ }
+]

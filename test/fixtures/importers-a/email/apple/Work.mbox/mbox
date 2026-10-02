@@ -1,0 +1,15 @@
+From jose.perez@example.com Tue Mar  5 08:00:00 2024
+From: =?UTF-8?B?Sm9zw6k=?= =?UTF-8?B?IFDDqXJleg==?= <jose.perez@example.com>
+To: Ana Ruiz <ana.ruiz@example.org>
+Subject: no date header here
+Message-ID: <ap1@example.com>
+
+Body one.
+
+From chen.li@example.org Wed Mar  6 07:30:00 2024
+Date: Wed, 06 Mar 2024 07:30:00 +0000
+From: Chen Li <chen.li@example.org>
+To: Ana Ruiz <ana.ruiz@example.org>, Ben Okafor <ben.okafor@example.org>
+Subject: no message id
+
+Body two.

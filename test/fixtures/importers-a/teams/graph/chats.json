@@ -1,0 +1,24 @@
+{
+ "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#chats",
+ "value": [
+  {
+   "id": "19:aaaabbbbccccdddd0000111122223333@thread.v2",
+   "topic": "Apollo",
+   "createdDateTime": "2024-03-01T10:00:00Z",
+   "chatType": "group",
+   "tenantId": "tttt"
+  },
+  {
+   "id": "19:11111111-2222-3333-4444-555555555555_66666666-7777-8888-9999-000000000000@unq.gbl.spaces",
+   "topic": null,
+   "createdDateTime": "2024-03-01T10:00:00Z",
+   "chatType": "oneOnOne"
+  },
+  {
+   "id": "19:meeting_NzQ1example@thread.v2",
+   "topic": "Sprint review",
+   "createdDateTime": "2024-03-01T10:00:00Z",
+   "chatType": "meeting"
+  }
+ ]
+}

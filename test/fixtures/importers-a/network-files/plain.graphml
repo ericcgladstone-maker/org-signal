@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<graphml>
+  <key id="w" for="edge" attr.name="weight" attr.type="double"/>
+  <graph>
+    <node id="a"/><node id="b"/><node id="c"/>
+    <edge source="a" target="b"><data key="w">3</data></edge>
+    <edge source="b" target="c" directed="true"/>
+  </graph>
+</graphml>

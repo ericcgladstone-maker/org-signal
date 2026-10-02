@@ -1,0 +1,37 @@
+[
+ {
+  "id": "W0AAA111111",
+  "team_id": "T0ALPHA0000",
+  "name": "ann",
+  "real_name": "Ann Grid",
+  "profile": {
+   "real_name": "Ann Grid",
+   "email": "ann@grid.example"
+  },
+  "enterprise_user": {
+   "id": "W0AAA111111",
+   "enterprise_id": "E01",
+   "enterprise_name": "Example Org",
+   "teams": [
+    "T0ALPHA0000",
+    "T0BETA00000"
+   ]
+  }
+ },
+ {
+  "id": "W0BBB222222",
+  "team_id": "T0BETA00000",
+  "name": "bo",
+  "real_name": "Bo Grid",
+  "profile": {
+   "real_name": "Bo Grid"
+  },
+  "enterprise_user": {
+   "id": "W0BBB222222",
+   "enterprise_id": "E01",
+   "teams": [
+    "T0BETA00000"
+   ]
+  }
+ }
+]

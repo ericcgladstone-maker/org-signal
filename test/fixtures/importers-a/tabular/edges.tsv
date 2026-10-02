@@ -1,0 +1,4 @@
+Source	Target	Type	Weight
+A	B	Undirected	2.5
+B	C	Undirected	1
+C	A	Undirected	0

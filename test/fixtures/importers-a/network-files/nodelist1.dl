@@ -1,0 +1,7 @@
+dl n=4 format=nodelist1
+labels:
+Avery,Jordan,Sam,Riley
+data:
+1 2 3
+2 4
+4 1

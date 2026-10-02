@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:nc="http://schema.networkcanvas.com/xmlns" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
+  <key id="label" for="all" attr.name="label" attr.type="string"/>
+  <key id="networkCanvasType" for="all" attr.name="networkCanvasType" attr.type="string"/>
+  <key id="networkCanvasUUID" for="all" attr.name="networkCanvasUUID" attr.type="string"/>
+  <key id="networkCanvasSourceUUID" for="edge" attr.name="networkCanvasSourceUUID" attr.type="string"/>
+  <key id="networkCanvasTargetUUID" for="edge" attr.name="networkCanvasTargetUUID" attr.type="string"/>
+  <key id="0a9e1c52-ego-age" for="graph" attr.name="age" attr.type="int"/>
+  <key id="7d1f22aa-node-close" for="node" attr.name="closeness" attr.type="int"/>
+  <key id="7d1f22ab-node-role" for="node" attr.name="role" attr.type="string"/>
+  <key id="7d1f22ac-node-adv" for="node" attr.name="support_type_advice" attr.type="boolean"/>
+  <key id="99e0-edge-str" for="edge" attr.name="know_each_other_strength" attr.type="int"/>
+  <graph edgedefault="undirected" nc:caseId="P014" nc:sessionUUID="9b2e0001" nc:protocolName="Work Advice Study" nc:protocolUID="p-1" nc:codebookHash="h1" nc:sessionExportTime="2026-04-10T09:00:00.000Z" nc:sessionStartTime="2026-04-02T14:00:11.000Z" nc:sessionFinishTime="2026-04-02T14:00:11.000Z">
+    <data key="networkCanvasUUID">6f1c0000-0000-4000-8000-000000000001</data>
+    <data key="0a9e1c52-ego-age">37</data>
+    <node id="1"><data key="networkCanvasUUID">a1100000-0000-4000-8000-000000000001</data><data key="networkCanvasType">Person</data><data key="label">Avery</data><data key="7d1f22aa-node-close">4</data><data key="7d1f22ab-node-role">manager</data><data key="7d1f22ac-node-adv">true</data></node>
+    <node id="2"><data key="networkCanvasUUID">b2200000-0000-4000-8000-000000000002</data><data key="networkCanvasType">Person</data><data key="label">Jos&#233; &amp; Co</data><data key="7d1f22aa-node-close">5</data><data key="7d1f22ab-node-role">peer</data><data key="7d1f22ac-node-adv">false</data></node>
+    <edge id="1" source="1" target="2"><data key="networkCanvasUUID">ed-1-9b2e0001</data><data key="networkCanvasType">knows</data><data key="networkCanvasSourceUUID">a1100000-0000-4000-8000-000000000001</data><data key="networkCanvasTargetUUID">b2200000-0000-4000-8000-000000000002</data><data key="99e0-edge-str">2</data></edge>
+  </graph>
+  <graph edgedefault="undirected" nc:caseId="P015" nc:sessionUUID="9b2e0002" nc:protocolName="Work Advice Study" nc:protocolUID="p-1" nc:codebookHash="h1" nc:sessionExportTime="2026-04-10T09:00:00.000Z" nc:sessionStartTime="2026-04-03T09:30:00.000Z" nc:sessionFinishTime="2026-04-03T09:30:00.000Z">
+    <data key="networkCanvasUUID">6f1c0000-0000-4000-8000-000000000002</data>
+    <data key="0a9e1c52-ego-age">52</data>
+    <node id="1"><data key="networkCanvasUUID">d4400000-0000-4000-8000-000000000004</data><data key="networkCanvasType">Person</data><data key="label">Riley</data><data key="7d1f22aa-node-close">3</data><data key="7d1f22ab-node-role">peer</data><data key="7d1f22ac-node-adv">true</data></node>
+    <node id="2"><data key="networkCanvasUUID">e5500000-0000-4000-8000-000000000005</data><data key="networkCanvasType">Person</data><data key="label">Casey</data><data key="7d1f22aa-node-close">5</data><data key="7d1f22ab-node-role">peer</data><data key="7d1f22ac-node-adv">false</data></node>
+    <node id="3"><data key="networkCanvasUUID">c9900000-0000-4000-8000-000000000009</data><data key="networkCanvasType">Person</data><data key="label">Morgan</data><data key="7d1f22aa-node-close">1</data><data key="7d1f22ab-node-role">peer</data><data key="7d1f22ac-node-adv">false</data></node>
+    <edge id="1" source="1" target="2"><data key="networkCanvasUUID">ed-1-9b2e0002</data><data key="networkCanvasType">knows</data><data key="networkCanvasSourceUUID">d4400000-0000-4000-8000-000000000004</data><data key="networkCanvasTargetUUID">e5500000-0000-4000-8000-000000000005</data><data key="99e0-edge-str">3</data></edge>
+    <edge id="2" source="2" target="3"><data key="networkCanvasUUID">ed-2-9b2e0002</data><data key="networkCanvasType">knows</data><data key="networkCanvasSourceUUID">e5500000-0000-4000-8000-000000000005</data><data key="networkCanvasTargetUUID">c9900000-0000-4000-8000-000000000009</data><data key="99e0-edge-str">1</data></edge>
+  </graph>
+</graphml>

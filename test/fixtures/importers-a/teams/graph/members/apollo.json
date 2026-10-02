@@ -1,0 +1,35 @@
+{
+ "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#chats('19%3Aaaaabbbbccccdddd0000111122223333%40thread.v2')/members",
+ "value": [
+  {
+   "@odata.type": "#microsoft.graph.aadUserConversationMember",
+   "id": "m1",
+   "roles": [
+    "owner"
+   ],
+   "displayName": "Ana Ruiz",
+   "userId": "11111111-2222-3333-4444-555555555555",
+   "email": "Ana.Ruiz@example.org"
+  },
+  {
+   "@odata.type": "#microsoft.graph.aadUserConversationMember",
+   "id": "m2",
+   "roles": [
+    "owner"
+   ],
+   "displayName": "Ben Okafor",
+   "userId": "66666666-7777-8888-9999-000000000000",
+   "email": "ben.okafor@example.org"
+  },
+  {
+   "@odata.type": "#microsoft.graph.aadUserConversationMember",
+   "id": "m3",
+   "roles": [
+    "guest"
+   ],
+   "displayName": "Chen Li",
+   "userId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+   "email": null
+  }
+ ]
+}

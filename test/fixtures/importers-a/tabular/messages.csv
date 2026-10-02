@@ -1,0 +1,7 @@
+sender,recipients,sent_at,channel,message,weight
+ana.ruiz@example.org,ben.okafor@example.org;chen.li@example.org,2024-03-04T11:20:34Z,apollo,"Draft is up, can you review?",1
+ben.okafor@example.org,ana.ruiz@example.org,2024-03-04T12:00:00+01:00,apollo,"On it, ""quoted"" text
+spanning two lines",2
+chen.li@example.org,ana.ruiz@example.org,2024-03-05 09:15:00,general,Morning,
+,ana.ruiz@example.org,2024-03-05 09:16:00,general,no sender,
+dana.park@example.org,dana.park@example.org,2024-03-06 10:00,general,note to self,

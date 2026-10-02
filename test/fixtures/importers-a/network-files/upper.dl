@@ -1,0 +1,6 @@
+dl n=3 format=upperhalf diagonal=absent
+labels:
+a b c
+data:
+1 0
+3

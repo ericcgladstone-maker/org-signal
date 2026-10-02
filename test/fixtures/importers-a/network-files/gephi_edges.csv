@@ -1,0 +1,4 @@
+Source,Target,Type,Weight,Kind,Timestamp,channel
+u1,u2,Undirected,2,,"<[2026-03-02T09:15:00Z, 2026-03-04T16:40:00Z]>",#launch
+u2,u3,Undirected,1.5,,"<[2026-03-05]>",
+u1,u3,Undirected,1,,,

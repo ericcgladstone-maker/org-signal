@@ -1,0 +1,182 @@
+{
+ "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#chats('19%3Aaaaabbbbccccdddd0000111122223333%40thread.v2')/messages",
+ "@odata.count": 4,
+ "value": [
+  {
+   "id": "1709551234567",
+   "replyToId": null,
+   "etag": "1709551234567",
+   "messageType": "message",
+   "createdDateTime": "2024-03-04T11:20:34.567Z",
+   "lastModifiedDateTime": "2024-03-04T11:20:34.567Z",
+   "lastEditedDateTime": null,
+   "deletedDateTime": null,
+   "subject": null,
+   "chatId": "19:aaaabbbbccccdddd0000111122223333@thread.v2",
+   "channelIdentity": null,
+   "importance": "normal",
+   "locale": "en-us",
+   "from": {
+    "application": null,
+    "device": null,
+    "user": {
+     "id": "11111111-2222-3333-4444-555555555555",
+     "displayName": "Ana Ruiz",
+     "userIdentityType": "aadUser",
+     "tenantId": "tttt"
+    }
+   },
+   "body": {
+    "contentType": "html",
+    "content": "<div>Thanks <at id=\"0\">Ben Okafor</at>, merging now &amp; done.</div>"
+   },
+   "mentions": [
+    {
+     "id": 0,
+     "mentionText": "Ben Okafor",
+     "mentioned": {
+      "application": null,
+      "device": null,
+      "conversation": null,
+      "user": {
+       "id": "66666666-7777-8888-9999-000000000000",
+       "displayName": "Ben Okafor",
+       "userIdentityType": "aadUser"
+      }
+     }
+    }
+   ],
+   "reactions": [
+    {
+     "reactionType": "like",
+     "displayName": "Like",
+     "createdDateTime": "2024-03-04T11:25:02.100Z",
+     "user": {
+      "application": null,
+      "device": null,
+      "user": {
+       "id": "66666666-7777-8888-9999-000000000000",
+       "displayName": null,
+       "userIdentityType": "aadUser"
+      }
+     }
+    }
+   ],
+   "attachments": [],
+   "messageHistory": [],
+   "eventDetail": null,
+   "policyViolation": null
+  },
+  {
+   "id": "1709551300000",
+   "replyToId": null,
+   "etag": "1709551300000",
+   "messageType": "message",
+   "createdDateTime": "2024-03-04T11:21:40.000Z",
+   "lastModifiedDateTime": "2024-03-04T11:21:40.000Z",
+   "lastEditedDateTime": null,
+   "deletedDateTime": null,
+   "subject": null,
+   "chatId": "19:aaaabbbbccccdddd0000111122223333@thread.v2",
+   "channelIdentity": null,
+   "importance": "normal",
+   "locale": "en-us",
+   "from": {
+    "application": null,
+    "device": null,
+    "user": {
+     "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+     "displayName": "Chen Li",
+     "userIdentityType": "federatedUser"
+    }
+   },
+   "body": {
+    "contentType": "text",
+    "content": "hi all"
+   },
+   "mentions": [
+    {
+     "id": 0,
+     "mentionText": "Apollo",
+     "mentioned": {
+      "application": null,
+      "device": null,
+      "user": null,
+      "conversation": {
+       "id": "19:aaaabbbbccccdddd0000111122223333@thread.v2",
+       "displayName": "Apollo",
+       "conversationIdentityType": "chat"
+      }
+     }
+    }
+   ],
+   "reactions": [],
+   "attachments": [],
+   "messageHistory": [],
+   "eventDetail": null,
+   "policyViolation": null
+  },
+  {
+   "id": "1709551000000",
+   "replyToId": null,
+   "etag": "1709551000000",
+   "messageType": "systemEventMessage",
+   "createdDateTime": "2024-03-04T11:16:40.000Z",
+   "lastModifiedDateTime": "2024-03-04T11:16:40.000Z",
+   "lastEditedDateTime": null,
+   "deletedDateTime": null,
+   "subject": null,
+   "chatId": "19:aaaabbbbccccdddd0000111122223333@thread.v2",
+   "channelIdentity": null,
+   "importance": "normal",
+   "locale": "en-us",
+   "from": null,
+   "body": {
+    "contentType": "html",
+    "content": "<systemEventMessage/>"
+   },
+   "mentions": [],
+   "reactions": [],
+   "attachments": [],
+   "messageHistory": [],
+   "eventDetail": {
+    "@odata.type": "#microsoft.graph.membersAddedEventMessageDetail"
+   },
+   "policyViolation": null
+  },
+  {
+   "id": "1709551400000",
+   "replyToId": null,
+   "etag": "1709551400000",
+   "messageType": "message",
+   "createdDateTime": "2024-03-04T11:23:20.000Z",
+   "lastModifiedDateTime": "2024-03-04T11:23:20.000Z",
+   "lastEditedDateTime": null,
+   "deletedDateTime": null,
+   "subject": null,
+   "chatId": "19:aaaabbbbccccdddd0000111122223333@thread.v2",
+   "channelIdentity": null,
+   "importance": "normal",
+   "locale": "en-us",
+   "from": {
+    "application": {
+     "id": "app-123",
+     "displayName": "Planner",
+     "applicationIdentityType": "bot"
+    },
+    "device": null,
+    "user": null
+   },
+   "body": {
+    "contentType": "text",
+    "content": "Task created"
+   },
+   "mentions": [],
+   "reactions": [],
+   "attachments": [],
+   "messageHistory": [],
+   "eventDetail": null,
+   "policyViolation": null
+  }
+ ]
+}

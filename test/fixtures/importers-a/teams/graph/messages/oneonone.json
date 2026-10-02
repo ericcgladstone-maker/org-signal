@@ -1,0 +1,71 @@
+[
+ {
+  "id": "1709552000000",
+  "replyToId": null,
+  "etag": "1709552000000",
+  "messageType": "message",
+  "createdDateTime": "2024-03-04T11:33:20.000Z",
+  "lastModifiedDateTime": "2024-03-04T11:33:20.000Z",
+  "lastEditedDateTime": null,
+  "deletedDateTime": null,
+  "subject": null,
+  "chatId": "19:11111111-2222-3333-4444-555555555555_66666666-7777-8888-9999-000000000000@unq.gbl.spaces",
+  "channelIdentity": null,
+  "importance": "normal",
+  "locale": "en-us",
+  "from": {
+   "application": null,
+   "device": null,
+   "user": {
+    "id": "11111111-2222-3333-4444-555555555555",
+    "displayName": "Ana Ruiz",
+    "userIdentityType": "aadUser",
+    "tenantId": "tttt"
+   }
+  },
+  "body": {
+   "contentType": "text",
+   "content": "quick q"
+  },
+  "mentions": [],
+  "reactions": [],
+  "attachments": [],
+  "messageHistory": [],
+  "eventDetail": null,
+  "policyViolation": null
+ },
+ {
+  "id": "1709552060000",
+  "replyToId": null,
+  "etag": "1709552060000",
+  "messageType": "message",
+  "createdDateTime": "2024-03-04T11:34:20.000Z",
+  "lastModifiedDateTime": "2024-03-04T11:34:20.000Z",
+  "lastEditedDateTime": null,
+  "deletedDateTime": null,
+  "subject": null,
+  "chatId": "19:11111111-2222-3333-4444-555555555555_66666666-7777-8888-9999-000000000000@unq.gbl.spaces",
+  "channelIdentity": null,
+  "importance": "normal",
+  "locale": "en-us",
+  "from": {
+   "application": null,
+   "device": null,
+   "user": {
+    "id": "66666666-7777-8888-9999-000000000000",
+    "displayName": "Ben Okafor",
+    "userIdentityType": "aadUser"
+   }
+  },
+  "body": {
+   "contentType": "text",
+   "content": "sure"
+  },
+  "mentions": [],
+  "reactions": [],
+  "attachments": [],
+  "messageHistory": [],
+  "eventDetail": null,
+  "policyViolation": null
+ }
+]
