@@ -22,9 +22,9 @@ function Mount({ title, intro, load }) {
   }
   if (!state.C) return html`<div class="view"><${ViewHead} title=${title} hiddenTitle=${true} /><${Loading}>Opening ${title.toLowerCase()}</${Loading}></div>`;
   const C = state.C;
-  // The mounted view carries its own visible heading; ours is for focus and
-  // screen readers only, so the page still has one h1.
-  return html`<div class="view view--bare"><${ViewHead} title=${title} hiddenTitle=${true} /><${C} /></div>`;
+  // The mounted view renders the shared ViewHead (a focusable h1.view__title),
+  // so the shell adds no heading of its own: the page keeps exactly one h1.
+  return html`<div class="view view--bare"><${C} /></div>`;
 }
 
 export function BuildMount() {
