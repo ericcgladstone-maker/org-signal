@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build harness</title>
+<link rel="stylesheet" href="../../assets/theme.css">
+<link rel="stylesheet" href="../../assets/build.css">
+<style>
+  body{overflow-x:hidden}
+  #h-nav{display:flex;gap:1rem;padding:.6rem 1rem;border-bottom:1px solid var(--rule);font-size:var(--fs-small)}
+  #h-nav a{color:var(--text-2)}
+  #h-log{font-family:var(--mono);font-size:11px;color:var(--text-muted);padding:.5rem 1rem;border-top:1px solid var(--rule);white-space:pre-wrap;word-break:break-word}
+</style>
+</head>
+<body>
+<!-- Standalone mount for BuildView and GenerateView while ui-core's shell is
+     not available. ?view=build|generate&tab=draw|ego|roster|perceived|paste
+     Stubs store.actions.loadDataset / notify / setView and records calls on
+     window.__harness for the QA script. -->
+<nav id="h-nav"><a href="?view=build">Build</a><a href="?view=generate">Generate</a></nav>
+<main id="app"></main>
+<div id="h-log" aria-live="polite"></div>
+<script type="module">
+  import { html, render } from '../../vendor/preact.js';
+  import { store } from '../../src/ui/store.js';
+  const q = new URLSearchParams(location.search);
+  if (q.get('clear') === '1') { try { localStorage.clear(); } catch {} }
+  const log = document.getElementById('h-log');
+  window.__harness = { loaded: [], notices: [] };
+  const say = t => { log.textContent = t + '\n' + log.textContent.slice(0, 2000); };
+  store.actions.loadDataset = async (ds, opts) => {
+    window.__harness.loaded.push({ ds, opts });
+    store.set({ dataset: ds, datasets: [...store.get().datasets, ds] });
+    say(`loadDataset(${ds.meta.name}, ${JSON.stringify(opts)}): ${ds.nodes.count} nodes, ${ds.events.count} events, view=${ds.meta.sources.map(s => s.view).join(',')}`);
+  };
+  store.actions.notify = (level, text) => { window.__harness.notices.push({ level, text }); say(`notify ${level}: ${text}`); };
+  store.actions.setView = v => { window.__harness.view = v; };
+  const view = q.get('view') || 'build';
+  const tab = q.get('tab') || undefined;
+  const mod = view === 'generate' ? await import('../../src/ui/generate/index.js') : await import('../../src/ui/build/index.js');
+  const C = view === 'generate' ? mod.GenerateView : mod.BuildView;
+  render(html`<${C} tab=${tab} />`, document.getElementById('app'));
+  window.__harness.ready = true;
+</script>
+</body>
+</html>
