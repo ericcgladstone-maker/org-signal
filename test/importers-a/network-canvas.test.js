@@ -118,9 +118,15 @@ test('NC GraphML merged Classic export: each <graph> is one ego', async () => {
   assert.ok(warning(source, 'multiple-egos'));
 });
 
-test('NC: CSV plus GraphML side by side become two sources with a duplicate warning', async () => {
-  const { ds, detect } = await runImporter(nc, [fixture('network-canvas', 'csv'), fixture('network-canvas', 'graphml-single')]);
-  assert.equal(detect.files.length, 11);
-  assert.equal(ds.meta.sources.length, 2);
-  assert.ok(warning(ds.meta.sources[1], 'duplicate-formats'));
+test('NC: sessions exported as both CSV and GraphML are counted once', async () => {
+  const both = await runImporter(nc, [fixture('network-canvas', 'csv'), fixture('network-canvas', 'graphml-single')]);
+  const csvOnly = await runImporter(nc, [fixture('network-canvas', 'csv')]);
+  const gmlOnly = await runImporter(nc, [fixture('network-canvas', 'graphml-single')]);
+  assert.equal(both.detect.files.length, 11);
+  const egos = r => new Set(r.ds.meta.sources.flatMap(s => s.egoKeys || (s.egoKey ? [s.egoKey] : [])));
+  const shared = [...egos(gmlOnly)].filter(k => egos(csvOnly).has(k));
+  // Every GraphML session that is also in the CSVs adds no events.
+  const expected = csvOnly.ds.events.count + (shared.length ? 0 : gmlOnly.ds.events.count);
+  assert.equal(both.ds.events.count, expected);
+  if (shared.length) assert.ok(warning(both.ds.meta.sources[0], 'duplicate-sessions-skipped'));
 });

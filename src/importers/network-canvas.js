@@ -393,9 +393,15 @@ async function importNC(fs, { builder, options = {}, progress = () => {}, signal
   const warn = (code, message) => early.push([code, message]);
   const flush = () => { for (const [c, m] of early) builder.warn(c, m, 1); early.length = 0; };
 
+  // Interviewer exports usually contain the CSV set AND a GraphML per session,
+  // describing the same interviews. Sessions already read from the CSVs are
+  // skipped in the GraphML so no tie is counted twice.
+  const seen = new Set();
+  let duplicateSessions = 0;
   if (csv.length) {
     const sessions = new Sessions();
     await readCsvSet(csv, sessions, warn);
+    for (const uuid of sessions.egos.keys()) seen.add(uuid);
     if (signal?.aborted) throw new Error('Import cancelled');
     emit(sessions, builder, { options, fileNames: csv.map(c => c.entry.rel), format: 'network-canvas' });
     flush();
@@ -415,12 +421,18 @@ async function importNC(fs, { builder, options = {}, progress = () => {}, signal
       continue;
     }
     readGraphml(root, sessions, warn);
-    emit(sessions, builder, { options, fileNames: [entry.rel], format: 'network-canvas' });
-    flush();
+    for (const uuid of [...sessions.egos.keys()]) {
+      if (seen.has(uuid)) { sessions.egos.delete(uuid); duplicateSessions++; } else seen.add(uuid);
+    }
+    if (sessions.egos.size) {
+      emit(sessions, builder, { options, fileNames: [entry.rel], format: 'network-canvas' });
+      flush();
+    }
     progress((i + 1) / graphml.length, `Read ${entry.rel}`);
   }
-  if (csv.length && graphml.length) {
-    builder.warn('duplicate-formats', 'Both CSV and GraphML exports were given; if they describe the same sessions, import only one to avoid counting ties twice.', 1);
+  if (duplicateSessions && builder.sources.length) {
+    builder.stat('duplicate-sessions-skipped', duplicateSessions);
+    builder.warn('duplicate-sessions-skipped', 'Interviews present in both the CSV and the GraphML export were read once, from the CSV', duplicateSessions);
   }
 }
 
