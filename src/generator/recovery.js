@@ -10,9 +10,10 @@
 //   affect        per-group mean sentiment: { byGroup: { name: mean } },
 //                 [{ group|key|name, mean|compound|score|valence }], or
 //                 { groups: [...] }; without it, affect is measured here with VADER
-//   shifts        detected change points: [{ t|time|date, ... }] or { shifts: [...] }
+//   shifts        detected change points: [{ t|time|date|start, ... }] or { shifts: [...] } (engine: detectShifts)
 //   diffusion     per term adopters: { term: { adopters: [{ node, t }] } },
-//                 [{ term, adopters }] or { cascades: [...] }; node = dataset index
+//                 [{ term, adopters }], { terms: [{ term, adoptions }] } (engine: diffusion)
+//                 or { cascades: [...] }; node = dataset index
 //
 // The report is { summary, checks: [{ id, name, area, planted, recovered,
 // metric, value, baseline, verdict, says }], details }. verdict is one of
@@ -34,6 +35,7 @@ export function recoveryCheck(truth, ds, a3, a4) {
   coverage(ctx);
   communities(ctx);
   bridges(ctx);
+  betweennessFidelity(ctx);
   affectChecks(ctx);
   shiftChecks(ctx);
   diffusionChecks(ctx);
@@ -230,6 +232,65 @@ function bridges(ctx) {
   });
 }
 
+// Does measured betweenness rank people the way the true network does? This
+// separates "the measurement is faithful" from "the planted brokers dominate":
+// a world can plant brokers that the rest of the structure out-bridges. Uses
+// its own Brandes implementation on the true ties, independent of the engine.
+function betweennessFidelity(ctx) {
+  const { truth, map, results } = ctx;
+  const bt = perDsNode(ctx, results.nodeMetrics?.betweenness);
+  const T = truth.ties;
+  if (!bt || !T?.count) return;
+  const n = truth.people.count;
+  if (n > 3000) return; // exact Brandes here would be slow; the engine approximates above this anyway
+  const adj = Array.from({ length: n }, () => []);
+  for (let i = 0; i < T.count; i++) { adj[T.a[i]].push(T.b[i]); adj[T.b[i]].push(T.a[i]); }
+  const truthBt = brandes(adj);
+  const xs = [], ys = [];
+  for (let k = 0; k < bt.length; k++) {
+    const t = map.toTruth[k];
+    if (t >= 0 && bt[k] != null && Number.isFinite(bt[k])) { xs.push(bt[k]); ys.push(truthBt[t]); }
+  }
+  if (xs.length < 5) return;
+  const rho = spearman(xs.map((x, i) => [x, ys[i]]));
+  add(ctx, {
+    id: 'betweenness-fidelity', name: 'Measured betweenness matches the true network', area: 'structure',
+    planted: 'betweenness on the true ties', recovered: `Spearman rho ${r3(rho)} over ${xs.length} people`,
+    metric: 'Spearman rank correlation', value: r3(rho), baseline: null,
+    verdict: rho >= 0.9 ? 'recovered' : rho >= 0.7 ? 'partly' : 'missed',
+    says: rho >= 0.9 ? `Betweenness measured from the data ranks people almost exactly as the true network does (rho ${r3(rho)}).`
+      : `Betweenness measured from the data ranks people differently from the true network (rho ${r3(rho)}); the observation (what the data shows) or the construction settings distort brokerage.`,
+  });
+}
+
+function brandes(adj) {
+  const n = adj.length, bc = new Float64Array(n);
+  const sigma = new Float64Array(n), dist = new Int32Array(n), delta = new Float64Array(n);
+  const stack = new Int32Array(n), queue = new Int32Array(n);
+  const preds = Array.from({ length: n }, () => []);
+  for (let s = 0; s < n; s++) {
+    sigma.fill(0); dist.fill(-1); delta.fill(0);
+    for (const p of preds) p.length = 0;
+    sigma[s] = 1; dist[s] = 0;
+    let qh = 0, qt = 0, sp = 0;
+    queue[qt++] = s;
+    while (qh < qt) {
+      const v = queue[qh++]; stack[sp++] = v;
+      for (const w of adj[v]) {
+        if (dist[w] < 0) { dist[w] = dist[v] + 1; queue[qt++] = w; }
+        if (dist[w] === dist[v] + 1) { sigma[w] += sigma[v]; preds[w].push(v); }
+      }
+    }
+    while (sp > 0) {
+      const w = stack[--sp];
+      for (const v of preds[w]) delta[v] += (sigma[v] / sigma[w]) * (1 + delta[w]);
+      if (w !== s) bc[w] += delta[w];
+    }
+  }
+  return bc;
+}
+
+
 // ---- 4. affect --------------------------------------------------------------------
 
 const sia = vader.SentimentIntensityAnalyzer;
@@ -296,7 +357,7 @@ function affectChecks(ctx) {
 }
 
 function normalizeAffect(a, truth) {
-  if (!a) return null;
+  if (!a || typeof a !== 'object') return null;
   const names = truth.communities?.names || [];
   const idx = new Map(names.map((n, i) => [norm(n), i]));
   const out = new Map();
@@ -315,7 +376,14 @@ function shiftChecks(ctx) {
   const planted = (truth.events || []).filter(e => ['departure', 'reorg', 'silo', 'quiet', 'consolidation', 'bot-campaign', 'layoff'].includes(e.type) && e.t > truth.timespan.start && e.t < truth.timespan.end);
   if (!planted.length) return;
   const raw = results.shifts?.shifts || results.shifts?.changePoints || results.shifts;
-  const det = Array.isArray(raw) ? raw.map(s => (typeof s === 'number' ? s : Date.parse(s.t ?? s.time ?? s.date ?? s.at ?? s.window) || s.t || s.time)).filter(Number.isFinite) : null;
+  // The analysis engine reports a shift with `start` (window start, ms) and `window` (an index), so
+  // read explicit times first and only parse strings.
+  const when = s => {
+    if (typeof s === 'number') return s;
+    const v = s.t ?? s.time ?? s.date ?? s.at ?? s.start;
+    return typeof v === 'number' ? v : Date.parse(v);
+  };
+  const det = Array.isArray(raw) ? raw.map(when).filter(Number.isFinite) : null;
   const tol = Math.max(7 * DAY, 0.1 * (truth.timespan.end - truth.timespan.start));
   // de-duplicate planted events at the same time (e.g. several departures)
   const uniq = [];
@@ -409,10 +477,13 @@ function diffusionChecks(ctx) {
 function normalizeDiffusion(d) {
   if (!d) return null;
   const out = new Map();
-  const list = Array.isArray(d) ? d : Array.isArray(d.cascades) ? d.cascades : null;
-  const adopt = a => (a || []).map(x => ({ node: x.node ?? x.id ?? x.index, t: x.t ?? x.time ?? x.firstUse }));
-  if (list) for (const c of list) out.set(c.term, adopt(c.adopters || c.users));
-  else for (const [term, v] of Object.entries(d)) out.set(term, adopt(v.adopters || v.users || v));
+  if (typeof d !== 'object') return null;
+  // Engine shape: { terms: [{ term, adopters: <count>, adoptions: [{ node, t }] }] }.
+  const list = Array.isArray(d) ? d : Array.isArray(d.terms) ? d.terms : Array.isArray(d.cascades) ? d.cascades : null;
+  const adopt = a => (Array.isArray(a) ? a : []).map(x => ({ node: x.node ?? x.id ?? x.index, t: x.t ?? x.time ?? x.firstUse }));
+  const pick = v => (Array.isArray(v.adoptions) ? v.adoptions : Array.isArray(v.adopters) ? v.adopters : Array.isArray(v.users) ? v.users : Array.isArray(v) ? v : []);
+  if (list) for (const c of list) out.set(c.term, adopt(pick(c)));
+  else for (const [term, v] of Object.entries(d)) if (v && typeof v === 'object') out.set(term, adopt(pick(v)));
   return out.size ? out : null;
 }
 
@@ -524,9 +595,21 @@ function phi(x) { // standard normal CDF (Abramowitz-Stegun 26.2.17)
   const d = 0.3989423 * Math.exp(-x * x / 2);
   return 1 - d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
 }
+// Spearman's rho with average ranks for ties (betweenness has many exact zeros,
+// so arbitrary tie-breaking would bias it).
 function spearman(pairs) {
   if (pairs.length < 3) return NaN;
-  const rank = vals => { const idx = vals.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]); const r = new Array(vals.length); idx.forEach(([, i], k) => { r[i] = k; }); return r; };
+  const rank = vals => {
+    const idx = vals.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]);
+    const r = new Array(vals.length);
+    for (let i = 0; i < idx.length;) {
+      let j = i;
+      while (j + 1 < idx.length && idx[j + 1][0] === idx[i][0]) j++;
+      for (let k = i; k <= j; k++) r[idx[k][1]] = (i + j) / 2;
+      i = j + 1;
+    }
+    return r;
+  };
   const ra = rank(pairs.map(p => p[0])), rb = rank(pairs.map(p => p[1]));
   const ma = mean(ra), mb = mean(rb);
   let num = 0, da = 0, db = 0;

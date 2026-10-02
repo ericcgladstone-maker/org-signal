@@ -131,6 +131,18 @@ export function timeSeries(ds, settings, opts = {}) {
       const r = net.n ? computeNetworkMetrics(net, { pathSources: Math.min(net.n, 200) }) : {};
       for (const [k, v] of Object.entries(r)) if (typeof v === 'number') (network[k] ||= new Array(windows.length).fill(NaN))[wi] = v;
     }
+    // Share of ties that cross groups of opts.attr. A reorg or a silo changes
+    // who talks to whom more than how much, and shows up here first.
+    if (groupInfo) {
+      let cross = 0, coded = 0;
+      for (let e = 0; e < net.edges.count; e++) {
+        const ga = groupInfo.code[net.nodeIds[net.edges.src[e]]], gb = groupInfo.code[net.nodeIds[net.edges.dst[e]]];
+        if (ga < 0 || gb < 0) continue;
+        coded++; if (ga !== gb) cross++;
+      }
+      (network.crossGroupShare ||= new Array(windows.length).fill(NaN))[wi] = coded ? cross / coded : NaN;
+      (network.codedTies ||= new Array(windows.length).fill(NaN))[wi] = coded;
+    }
     // Tie turnover between consecutive windows (dataset node pairs).
     const keys = new Set();
     for (let e = 0; e < net.edges.count; e++) keys.add(net.nodeIds[net.edges.src[e]] * N + net.nodeIds[net.edges.dst[e]]);
@@ -244,10 +256,13 @@ export function detectShifts(series, opts = {}) {
   // about density/sqrt(m).
   const tiesAt = (t) => Math.max(1, series.network?.ties?.[t] || 0);
   const binom = (div) => (t, med) => { const p = Math.min(0.95, Math.max(0.05, med)); return Math.sqrt(p * (1 - p) / Math.max(1, tiesAt(t) / div)); };
+  const codedAt = (t) => Math.max(1, series.network?.codedTies?.[t] || tiesAt(t));
   const NOISE = {
     reciprocity: binom(2),
     transitivity: binom(3),
     density: (t, med) => Math.abs(med) / Math.sqrt(tiesAt(t)),
+    crossGroupShare: (t, med) => { const p = Math.min(0.95, Math.max(0.05, med)); return Math.sqrt(p * (1 - p) / codedAt(t)); },
+    tieRetention: binom(1),
   };
   let scanned = 0;
   // Scanning hundreds of people multiplies false alarms; node series use a
@@ -257,12 +272,20 @@ export function detectShifts(series, opts = {}) {
   const push = (target, id, label, metric, list) => {
     for (const s of list) out.push({ target, id, label, metric, ...s, start: W[s.window]?.start, windowLabel: W[s.window]?.label });
   };
-  const netKeys = opts.networkMetrics || ['ties', 'density', 'reciprocity', 'transitivity', 'nodes'];
-  for (const k of netKeys) if (series.network?.[k]) push('network', null, k, k, findMasked(series.network[k], COUNTS.has(k), null, NOISE[k] || null));
+  const netKeys = opts.networkMetrics || ['ties', 'density', 'reciprocity', 'transitivity', 'nodes', 'crossGroupShare'];
+  for (const k of netKeys) if (series.network?.[k]) push('network', null, k === 'crossGroupShare' ? `cross-${series.activity?.group?.attr ?? 'group'} share of ties` : k, k, findMasked(series.network[k], COUNTS.has(k), null, NOISE[k] || null));
+  // Tie turnover: the share of last window's ties that persist (Jaccard). Rewiring
+  // without a change in volume (a reorg) shows up here and nowhere else.
+  if (series.ties?.jaccard) push('network', null, 'tie retention (Jaccard with previous window)', 'tieRetention', findMasked(series.ties.jaccard, false, null, NOISE.tieRetention));
+  if (series.ties?.dissolved) push('network', null, 'ties dissolved', 'tiesDissolved', findMasked([NaN, ...series.ties.dissolved.slice(1)], true));
   if (series.activity?.total) push('network', null, 'activity', 'activity', findMasked(series.activity.total, true));
   if (series.ties?.formed) push('network', null, 'ties formed', 'tiesFormed', findMasked([NaN, ...series.ties.formed.slice(1)], true));
   const grp = series.activity?.group;
-  if (grp) grp.values.forEach((v, g) => push('group', v, `${grp.attr} = ${v}`, 'activity', findMasked(grp.counts[g], true)));
+  // Every group is scanned separately, so like node series they get a stricter
+  // threshold: on flat synthetic workplaces the default threshold raised about
+  // 0.8 false alarms per dataset from group activity alone.
+  const groupThr = opts.groupThreshold ?? (method === 'cusum' ? 9 : 4.5);
+  if (grp) grp.values.forEach((v, g) => push('group', v, `${grp.attr} = ${v}`, 'activity', findMasked(grp.counts[g], true, groupThr)));
   const metric = opts.nodeMetric || Object.keys(series.node || {})[0];
   if (metric && series.node?.[metric]?.length) {
     const arrs = series.node[metric];
@@ -273,7 +296,7 @@ export function detectShifts(series, opts = {}) {
     for (const i of top) push('node', i, opts.labels?.[i] ?? String(i), metric, findMasked(arrs.map(a => a[i]), COUNTS.has(metric), nodeThr));
   }
   out.sort((a, b) => Math.abs(b.z ?? b.statistic) - Math.abs(a.z ?? a.statistic));
-  return { shifts: out, meta: { method, threshold: opts.threshold ?? (method === 'cusum' ? 6 : 3.5), nodeThreshold: nodeThr, baseline: opts.baseline ?? 8, windows: W.length, seriesScanned: scanned, partialWindowsSkipped: partial.filter(Boolean).length } };
+  return { shifts: out, meta: { method, threshold: opts.threshold ?? (method === 'cusum' ? 6 : 3.5), nodeThreshold: nodeThr, groupThreshold: groupThr, baseline: opts.baseline ?? 8, windows: W.length, seriesScanned: scanned, partialWindowsSkipped: partial.filter(Boolean).length } };
 }
 
 // ---- before / after -------------------------------------------------------------------

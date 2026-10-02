@@ -104,3 +104,9 @@ Event volume is proportional to true ties x weeks x `activity`; lower `activity`
 ## Tests
 
 `node --test 'test/generator/**/*.test.js'`: determinism, 50k scale, structure sanity per context, content (affect measurable with VADER, terms spread along ties), observation slices, recoveryCheck, progress, writer conformance (independent parsers), and native round trips through the real importers (`writers-a.test.js`, `writers-b.test.js`). `test/generator/helpers.js` has a small graphology-based stand-in for analysis results used by the tests.
+
+## Betweenness fidelity check
+
+`recoveryCheck` also reports `betweenness-fidelity`: Spearman's rho (average ranks for ties) between the measured betweenness and betweenness on the true ties, computed with its own Brandes implementation so it stays independent of the engine. It separates "the measurement is faithful to the world" from "the planted brokers dominate the world". Typical values (2026-10-02): workplace Slack 1.0, workplace email 0.93, X 0.94, LinkedIn 0.88, survey 0.76 (recall error), WhatsApp 0.73 (turn-taking in group chats over-connects), Reddit 0.53 (replies to strangers are not ties). Skipped above 3,000 people.
+
+The `bridge-dependent` workplace preset makes heads rarely talk directly (10% leadership ties) and gives each broker ties to 4-7 people in 3-4 other departments, so the planted brokers really are the top brokers of the true network.

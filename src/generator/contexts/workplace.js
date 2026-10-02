@@ -149,7 +149,10 @@ export function build(spec, rng, span) {
   for (let i = 1; i < n; i++) ties.add(i, manager[i], { w: 3, kind: 'hierarchy' });
   for (let d = 0; d < D; d++) { // leadership team: CEO and heads
     const h = members[d][0];
-    for (let e = d + 1; e < D; e++) if (r.chance(D > 12 ? 0.25 : 0.6)) ties.add(h, members[e][0], { w: 1.2, kind: 'leadership' });
+    // In a bridge-dependent org the heads rarely talk directly, so the planted
+    // brokers, not the leadership team, carry cross-department traffic.
+    const pLead = presetId === 'bridge-dependent' ? 0.1 : D > 12 ? 0.25 : 0.6;
+    for (let e = d + 1; e < D; e++) if (r.chance(pLead)) ties.add(h, members[e][0], { w: 1.2, kind: 'leadership' });
   }
   for (let i = 0; i < n; i++) { // teammates (same manager)
     const rep = reports[i];
@@ -193,9 +196,10 @@ export function build(spec, rng, span) {
   const brokers = r.sample(brokerCands.length ? brokerCands : Array.from({ length: n - 1 }, (_, k) => k + 1), B);
   const bridgeTies = [];
   for (const bk of brokers) {
-    const others = r.sample([...Array(D).keys()].filter(d => d !== dept[bk]), Math.min(D - 1, r.intRange(2, 3)));
+    const strong = presetId === 'bridge-dependent';
+    const others = r.sample([...Array(D).keys()].filter(d => d !== dept[bk]), Math.min(D - 1, strong ? r.intRange(3, 4) : r.intRange(2, 3)));
     for (const d of others) {
-      const k = Math.min(members[d].length, r.intRange(2, 4));
+      const k = Math.min(members[d].length, strong ? r.intRange(4, 7) : r.intRange(2, 4));
       for (const j of r.sample(members[d], k)) {
         const ti = ties.add(bk, j, { w: 1.3, kind: 'bridge' });
         if (ti >= 0 && ties.kindOf(ti) === 'bridge') bridgeTies.push(ti);
