@@ -98,7 +98,7 @@ recoveryCheck(groundTruth, ds, net, results) -> report
 
 ## LLM contract
 
-`src/llm/providers/{anthropic,openai,gemini}.js` share one interface: `{ id, label, defaultModel, listModels(key), chat({ key, model, system, messages, tools, onText, signal }) }`. `src/llm/analyst.js` answers questions by calling analysis-engine tools; it may only cite numbers the tools returned. `src/llm/reports.js` writes on-demand network, group and node reports. `src/llm/methods.js` builds the methods appendix deterministically (no LLM).
+`src/llm/providers/{anthropic,openai,gemini}.js` share one interface: `{ id, label, defaultModel, listModels({ key, fetch, signal }), chat({ key, model, system, messages, tools, onText, signal, fetch, maxTokens, json, effort }) }` (full details in `docs/api/llm.md`). Keys live in `createKeyStore()` from `src/llm/keys.js`, never in `store`. `src/llm/analyst.js` answers questions by calling analysis-engine tools; it may only cite numbers the tools returned. `src/llm/reports.js` writes on-demand network, group and node reports. `src/llm/methods.js` builds the methods appendix deterministically (no LLM).
 
 ## UI
 
