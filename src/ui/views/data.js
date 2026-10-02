@@ -28,7 +28,7 @@ import { JoinSetup, ProfileJoin } from './data/join.js';
 export { ReportView };
 
 // The note every data state carries: nothing persists (S19).
-export const NOT_STORED = 'Nothing is stored: reloading or closing this tab erases the loaded data. To keep it, save a project under Methods & Export.';
+export const NOT_STORED = 'Loaded data is not kept: reloading or closing this tab erases it. To keep it, save a project under Methods & Export.';
 // Suggested text for the shell's leave-page warning (beforeunload).
 export const LEAVE_WARNING = 'Leave Org Signal? The loaded data is not stored anywhere, so leaving or reloading erases it.';
 
@@ -203,7 +203,7 @@ function EmptyState({ onFiles }) {
   return html`<div class="empty dv-empty">
     <h2>Map who talks to whom</h2>
     <p class="lead">Drop the exports you already have and see the network inside them: who connects to whom, who bridges groups, and how that changes over time. Measures come with how sure you can be.</p>
-    <p class="dv-privacy"><${Flag} level="ok">Private</${Flag}> Everything runs in this browser. Nothing is uploaded, and nothing is stored: closing the tab erases it.</p>
+    <p class="dv-privacy"><${Flag} level="ok">Private</${Flag}> Everything runs in this browser and nothing is uploaded. Loaded data is not kept: closing the tab erases it. Only drafts you make in Build, and an API key if you choose to remember it, are saved in this browser.</p>
     <div class="dv-empty__drop"><${DropZone} onFiles=${onFiles} /></div>
     <p class="small text2 dv-sources">Reads Slack, Microsoft Teams, Gmail and other email, Google and Outlook calendars, WhatsApp, LinkedIn, X, Telegram, iMessage, Messenger and Instagram, Discord, Reddit, Bluesky, Mastodon and Threads exports; survey responses (Google Forms, Qualtrics, Network Canvas); network files (GraphML, GEXF, Pajek, UCINET); and any spreadsheet of who-to-whom.</p>
     <details class="disclose dv-howto"><summary>How to get your export</summary>

@@ -201,7 +201,7 @@ function TimeInner({ ds }) {
   const [range, setRange] = useState(() => (dense ? { start: dense.start, end: dense.end } : { start: null, end: null }));
   const [win, setWin] = useState('auto');
   const groupAttr = useMemo(() => defaultGrouping(ds), [ds]);
-  const series = useEngine('ts', () => engine.timeSeries({ window: win, metrics: ['degree', 'strength'], attr: groupAttr || undefined, start: range.start ?? undefined, end: range.end ?? undefined }), [win, range.start, range.end, groupAttr], { label: 'Building windowed networks' });
+  const series = useEngine('ts', () => engine.timeSeries({ window: win, purpose: 'Time view', metrics: ['degree', 'strength'], attr: groupAttr || undefined, start: range.start ?? undefined, end: range.end ?? undefined }), [win, range.start, range.end, groupAttr], { label: 'Building windowed networks' });
   const shifts = useEngine('shifts', () => engine.shifts(series.data, { labels: ds.nodes.labels }), [win, range.start, range.end, groupAttr, !!series.data], { enabled: !!series.data?.windows?.length });
   const t = tokens();
   const s = series.data;

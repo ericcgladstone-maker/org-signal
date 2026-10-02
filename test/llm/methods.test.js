@@ -83,3 +83,19 @@ test('survey sources state their combine rule; report labels name sources', () =
   const out = buildMethodsAppendix({ meta: { sources: [survey] }, settings: {}, sourceLabels: ['Roster survey'] });
   assert.match(out, /- \*\*Roster survey\*\*\. View: \*full\*.*Only reciprocated nominations were kept/);
 });
+
+test('time windows: resolved units, purposes, and repeated runs described once', () => {
+  const md = buildMethodsAppendix({
+    dataset: { meta: { sources: [{ format: 'slack', view: 'full', context: 'workplace', counts: {} }] }, nodes: { count: 5 }, events: { count: 9 } },
+    settings: { rules: { reply: { on: true, weight: 1 } }, directed: true, weighting: 'count', time: { start: null, end: null } },
+    times: [
+      { window: 'week', metrics: ['degree'], purpose: 'Time view' },
+      { window: 'month', metrics: ['degree'], purpose: 'person profiles' },
+      { window: 'week', metrics: ['degree'], purpose: 'Time view' },
+    ],
+  });
+  assert.match(md, /For the Time view, measures \(degree\) were recomputed in consecutive weekly windows/);
+  assert.match(md, /For the person profiles, measures \(degree\) were recomputed in consecutive monthly windows/);
+  assert.equal(md.match(/For the Time view/g).length, 1);
+  assert.doesNotMatch(md, /auto windows/);
+});

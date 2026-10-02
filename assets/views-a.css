@@ -59,3 +59,8 @@
 
 .stab > summary{cursor:pointer;list-style:none}
 .stab > summary::-webkit-details-marker{display:none}
+
+/* People table name cell: the name truncates; swatch and badges keep their size. */
+.vt-name{display:flex;align-items:center;gap:.4rem;min-width:0;max-width:100%}
+.vt-name__text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vt-name>:not(.vt-name__text){flex:none}

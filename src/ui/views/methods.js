@@ -3,6 +3,7 @@
 // and saving or opening an Org Signal project file. Everything is produced
 // on this device.
 
+import { isDeactivated } from '../lib/measures.js';
 import { html, useState, useEffect, useRef } from '../../../vendor/preact.js';
 import { store, useStore } from '../store.js';
 import { toJSON, fromJSON, MODEL_VERSION } from '../../core/model.js';
@@ -59,7 +60,7 @@ export function appendixInput(state) {
     sourceLabels: (dataset?.meta?.sources || []).map((_, i) => state.report?.sources?.find(x => x.id === i)?.label || null),
     nullModels: log.nullModel || [],
     resampling: (log.resampling || []).map(r => ({ ...r, scheme: 'events resampled with replacement' })),
-    time: (log.time || []).map(t => ({ window: t.window, metrics: t.metrics })),
+    time: (log.time || []).map(t => ({ window: t.window, metrics: t.metrics, start: t.start, end: t.end, purpose: t.purpose })),
     content: Object.keys(content).length ? content : undefined,
     software: { name: 'Org Signal', version: '2' },
   };
@@ -182,8 +183,12 @@ function summaryMarkdown(state, appendix) {
     const top = topBy(state, m, 8);
     if (!top.length) continue;
     const iv = x => { const r = stab[m]?.map?.get(x.i); return r && Number.isFinite(r.lo) ? `; rank ${r.lo}-${r.hi}${Number.isFinite(r.topShare) ? `, top ${stab[m].top} in ${Math.round(r.topShare * 100)}% of ${stab[m].reps} resamples` : ''}` : ''; };
-    L.push(`- **${gloss(m).label}** (${gloss(m).meaning}) ${top.map(x => `${nodeLabel(ds, x.i)} (${fmtNum(x.value)}${iv(x)})`).join(', ')}.${ap[m]?.level === 'caution' ? ` Caution: ${applicabilityReason(ap[m])}` : ''}`);
+    L.push(`- **${gloss(m).label}** (${gloss(m).meaning}) ${top.map(x => `${nodeLabel(ds, x.i)}${isDeactivated(ds, x.i) ? ' [deactivated account]' : ''} (${fmtNum(x.value)}${iv(x)})`).join(', ')}.${ap[m]?.level === 'caution' ? ` Caution: ${applicabilityReason(ap[m])}` : ''}`);
   }
+  // A departed person can still rank high on what they did before leaving;
+  // say so where a reader would otherwise take the ranking at face value.
+  const gone = [...new Set(['degree', 'betweenness'].flatMap(m => (ap[m]?.level === 'na' ? [] : topBy(state, m, 8)).map(x => x.i)))].filter(i => isDeactivated(ds, i));
+  if (gone.length) L.push('', `${gone.map(i => nodeLabel(ds, i)).join(', ')} ${gone.length === 1 ? 'is a deactivated account' : 'are deactivated accounts'} in the export: ${gone.length === 1 ? 'their' : 'these'} ranks reflect activity before they left, not the current organization.`);
   L.push('');
   if (appendix) L.push(appendix.replace(/^# /m, '## '));
   return L.join('\n');
@@ -246,7 +251,7 @@ function Project() {
   };
   return html`<section class="section" aria-labelledby="proj-h">
     <h2 id="proj-h" class="section__title" tabindex="-1">Project file</h2>
-    <p class="small text2" style="margin-bottom:.9rem">Nothing is stored in the browser: closing this tab erases the loaded data and results. A project file saves the combined data (after identity merges and joins) and the construction settings to your computer, and opening it restores the same network and measures. It contains everything imported, including message text; store it as carefully as the original exports.</p>
+    <p class="small text2" style="margin-bottom:.9rem">Loaded data and results are not kept in the browser: closing this tab erases them (only Build drafts and an opted-in API key are saved). A project file saves the combined data (after identity merges and joins) and the construction settings to your computer, and opening it restores the same network and measures. It contains everything imported, including message text; store it as carefully as the original exports.</p>
     <div class="tlinks">
       ${state.dataset && html`<button type="button" class="btn btn--primary" onClick=${saveProject}>Save project</button>`}
       <button type="button" class="tlink" onClick=${() => ref.current.click()} disabled=${busy}>${busy ? 'Opening' : 'Open a project'}</button>

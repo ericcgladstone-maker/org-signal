@@ -203,6 +203,9 @@ function sourceLine(src) {
 // Only what is passed is described: the caller passes what was actually run
 // (the UI records it in store.methodsLog), never the defaults of views that
 // were not opened.
+// timeSeries window names -> the adjective used in prose.
+const WINDOW_WORD = { day: 'daily', week: 'weekly', month: 'monthly' };
+
 export function buildMethodsAppendix(input = {}) {
   const used = new Set();
   const cite = keys => { keys.forEach(k => used.add(k)); return keys.length ? ` (${keys.map(k => CITE[k]).join('; ')})` : ''; };
@@ -327,8 +330,12 @@ export function buildMethodsAppendix(input = {}) {
   const times = runs(input.times, input.time);
   if (times.length) {
     out.push('## Time windows', '');
+    // One sentence per distinct run; the same request made twice is described once.
+    const seen = new Set();
     for (const t of times) {
-      out.push(`Measures${t.metrics?.length ? ` (${t.metrics.join(', ')})` : ''} were recomputed in consecutive ${t.window ? `${t.window} ` : ''}windows${fmtDate(t.start) ? ` from ${fmtDate(t.start)}` : ''}${fmtDate(t.end) ? ` to ${fmtDate(t.end)}` : ''}, using the same construction rules in every window.`);
+      const unit = WINDOW_WORD[t.window] || (t.window ? `${t.window}` : '');
+      const line = `${t.purpose ? `For the ${t.purpose}, m` : 'M'}easures${t.metrics?.length ? ` (${t.metrics.join(', ')})` : ''} were recomputed in consecutive ${unit ? `${unit} ` : ''}windows${fmtDate(t.start) ? ` from ${fmtDate(t.start)}` : ''}${fmtDate(t.end) ? ` to ${fmtDate(t.end)}` : ''}, using the same construction rules in every window.`;
+      if (!seen.has(line)) { seen.add(line); out.push(line); }
     }
     out.push('A tie was counted as formed in the first window in which it appeared and dissolved in the first window after its last appearance.', '');
   }

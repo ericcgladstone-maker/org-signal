@@ -49,7 +49,7 @@ function Loaded() {
     <button type="button" class="tlink tlink--quiet" ref=${btn} aria-expanded=${String(ask)} aria-controls="startOver" onClick=${() => setAsk(!ask)}>Start over</button>
     ${ask && html`<div class="confirm" id="startOver" ref=${box} role="dialog" aria-labelledby="startOverH">
       <p id="startOverH"><strong style="color:var(--text)">Start over?</strong></p>
-      <p>This clears ${shortName(name, 48)}, the network and every result from this tab. Nothing is stored, so it cannot be brought back unless you save a project first.</p>
+      <p>This clears ${shortName(name, 48)}, the network and every result from this tab. Loaded data is not kept anywhere, so it cannot be brought back unless you save a project first. Drafts in Build stay saved in this browser.</p>
       <div class="tlinks">
         <button type="button" class="tlink tlink--danger" onClick=${() => { setAsk(false); store.actions.startOver(); }}>Clear everything</button>
         <button type="button" class="tlink tlink--arrow" onClick=${() => { setAsk(false); store.actions.setView('methods'); store.actions.focus('#proj-h'); }}>Save a project first</button>

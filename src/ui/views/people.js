@@ -97,7 +97,9 @@ function PeopleInner({ ds, net }) {
     { key: `iv:${m}`, title: `${mlabel(m).split(' (')[0]} rank interval`, num: true, sortable: false, width: 'minmax(7rem,.9fr)', min: 112, after: `m:${m}` },
     { key: `top:${m}`, title: `In top ${TOP}`, num: true, width: 'minmax(5.5rem,.7fr)', min: 90, after: `m:${m}` },
   ]);
-  const columns = [{ key: 'name', title: 'Name', width: 'minmax(11rem,1.6fr)', min: 170, name: true }];
+  // Badges (bot, deactivated) sit after the name, so give the column room for both.
+  const badged = useMemo(() => { for (let i = 0; i < ds.nodes.count; i++) if (ds.nodes.isBot[i] || isDeactivated(ds, i)) return true; return false; }, [ds]);
+  const columns = [{ key: 'name', title: 'Name', width: badged ? 'minmax(17rem,2fr)' : 'minmax(11rem,1.6fr)', min: badged ? 272 : 170, name: true }];
   for (const c of allColumns) {
     if (!cols.has(c.key)) continue;
     columns.push(c);
@@ -143,7 +145,9 @@ function PeopleInner({ ds, net }) {
   };
   const cell = (v, c) => {
     const i = ids[v];
-    if (c.key === 'name') return html`${comm ? html`<${Swatch} color=${comm.color(String(communities.membership[v]))} />` : ''}${nodeLabel(ds, i)}${ds.nodes.isBot[i] ? html` <span class="meta">bot</span>` : ''}${isDeactivated(ds, i) ? html` <${Flag} level="caution">deactivated</${Flag}>` : ''}`;
+    // The name truncates, never the badges after it: a cut-off "deactivated"
+    // flag is how a departed person passed for a current broker in testing.
+    if (c.key === 'name') return html`<span class="vt-name">${comm ? html`<${Swatch} color=${comm.color(String(communities.membership[v]))} />` : ''}<span class="vt-name__text">${nodeLabel(ds, i)}</span>${ds.nodes.isBot[i] ? html`<span class="meta">bot</span>` : ''}${isDeactivated(ds, i) ? html`<${Flag} level="caution">deactivated</${Flag}>` : ''}</span>`;
     if (c.key === 'community') return String(communities.membership[v] + 1);
     if (c.key.startsWith('attr:')) { const x = ds.nodes.attrs[i][c.key.slice(5)]; return x == null || x === '' ? html`<span class="muted">–</span>` : fmtAttr(c.key.slice(5), x); }
     if (c.key.startsWith('num:')) { const k = c.key.slice(4); const x = ds.nodes.attrs[i][k]; return x == null || x === '' ? html`<span class="muted">–</span>` : fmtAttr(k, Number.isFinite(Number(x)) && !/offset/i.test(k) ? fmtNum(Number(x)) : x); }
@@ -261,7 +265,7 @@ function Profile({ ds, net, i, hidden }) {
   const head = useRef(null);
   const egoAttr = useMemo(() => preferredAttributes(ds).find(a => !isBookkeeping(a) && ds.nodes.attrs[i][a.key] != null)?.key, [ds, i]);
   const ego = useEngine('ego', () => engine.ego(i, { attr: egoAttr }), [i, egoAttr], { enabled: v >= 0 });
-  const series = useEngine('ts-month', () => engine.timeSeries({ window: 'month', metrics: ['degree', 'strength', 'betweenness'] }), []);
+  const series = useEngine('ts-month', () => engine.timeSeries({ window: 'month', purpose: 'person profiles', metrics: ['degree', 'strength', 'betweenness'] }), []);
   const ties = useTies(net, i, v);
   const activity = useMemo(() => activityOf(ds, i), [ds, i]);
   const shown = ORDER.filter(k => node?.[k] && ap[k]?.level !== 'na' && !(k === 'degree' && !net.directed));

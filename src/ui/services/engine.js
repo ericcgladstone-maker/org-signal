@@ -166,7 +166,15 @@ export const engine = {
   ego: (dsNode, opts = {}) => call(['egoMetrics', 'ego'], dsNode, opts),
   nullModel: logged('nullModel', ['stats', 'reps', 'seed', 'attr'], opts => call(['nullModel'], opts)),
   resampleRanks: logged('resampling', ['metric', 'reps', 'top', 'seed'], opts => call(['resampleRanks'], opts)),
-  timeSeries: logged('time', ['window', 'metrics', 'attr'], opts => call(['timeSeries'], opts)),
+  // Record the window the engine actually used ('auto' resolves to week, month...)
+  // and the period, so the methods appendix states what was run.
+  timeSeries: async (opts = {}) => {
+    const r = await call(['timeSeries'], opts);
+    const resolved = typeof r?.meta?.window === 'string' ? r.meta.window : opts.window;
+    const w = r?.windows || [];
+    record('time', { ...opts, window: resolved, start: w[0]?.start, end: w.length ? w[w.length - 1].end : undefined }, ['window', 'metrics', 'attr', 'start', 'end', 'purpose']);
+    return r;
+  },
   shifts: (series, opts = {}) => call(['detectShifts', 'shifts'], series, opts),
   beforeAfter: (date, opts = {}) => call(['compareBeforeAfter', 'beforeAfter'], date, opts),
   affect: logged('affect', ['by', 'attr', 'window'], opts => call(['affect'], opts)),
