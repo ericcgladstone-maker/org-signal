@@ -1,0 +1,535 @@
+// recoveryCheck: did an analysis find what the generator planted?
+//
+//   recoveryCheck(groundTruth, ds, net?, results?) -> report
+//   recoveryCheck(groundTruth, ds, results)          (net omitted)
+//
+// results (all optional; computed elsewhere, e.g. by the analysis engine):
+//   membership    Int32Array/array of community ids per network node (with
+//                 net) or per dataset node (without)
+//   nodeMetrics   { betweenness, degree, ... } arrays indexed the same way
+//   affect        per-group mean sentiment: { byGroup: { name: mean } },
+//                 [{ group|key|name, mean|compound|score|valence }], or
+//                 { groups: [...] }; without it, affect is measured here with VADER
+//   shifts        detected change points: [{ t|time|date, ... }] or { shifts: [...] }
+//   diffusion     per term adopters: { term: { adopters: [{ node, t }] } },
+//                 [{ term, adopters }] or { cascades: [...] }; node = dataset index
+//
+// The report is { summary, checks: [{ id, name, area, planted, recovered,
+// metric, value, baseline, verdict, says }], details }. verdict is one of
+// 'recovered' | 'partly' | 'missed' | 'not checked'; `says` is the plain-
+// language reading. Nothing from the analysis engine is imported: the checks
+// are independent so they can judge it.
+
+import vader from '../../vendor/vader.js';
+import { Rng } from './rng.js';
+import { ROLES, EVENT_TYPES, VISIBILITY } from '../core/model.js';
+
+const DAY = 86400000;
+
+export function recoveryCheck(truth, ds, a3, a4) {
+  let net = null, results = {};
+  if (a3 && (a3.nodeIds || a3.edges)) { net = a3; results = a4 || {}; } else results = a3 || {};
+  const map = mapNodes(truth, ds);
+  const ctx = { truth, ds, net, results, map, checks: [], details: {} };
+  coverage(ctx);
+  communities(ctx);
+  bridges(ctx);
+  affectChecks(ctx);
+  shiftChecks(ctx);
+  diffusionChecks(ctx);
+  surveyChecks(ctx);
+  const done = ctx.checks.filter(c => c.verdict !== 'not checked');
+  const ok = done.filter(c => c.verdict === 'recovered').length, part = done.filter(c => c.verdict === 'partly').length;
+  return {
+    summary: done.length ? `${ok} of ${done.length} planted features recovered, ${part} partly; ${done.length - ok - part} missed.` : 'Nothing to check: no analysis results were given and the dataset holds nothing measurable.',
+    checks: ctx.checks,
+    details: ctx.details,
+    mapping: { matched: map.matched, datasetNodes: ds.nodes.count, truthPeople: truth.people.count, by: map.by },
+  };
+}
+
+// ---- node mapping -------------------------------------------------------------
+
+function norm(s) { return String(s ?? '').normalize('NFD').replace(/[̀-ͯ‎‏ ⁨⁩~]/g, '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+
+export function mapNodes(truth, ds) {
+  const P = truth.people;
+  const byKey = new Map(P.keys.map((k, i) => [String(k).toLowerCase(), i]));
+  const byPid = new Map();
+  (P.platformIds || []).forEach((p, i) => { for (const v of Object.values(p || {})) if (v != null && v !== '') byPid.set(String(v).toLowerCase(), i); });
+  const labelCount = new Map();
+  for (const l of P.labels) labelCount.set(norm(l), (labelCount.get(norm(l)) || 0) + 1);
+  const byLabel = new Map(P.labels.map((l, i) => [norm(l), i]).filter(([l]) => labelCount.get(l) === 1));
+  const toTruth = new Int32Array(ds.nodes.count).fill(-1);
+  const by = { key: 0, platformId: 0, label: 0 };
+  for (let k = 0; k < ds.nodes.count; k++) {
+    const key = String(ds.nodes.keys[k]).toLowerCase();
+    let i = byKey.get(key);
+    if (i !== undefined) { toTruth[k] = i; by.key++; continue; }
+    const tail = key.slice(key.indexOf(':') + 1);
+    i = byPid.get(tail) ?? byKey.get(tail);
+    if (i === undefined) for (const v of Object.values(ds.nodes.platformIds?.[k] || {})) { i = byPid.get(String(v).toLowerCase()); if (i !== undefined) break; }
+    if (i !== undefined) { toTruth[k] = i; by.platformId++; continue; }
+    i = byLabel.get(norm(ds.nodes.labels[k]));
+    if (i !== undefined) { toTruth[k] = i; by.label++; }
+  }
+  let matched = 0; for (const x of toTruth) if (x >= 0) matched++;
+  return { toTruth, matched, by };
+}
+
+// Values per dataset node from an array indexed by network node (net) or dataset node.
+function perDsNode(ctx, arr) {
+  const { ds, net } = ctx;
+  if (!arr) return null;
+  if (net && net.nodeIds && arr.length === net.nodeIds.length) {
+    const out = new Array(ds.nodes.count).fill(undefined);
+    for (let k = 0; k < net.nodeIds.length; k++) out[net.nodeIds[k]] = arr[k];
+    return out;
+  }
+  return Array.from(arr);
+}
+
+function add(ctx, c) { ctx.checks.push({ baseline: null, details: undefined, ...c }); }
+const r3 = x => (x == null || !Number.isFinite(x) ? null : Math.round(x * 1000) / 1000);
+
+// ---- 1. tie coverage: how much of the true network the observed data shows ----
+
+function coverage(ctx) {
+  const { truth, ds, map } = ctx;
+  const T = truth.ties;
+  const n = truth.people.count;
+  const key = (a, b) => (T.directed ? a * n + b : Math.min(a, b) * n + Math.max(a, b));
+  const truePairs = new Set();
+  for (let i = 0; i < T.count; i++) truePairs.add(key(T.a[i], T.b[i]));
+  const seen = new Set();
+  let observedPairs = 0, onTrue = 0;
+  const e = ds.events;
+  for (let i = 0; i < e.count; i++) {
+    const a = map.toTruth[e.actor[i]];
+    if (a < 0) continue;
+    for (let j = e.tOff[i]; j < e.tOff[i + 1]; j++) {
+      const b = map.toTruth[e.tgt[j]];
+      if (b < 0 || b === a) continue;
+      const k = key(a, b);
+      if (seen.has(k)) continue;
+      seen.add(k); observedPairs++;
+      if (truePairs.has(k) || (T.directed && truePairs.has(key(b, a)))) onTrue++;
+    }
+  }
+  let coveredTrue = 0;
+  for (const k of truePairs) if (seen.has(k)) coveredTrue++;
+  const cov = truePairs.size ? coveredTrue / truePairs.size : null;
+  const prec = observedPairs ? onTrue / observedPairs : null;
+  ctx.details.coverage = { trueTies: truePairs.size, observedPairs, observedOnTrueTies: onTrue, trueTiesSeen: coveredTrue };
+  const view = truth.observation?.view;
+  add(ctx, {
+    id: 'tie-coverage', name: 'True ties visible in the data', area: 'observation',
+    planted: `${truePairs.size} true ties (${view} view)`, recovered: `${coveredTrue} seen; ${observedPairs} observed pairs, ${onTrue} of them true ties`,
+    metric: 'share of true ties seen', value: r3(cov), baseline: null,
+    verdict: cov == null ? 'not checked' : view === 'full' ? (cov >= 0.7 ? 'recovered' : cov >= 0.4 ? 'partly' : 'missed') : 'not checked',
+    says: cov == null ? 'No true ties to compare.' : `${pct(cov)} of true ties show up as at least one interaction; ${prec == null ? 'no' : pct(prec)} of observed pairs are true ties.${view !== 'full' ? ` This is a ${view} view, so most of the network is expected to be invisible.` : ''}`,
+  });
+}
+
+// ---- 2. communities ------------------------------------------------------------
+
+function communities(ctx) {
+  const { truth, map, results } = ctx;
+  const mem = perDsNode(ctx, results.membership);
+  const planted = truth.communities?.membership;
+  if (!mem || !planted) {
+    add(ctx, { id: 'communities', name: 'Planted communities', area: 'structure', planted: `${truth.communities?.names?.length ?? 0} groups`, recovered: null, metric: 'NMI', value: null, verdict: 'not checked', says: 'No community membership was given.' });
+    return;
+  }
+  const xs = [], ys = [];
+  for (let k = 0; k < mem.length; k++) {
+    const i = map.toTruth[k];
+    if (i < 0 || mem[k] == null || mem[k] < 0 || planted[i] < 0) continue;
+    xs.push(planted[i]); ys.push(mem[k]);
+  }
+  const nmi = NMI(xs, ys), ari = ARI(xs, ys);
+  const kFound = new Set(ys).size, kPlanted = new Set(xs).size;
+  ctx.details.communities = { nmi, ari, compared: xs.length, found: kFound, planted: kPlanted };
+  add(ctx, {
+    id: 'communities', name: `Planted communities (${truth.communities.attr})`, area: 'structure',
+    planted: `${kPlanted} groups`, recovered: `${kFound} communities over ${xs.length} people`,
+    metric: 'NMI (ARI)', value: r3(nmi), baseline: 0,
+    verdict: xs.length < 5 ? 'not checked' : nmi >= 0.6 ? 'recovered' : nmi >= 0.3 ? 'partly' : 'missed',
+    says: `Detected communities match the planted ${truth.communities.attr} groups with NMI ${r3(nmi)} and ARI ${r3(ari)} (1 = identical, 0 = unrelated).`,
+  });
+}
+
+// Dense integer codes for arbitrary labels.
+function codes(v) { const m = new Map(); return { c: v.map(x => { let k = m.get(x); if (k === undefined) { k = m.size; m.set(x, k); } return k; }), k: m.size }; }
+
+function table(x, y) {
+  const X = codes(x), Y = codes(y);
+  const n = x.length;
+  const cx = new Float64Array(X.k), cy = new Float64Array(Y.k), cxy = new Map();
+  for (let i = 0; i < n; i++) {
+    cx[X.c[i]]++; cy[Y.c[i]]++;
+    const k = X.c[i] * Y.k + Y.c[i];
+    cxy.set(k, (cxy.get(k) || 0) + 1);
+  }
+  return { n, cx, cy, cxy, ky: Y.k };
+}
+
+// Normalized mutual information (arithmetic-mean normalization, as sklearn's default).
+export function NMI(x, y) {
+  if (!x.length) return NaN;
+  const { n, cx, cy, cxy, ky } = table(x, y);
+  const H = arr => { let h = 0; for (const c of arr) if (c) { const p = c / n; h -= p * Math.log(p); } return h; };
+  let I = 0;
+  for (const [k, c] of cxy) { const a = Math.floor(k / ky), b = k % ky; I += (c / n) * Math.log((c * n) / (cx[a] * cy[b])); }
+  const hx = H(cx), hy = H(cy);
+  if (hx === 0 && hy === 0) return 1;
+  return hx + hy > 0 ? (2 * I) / (hx + hy) : 0;
+}
+
+// Adjusted Rand index.
+export function ARI(x, y) {
+  if (x.length < 2) return NaN;
+  const { n, cx, cy, cxy } = table(x, y);
+  const c2 = v => (v * (v - 1)) / 2;
+  let sij = 0, sa = 0, sb = 0;
+  for (const v of cxy.values()) sij += c2(v);
+  for (const v of cx) sa += c2(v);
+  for (const v of cy) sb += c2(v);
+  const exp = (sa * sb) / c2(n), max = (sa + sb) / 2;
+  return max === exp ? 1 : (sij - exp) / (max - exp);
+}
+
+// ---- 3. bridges ------------------------------------------------------------------
+
+function bridges(ctx) {
+  const { truth, map, results } = ctx;
+  const brokers = truth.bridges?.brokers || [];
+  const bt = perDsNode(ctx, results.nodeMetrics?.betweenness);
+  if (!brokers.length) return;
+  if (!bt) {
+    add(ctx, { id: 'bridges', name: 'Planted brokers', area: 'structure', planted: `${brokers.length} brokers`, recovered: null, metric: 'precision@k', value: null, verdict: 'not checked', says: 'No betweenness scores were given.' });
+    return;
+  }
+  const set = new Set(brokers);
+  const ranked = [];
+  for (let k = 0; k < bt.length; k++) if (bt[k] != null && Number.isFinite(bt[k]) && map.toTruth[k] >= 0) ranked.push([bt[k], map.toTruth[k]]);
+  ranked.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  const k = brokers.length;
+  const top = ranked.slice(0, k).map(x => x[1]);
+  const top2 = ranked.slice(0, 2 * k).map(x => x[1]);
+  const hit = top.filter(i => set.has(i)).length, hit2 = top2.filter(i => set.has(i)).length;
+  const p = k ? hit / k : null, base = ranked.length ? k / ranked.length : null;
+  const ranks = brokers.map(b => ranked.findIndex(x => x[1] === b) + 1).filter(x => x > 0);
+  ctx.details.bridges = { k, hitsAtK: hit, hitsAt2K: hit2, brokerRanks: ranks, ranked: ranked.length };
+  add(ctx, {
+    id: 'bridges', name: 'Planted brokers rank high on betweenness', area: 'structure',
+    planted: `${k} brokers`, recovered: `${hit} in the top ${k}, ${hit2} in the top ${2 * k}`,
+    metric: 'precision@k', value: r3(p), baseline: r3(base),
+    verdict: p >= 0.5 ? 'recovered' : p >= 2 * base && hit > 0 ? 'partly' : 'missed',
+    says: `${hit} of the ${k} planted brokers are among the ${k} people with the highest betweenness (chance alone: about ${r3(base * k)}). Median broker rank ${median(ranks) ?? 'n/a'} of ${ranked.length}.`,
+  });
+}
+
+// ---- 4. affect --------------------------------------------------------------------
+
+const sia = vader.SentimentIntensityAnalyzer;
+
+function measuredAffect(ctx) {
+  if (ctx._affect) return ctx._affect;
+  const { ds, map, truth } = ctx;
+  const e = ds.events;
+  const rows = [];
+  const msgType = EVENT_TYPES.indexOf('message');
+  const vis = c => (c >= 0 ? VISIBILITY[ds.contexts.visibility[c]] : 'unknown');
+  for (let i = 0; i < e.count; i++) {
+    if (e.type[i] !== msgType || !e.text[i]) continue;
+    const p = map.toTruth[e.actor[i]];
+    if (p < 0) continue;
+    const g = truth.communities?.membership?.[p] ?? -1;
+    rows.push({ p, g, t: e.t[i], s: sia.polarity_scores(e.text[i]).compound, vis: vis(e.context[i]) });
+  }
+  ctx._affect = rows;
+  return rows;
+}
+
+function affectChecks(ctx) {
+  const { truth, results } = ctx;
+  const exps = truth.affect?.expectations || [];
+  if (!exps.length) return;
+  const given = normalizeAffect(results.affect, truth);
+  const rows = measuredAffect(ctx);
+  if (!rows.length && !given) {
+    for (const x of exps) add(ctx, { id: 'affect-' + x.kind, name: x.description, area: 'content', planted: `difference ${x.plantedDelta}`, recovered: null, metric: 'mean VADER compound', value: null, verdict: 'not checked', says: 'The dataset has no message text (content: none), so affect cannot be measured.' });
+    return;
+  }
+  for (const x of exps) {
+    if (x.kind === 'group-difference') {
+      let hi, lo, src = 'VADER on the dataset text', test = null;
+      if (given && given.has(x.high) && given.has(x.low)) { hi = given.get(x.high); lo = given.get(x.low); src = 'the given affect results'; }
+      else { const A = rows.filter(r => r.g === x.high).map(r => r.s), B = rows.filter(r => r.g === x.low).map(r => r.s); hi = mean(A); lo = mean(B); test = welch(A, B); }
+      const d = hi - lo;
+      const ok = d > 0.03 && (!test || test.p < 0.05);
+      add(ctx, { id: 'affect-groups', name: x.description, area: 'content', planted: `valence gap ${x.plantedDelta}`, recovered: `measured gap ${r3(d)}`, metric: 'mean compound difference', value: r3(d), baseline: 0,
+        verdict: ok ? 'recovered' : d > 0 ? 'partly' : 'missed',
+        says: `Measured with ${src}: ${x.highName} ${r3(hi)} vs ${x.lowName} ${r3(lo)}${test ? ` (Welch p = ${r3(test.p)})` : ''}. The planted direction is ${ok ? 'clearly' : d > 0 ? 'weakly' : 'not'} visible.` });
+    } else if (x.kind === 'public-private') {
+      const A = rows.filter(r => r.vis === 'public').map(r => r.s), B = rows.filter(r => r.vis !== 'public' && r.vis !== 'unknown').map(r => r.s);
+      if (!A.length || !B.length) { add(ctx, { id: 'affect-visibility', name: x.description, area: 'content', planted: `gap ${x.plantedDelta}`, recovered: null, metric: 'public minus private', value: null, verdict: 'not checked', says: 'The observed data has only one of public or private messages.' }); continue; }
+      const d = mean(A) - mean(B), test = welch(A, B);
+      const same = Math.sign(d) === Math.sign(x.plantedDelta) && test.p < 0.05;
+      add(ctx, { id: 'affect-visibility', name: x.description, area: 'content', planted: `public minus private ${x.plantedDelta}`, recovered: `measured ${r3(d)}`, metric: 'public minus private compound', value: r3(d), baseline: 0,
+        verdict: same ? 'recovered' : Math.sign(d) === Math.sign(x.plantedDelta) ? 'partly' : 'missed',
+        says: `Public messages average ${r3(mean(A))}, private ${r3(mean(B))} (Welch p = ${r3(test.p)}).` });
+    } else if (x.kind === 'shift') {
+      const who = x.people ? new Set(x.people) : null;
+      const sel = rows.filter(r => (who ? who.has(r.p) : r.g === x.group));
+      const until = x.until ?? Infinity;
+      const before = sel.filter(r => r.t < x.t).map(r => r.s), after = sel.filter(r => r.t >= x.t && r.t < until).map(r => r.s);
+      if (before.length < 5 || after.length < 5) { add(ctx, { id: 'affect-shift', name: x.description, area: 'content', planted: `shift ${x.plantedDelta} at ${iso(x.t)}`, recovered: null, metric: 'after minus before', value: null, verdict: 'not checked', says: 'Too few messages from the affected people on one side of the shift.' }); continue; }
+      const d = mean(after) - mean(before), test = welch(after, before);
+      const ok = Math.sign(d) === Math.sign(x.plantedDelta) && test.p < 0.05;
+      add(ctx, { id: 'affect-shift', name: x.description, area: 'content', planted: `shift ${x.plantedDelta} at ${iso(x.t)}`, recovered: `measured ${r3(d)}`, metric: 'after minus before compound', value: r3(d), baseline: 0,
+        verdict: ok ? 'recovered' : Math.sign(d) === Math.sign(x.plantedDelta) ? 'partly' : 'missed',
+        says: `Mean sentiment of the affected people moves from ${r3(mean(before))} to ${r3(mean(after))} (Welch p = ${r3(test.p)}).` });
+    }
+  }
+}
+
+function normalizeAffect(a, truth) {
+  if (!a) return null;
+  const names = truth.communities?.names || [];
+  const idx = new Map(names.map((n, i) => [norm(n), i]));
+  const out = new Map();
+  const put = (k, v) => { const i = typeof k === 'number' && k < names.length ? k : idx.get(norm(k)); if (i !== undefined && Number.isFinite(v)) out.set(i, v); };
+  const val = o => o.mean ?? o.compound ?? o.score ?? o.valence ?? o.value;
+  const list = Array.isArray(a) ? a : Array.isArray(a.groups) ? a.groups : null;
+  if (list) for (const o of list) put(o.group ?? o.key ?? o.name ?? o.value, val(o));
+  else if (a.byGroup) for (const [k, v] of Object.entries(a.byGroup)) put(k, typeof v === 'object' ? val(v) : v);
+  return out.size ? out : null;
+}
+
+// ---- 5. temporal shifts -------------------------------------------------------------
+
+function shiftChecks(ctx) {
+  const { truth, results } = ctx;
+  const planted = (truth.events || []).filter(e => ['departure', 'reorg', 'silo', 'quiet', 'consolidation', 'bot-campaign', 'layoff'].includes(e.type) && e.t > truth.timespan.start && e.t < truth.timespan.end);
+  if (!planted.length) return;
+  const raw = results.shifts?.shifts || results.shifts?.changePoints || results.shifts;
+  const det = Array.isArray(raw) ? raw.map(s => (typeof s === 'number' ? s : Date.parse(s.t ?? s.time ?? s.date ?? s.at ?? s.window) || s.t || s.time)).filter(Number.isFinite) : null;
+  const tol = Math.max(7 * DAY, 0.1 * (truth.timespan.end - truth.timespan.start));
+  // de-duplicate planted events at the same time (e.g. several departures)
+  const uniq = [];
+  for (const e of planted) if (!uniq.some(u => Math.abs(u.t - e.t) < DAY && u.type === e.type)) uniq.push(e);
+  for (const e of uniq) {
+    if (!det) { add(ctx, { id: 'shift-' + e.type, name: `Planted ${e.type} at ${iso(e.t)}`, area: 'time', planted: e.description, recovered: null, metric: 'days from nearest detected shift', value: null, verdict: 'not checked', says: 'No detected shifts were given.' }); continue; }
+    const near = det.length ? Math.min(...det.map(t => Math.abs(t - e.t))) : Infinity;
+    add(ctx, { id: 'shift-' + e.type, name: `Planted ${e.type} at ${iso(e.t)}`, area: 'time', planted: e.description, recovered: Number.isFinite(near) ? `nearest detected shift ${r3(near / DAY)} days away` : 'no shift detected',
+      metric: 'days to nearest detected shift', value: Number.isFinite(near) ? r3(near / DAY) : null, baseline: r3(tol / DAY),
+      verdict: near <= tol ? 'recovered' : near <= 2 * tol ? 'partly' : 'missed',
+      says: near <= tol ? `A shift was detected within ${Math.round(near / DAY)} days of the planted ${e.type}.` : `No detected shift falls within ${Math.round(tol / DAY)} days of the planted ${e.type}.` });
+  }
+}
+
+// ---- 6. diffusion -----------------------------------------------------------------
+
+function diffusionChecks(ctx) {
+  const { truth, ds, map, results } = ctx;
+  const cascades = truth.diffusion?.cascades || [];
+  if (!cascades.length) return;
+  const T = truth.ties, n = truth.people.count;
+  const nbrs = Array.from({ length: n }, () => []);
+  for (let i = 0; i < T.count; i++) { nbrs[T.a[i]].push(T.b[i]); nbrs[T.b[i]].push(T.a[i]); }
+  const given = normalizeDiffusion(results.diffusion);
+  const e = ds.events;
+  for (const c of cascades) {
+    // observed first use per person from the dataset text (independent of any analysis)
+    const re = new RegExp(`\\b${c.term}\\b`, 'i');
+    const first = new Map();
+    for (let i = 0; i < e.count; i++) {
+      const tx = e.text[i];
+      if (!tx || !re.test(tx)) continue;
+      const p = map.toTruth[e.actor[i]];
+      if (p < 0) continue;
+      if (!(first.get(p) <= e.t[i])) first.set(p, e.t[i]);
+    }
+    const planted = new Map(c.adopters.map(a => [a.node, a.t]));
+    let detected = first;
+    let src = 'term use in the dataset text';
+    if (given && given.has(c.term)) {
+      detected = new Map();
+      for (const a of given.get(c.term)) { const p = map.toTruth[a.node] ?? -1; if (p >= 0) detected.set(p, a.t); }
+      src = 'the given diffusion results';
+    }
+    if (!detected.size) {
+      add(ctx, { id: 'diffusion-' + c.term, name: `Spread of "${c.term}"`, area: 'diffusion', planted: `${c.adopters.length} adopters from ${truth.people.labels[c.seed]}`, recovered: 'no users found', metric: 'adopter recall', value: 0, verdict: ctx.ds.events.text.some(Boolean) ? 'missed' : 'not checked', says: ctx.ds.events.text.some(Boolean) ? 'Nobody in the observed data uses the term.' : 'The dataset has no text.' });
+      continue;
+    }
+    let tp = 0;
+    for (const p of detected.keys()) if (planted.has(p)) tp++;
+    // recall against the people who actually wrote the term somewhere (not every adopter writes)
+    const writers = new Set((c.users || []).map(u => u.node));
+    let tpW = 0; for (const p of detected.keys()) if (writers.has(p)) tpW++;
+    const recall = tpW / Math.max(1, writers.size);
+    const precision = tp / detected.size;
+    // Spread along ties: share of later users who have a true neighbour that used the term earlier,
+    // against the same share when first-use times are shuffled among the users.
+    const order = [...detected].sort((a, b) => a[1] - b[1]);
+    const tieShare = ord => {
+      let ok = 0, tot = 0;
+      const when = new Map(ord);
+      for (let k = 1; k < ord.length; k++) { tot++; const [p, t] = ord[k]; if (nbrs[p].some(q => when.has(q) && when.get(q) < t)) ok++; }
+      return tot ? ok / tot : NaN;
+    };
+    const obsShare = tieShare(order);
+    const rng = new Rng('diffusion-null:' + c.term);
+    let nullSum = 0, reps = 0;
+    const people = order.map(x => x[0]), times = order.map(x => x[1]);
+    for (let k = 0; k < 100; k++) { const sh = rng.shuffle(times.slice()); const o = people.map((p, j) => [p, sh[j]]).sort((a, b) => a[1] - b[1]); const s = tieShare(o); if (Number.isFinite(s)) { nullSum += s; reps++; } }
+    const nullShare = reps ? nullSum / reps : NaN;
+    const seedRank = order.findIndex(x => x[0] === c.seed);
+    const seedFirst = seedRank === 0;
+    const seedEarly = seedRank >= 0 && seedRank < Math.max(2, Math.ceil(order.length * 0.05));
+    const rho = spearman([...detected].filter(([p]) => planted.has(p)).map(([p, t]) => [planted.get(p), t]));
+    ctx.details['diffusion:' + c.term] = { planted: planted.size, writers: c.users?.length ?? null, detected: detected.size, truePositives: tp, tieShare: obsShare, nullTieShare: nullShare, seedFirst, spearman: rho };
+    const along = obsShare > nullShare + 0.05;
+    if (detected.size < 3) {
+      add(ctx, { id: 'diffusion-' + c.term, name: `Spread of "${c.term}"`, area: 'diffusion', planted: `${planted.size} adopters from seed ${truth.people.labels[c.seed]}`, recovered: `${detected.size} users found`, metric: 'users found', value: detected.size, verdict: 'not checked', says: 'Too few people use the term in the observed data to judge how it spread.' });
+      continue;
+    }
+    add(ctx, {
+      id: 'diffusion-' + c.term, name: `Spread of "${c.term}" along true ties`, area: 'diffusion',
+      planted: `${planted.size} adopters from seed ${truth.people.labels[c.seed]}`, recovered: `${detected.size} users found (${src}), ${tp} of them planted adopters`,
+      metric: 'share of later users with an earlier-using true neighbour', value: r3(obsShare), baseline: r3(nullShare),
+      verdict: precision >= 0.8 && along && seedEarly ? 'recovered' : precision >= 0.5 && (along || seedEarly) ? 'partly' : 'missed',
+      says: `${seedFirst ? 'The seed is the first user' : seedEarly ? `The seed is user number ${seedRank + 1}` : 'The planted seed is not among the first users found'}; ${pct(obsShare)} of later users had a tied earlier user (${pct(nullShare)} expected if timing were random). Precision ${r3(precision)}, recall of writers ${r3(recall)}${Number.isFinite(rho) ? `, adoption-time rank correlation ${r3(rho)}` : ''}.`,
+    });
+  }
+}
+
+function normalizeDiffusion(d) {
+  if (!d) return null;
+  const out = new Map();
+  const list = Array.isArray(d) ? d : Array.isArray(d.cascades) ? d.cascades : null;
+  const adopt = a => (a || []).map(x => ({ node: x.node ?? x.id ?? x.index, t: x.t ?? x.time ?? x.firstUse }));
+  if (list) for (const c of list) out.set(c.term, adopt(c.adopters || c.users));
+  else for (const [term, v] of Object.entries(d)) out.set(term, adopt(v.adopters || v.users || v));
+  return out.size ? out : null;
+}
+
+// ---- 7. surveys: reported vs true ties ------------------------------------------
+
+function surveyChecks(ctx) {
+  const { truth, ds, map } = ctx;
+  const rec = truth.recall;
+  if (!rec) return;
+  const T = truth.ties, n = truth.people.count;
+  const N = truth.params?.size ?? n;
+  const has = new Set();
+  for (let i = 0; i < T.count; i++) { has.add(T.a[i] * n + T.b[i]); has.add(T.b[i] * n + T.a[i]); }
+  const strong = new Set();
+  for (let i = 0; i < T.count; i++) if (T.w[i] >= 2) { strong.add(T.a[i] * n + T.b[i]); strong.add(T.b[i] * n + T.a[i]); }
+  const e = ds.events;
+  const decl = EVENT_TYPES.indexOf('declared');
+  const declRole = ROLES.indexOf('declared');
+  // A nomination is made in the respondent's own interview (or the roster survey);
+  // other declared ties in an interview are the respondent's perception of alter-alter ties.
+  const ownKey = new Map();
+  ds.contexts.keys.forEach((k, c) => { const m = /interview-(\d+)$/.exec(k); if (m) ownKey.set(c, +m[1]); });
+  const isNomination = (i, a) => !ownKey.has(e.context[i]) || ownKey.get(e.context[i]) === a;
+  if (rec.variant === 'perceived') {
+    // per informant: context = one informant's report
+    const byCtx = new Map();
+    for (let i = 0; i < e.count; i++) {
+      if (e.type[i] !== decl) continue;
+      const a = map.toTruth[e.actor[i]];
+      for (let j = e.tOff[i]; j < e.tOff[i + 1]; j++) {
+        if (e.role[j] !== declRole) continue;
+        const b = map.toTruth[e.tgt[j]];
+        if (a < 0 || b < 0) continue;
+        if (!byCtx.has(e.context[i])) byCtx.set(e.context[i], new Set());
+        byCtx.get(e.context[i]).add(Math.min(a, b) * n + Math.max(a, b));
+      }
+    }
+    let trueRoster = 0;
+    for (let i = 0; i < T.count; i++) if (T.a[i] < N && T.b[i] < N) trueRoster++;
+    const accs = [];
+    for (const [, set] of byCtx) { let hit = 0; for (const k of set) if (has.has(k)) hit++; accs.push({ recall: hit / Math.max(1, trueRoster), precision: hit / Math.max(1, set.size) }); }
+    // consensus (locally aggregated would need self-reports; use majority of informants)
+    const votes = new Map();
+    for (const [, set] of byCtx) for (const k of set) votes.set(k, (votes.get(k) || 0) + 1);
+    const need = Math.ceil(byCtx.size / 2);
+    let cHit = 0, cAll = 0;
+    for (const [k, v] of votes) if (v >= need) { cAll++; if (has.has(k)) cHit++; }
+    const consRecall = cHit / Math.max(1, trueRoster), consPrec = cHit / Math.max(1, cAll);
+    ctx.details.survey = { variant: 'perceived', informants: accs, consensus: { recall: consRecall, precision: consPrec } };
+    add(ctx, { id: 'survey-perceived', name: 'Perceived networks vs true network', area: 'survey', planted: `${trueRoster} true roster ties, ${byCtx.size} informants`,
+      recovered: `informant recall ${r3(mean(accs.map(a => a.recall)))}, precision ${r3(mean(accs.map(a => a.precision)))}; majority consensus recall ${r3(consRecall)}, precision ${r3(consPrec)}`,
+      metric: 'consensus recall', value: r3(consRecall), baseline: r3(mean(accs.map(a => a.recall))),
+      verdict: consRecall >= 0.5 && consPrec >= 0.7 ? 'recovered' : consPrec >= 0.5 ? 'partly' : 'missed',
+      says: `Single informants see ${pct(mean(accs.map(a => a.recall)))} of true ties on average; agreeing informants (majority) see ${pct(consRecall)} with ${pct(consPrec)} of their reported ties real.` });
+    return;
+  }
+  // ego interviews and roster: nominations by respondents
+  let tpS = 0, tpW = 0, fp = 0, outside = 0, total = 0;
+  const respondents = new Set();
+  for (let i = 0; i < e.count; i++) {
+    if (e.type[i] !== decl) continue;
+    const a = map.toTruth[e.actor[i]];
+    if (a < 0 || a >= N || !isNomination(i, a)) continue;
+    for (let j = e.tOff[i]; j < e.tOff[i + 1]; j++) {
+      const b = map.toTruth[e.tgt[j]];
+      if (b < 0) { outside++; total++; continue; }
+      if (a === b || !isNomination(i, a)) continue;
+      respondents.add(a);
+      total++;
+      const k = a * n + b;
+      if (b >= N) { outside++; continue; }
+      if (has.has(k)) { if (strong.has(k)) tpS++; else tpW++; } else fp++;
+    }
+  }
+  let trueS = 0, trueW = 0;
+  for (const a of respondents) for (let i = 0; i < T.count; i++) {
+    const x = T.a[i], y = T.b[i];
+    if ((x === a && y < N) || (y === a && x < N)) { if (T.w[i] >= 2) trueS++; else trueW++; }
+  }
+  const recS = trueS ? tpS / trueS : null, recW = trueW ? tpW / trueW : null;
+  const prec = total ? (tpS + tpW) / Math.max(1, total - outside) : null;
+  ctx.details.survey = { variant: rec.variant, respondents: respondents.size, recallStrong: recS, recallWeak: recW, precision: prec, falsePositives: fp, outsideRoster: outside, planted: rec.stats };
+  add(ctx, { id: 'survey-recall', name: 'Reported ties vs true ties', area: 'survey', planted: `forget weak ${rec.params.forgetWeak}, strong ${rec.params.forgetStrong}, max names ${rec.params.maxNames || 'none'}`,
+    recovered: `recall strong ${r3(recS)}, weak ${r3(recW)}; precision ${r3(prec)}; ${outside} names outside the roster`,
+    metric: 'recall strong minus weak', value: recS != null && recW != null ? r3(recS - recW) : null, baseline: 0,
+    verdict: recS != null && recW != null && recS > recW ? 'recovered' : 'partly',
+    says: `Respondents reported ${pct(recS)} of their strong ties and ${pct(recW)} of their weak ties; ${pct(prec)} of named roster people are true ties. Weak ties are under-reported, as planted.` });
+}
+
+// ---- small stats ---------------------------------------------------------------
+
+function mean(a) { if (!a.length) return NaN; let s = 0; for (const x of a) s += x; return s / a.length; }
+function variance(a, m) { let s = 0; for (const x of a) s += (x - m) ** 2; return a.length > 1 ? s / (a.length - 1) : 0; }
+function median(a) { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; }
+function pct(x) { return x == null || !Number.isFinite(x) ? 'n/a' : `${Math.round(x * 100)}%`; }
+function iso(t) { return new Date(t).toISOString().slice(0, 10); }
+
+// Welch t-test with a normal approximation to the p-value (fine for the sample sizes here).
+export function welch(A, B) {
+  const ma = mean(A), mb = mean(B);
+  const va = variance(A, ma), vb = variance(B, mb);
+  const se = Math.sqrt(va / Math.max(1, A.length) + vb / Math.max(1, B.length));
+  if (!(se > 0)) return { t: 0, p: 1 };
+  const t = (ma - mb) / se;
+  return { t, p: 2 * (1 - phi(Math.abs(t))) };
+}
+function phi(x) { // standard normal CDF (Abramowitz-Stegun 26.2.17)
+  const t = 1 / (1 + 0.2316419 * x);
+  const d = 0.3989423 * Math.exp(-x * x / 2);
+  return 1 - d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+}
+function spearman(pairs) {
+  if (pairs.length < 3) return NaN;
+  const rank = vals => { const idx = vals.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]); const r = new Array(vals.length); idx.forEach(([, i], k) => { r[i] = k; }); return r; };
+  const ra = rank(pairs.map(p => p[0])), rb = rank(pairs.map(p => p[1]));
+  const ma = mean(ra), mb = mean(rb);
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < ra.length; i++) { num += (ra[i] - ma) * (rb[i] - mb); da += (ra[i] - ma) ** 2; db += (rb[i] - mb) ** 2; }
+  return da && db ? num / Math.sqrt(da * db) : NaN;
+}
