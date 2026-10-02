@@ -265,8 +265,11 @@ function SigmaCanvas({ ref_, data, ds, colouring, sizes, selection, focusCat, ru
       labelSize: 12,
       labelWeight: '500',
       labelColor: { color: '#C6D3DE' },
-      labelDensity: 0.6,
-      labelGridCellSize: 90,
+      // Sigma shows at most labelDensity labels per grid cell; names are wide,
+      // so fewer, larger cells keep labels from running into each other.
+      // Hovered and selected people are always labelled.
+      labelDensity: 0.25,
+      labelGridCellSize: 140,
       labelRenderedSizeThreshold: n > 1000 ? 8 : 7,
       defaultEdgeType: 'line',
       defaultEdgeColor: edgeBase,
