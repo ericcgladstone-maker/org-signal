@@ -317,7 +317,6 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
     if (how === 'most-frequent-participant') builder.warn('ego-guessed', `The calendar owner was guessed as ${ego} (the most frequent participant). Set the "Calendar owner address" option if this is wrong.`);
   } else builder.warn('ego-unknown', 'Could not tell whose calendar this is. Set the "Calendar owner address" option.');
 
-  const VIS = ['public', 'private', 'direct', 'group', 'unknown'];
   const ctxVis = new Map();
   rows.sort((a, b) => a.o.start - b.o.start);
   for (let ri = 0; ri < rows.length; ri++) {
