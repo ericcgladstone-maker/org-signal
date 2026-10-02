@@ -81,6 +81,134 @@ export function eventsBetween(sorted, start, end) {
   return sorted.order.subarray(lowerBound(sorted.times, start), lowerBound(sorted.times, end));
 }
 
+// ---- window and range choice ------------------------------------------------------
+
+const UNITS = ['day', 'week', 'month'];
+function countWindows(tMin, tMax, unit) {
+  if (!(tMax >= tMin)) return 0;
+  if (unit === 'month') { const a = new Date(tMin), b = new Date(tMax); return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth() + 1; }
+  const size = unit === 'day' ? DAY : 7 * DAY;
+  return Math.floor((tMax - floorTo(tMin, unit)) / size) + 1;
+}
+
+// The window for a span. 'auto' takes weeks when the span gives 12 to 260 of
+// them (enough for the 8-window shift baseline, few enough to read), days for
+// shorter spans and months for longer ones. An explicit unit that would exceed
+// maxWindows is coarsened to the next unit that fits rather than refused: a
+// personal export with one 2008 connection date should still get a Time view.
+// -> { window, count, requested, reason | null }
+export function chooseWindow(tMin, tMax, { window = 'auto', maxWindows = 520 } = {}) {
+  const fits = (u) => countWindows(tMin, tMax, u) <= maxWindows;
+  let unit = window;
+  let reason = null;
+  if (window === 'auto') {
+    const weeks = countWindows(tMin, tMax, 'week');
+    unit = weeks < 12 ? 'day' : weeks <= 260 ? 'week' : 'month';
+  } else if (!UNITS.includes(window)) return { window, count: makeWindows(tMin, tMax, window).length, requested: window, reason: null };
+  if (!fits(unit)) {
+    const coarser = UNITS.slice(UNITS.indexOf(unit) + 1).find(fits);
+    const n = countWindows(tMin, tMax, unit);
+    if (coarser) { reason = `${n} ${unit} windows would exceed the limit of ${maxWindows}; using ${coarser}s.`; unit = coarser; }
+    else {
+      // Beyond 520 months: equal fixed-length windows.
+      const size = Math.ceil((tMax - tMin + 1) / maxWindows / DAY) * DAY;
+      reason = `${n} ${unit} windows would exceed the limit of ${maxWindows}; using ${Math.round(size / DAY)}-day windows.`;
+      unit = size;
+    }
+  }
+  return { window: unit, count: typeof unit === 'number' ? Math.ceil((tMax - tMin + 1) / unit) : countWindows(tMin, tMax, unit), requested: window, reason };
+}
+
+// The period where the data actually are. Personal exports mix a few very old
+// dates (LinkedIn "Connected On" back to 2008) with months of dense activity;
+// plotted together the dense part is a sliver and the old dates create fake
+// shifts. Returns the shortest whole-day interval holding `share` of the dated
+// events when it is at most `maxSpanShare` of the full span, else null (the
+// data are spread evenly enough to use everything).
+// -> { start, end (exclusive), share, outsideBefore, outsideAfter, fullStart, fullEnd } | null
+export function suggestTimeRange(ds, { share = 0.95, maxSpanShare = 0.5 } = {}) {
+  const t = [];
+  for (let i = 0; i < ds.events.count; i++) { const x = ds.events.t[i]; if (Number.isFinite(x)) t.push(x); }
+  if (t.length < 20) return null;
+  t.sort((a, b) => a - b);
+  const n = t.length, k = Math.max(1, Math.ceil(share * n));
+  let best = 0;
+  for (let i = 1; i + k - 1 < n; i++) if (t[i + k - 1] - t[i] < t[best + k - 1] - t[best]) best = i;
+  const lo = t[best], hi = t[best + k - 1];
+  const full = t[n - 1] - t[0];
+  if (!(full > 0) || hi - lo > maxSpanShare * full) return null;
+  const start = floorTo(lo, 'day'), end = floorTo(hi, 'day') + DAY;
+  let before = 0, after = 0;
+  for (const x of t) { if (x < start) before++; else if (x >= end) after++; }
+  return { start, end, share: (n - before - after) / n, outsideBefore: before, outsideAfter: after, fullStart: t[0], fullEnd: t[n - 1] };
+}
+
+// ---- source coverage ----------------------------------------------------------------
+
+// When each source starts and ends. An export's first and last days are not
+// changes in behaviour, but every series built from it jumps there, so shift
+// detection and before/after comparisons need to know where they are.
+// `material` marks sources large enough to move whole-network series: at
+// least `minShare` of the dated events in [start, end).
+// -> [{ id, format, label, start, end, events, eventsInRange, share, material }]
+export function sourceCoverage(ds, { start = null, end = null, minShare = 0.05 } = {}) {
+  const S = ds.meta?.sources || [];
+  const lo = new Array(S.length).fill(Infinity), hi = new Array(S.length).fill(-Infinity);
+  const all = new Array(S.length).fill(0), inR = new Array(S.length).fill(0);
+  let total = 0;
+  const ev = ds.events;
+  for (let i = 0; i < ev.count; i++) {
+    const t = ev.t[i];
+    if (!Number.isFinite(t)) continue;
+    const s = ev.source[i];
+    if (s >= S.length) continue;
+    all[s]++;
+    if (t < lo[s]) lo[s] = t;
+    if (t > hi[s]) hi[s] = t;
+    if ((start == null || t >= start) && (end == null || t < end)) { inR[s]++; total++; }
+  }
+  return S.map((src, id) => ({
+    id, format: src.format, label: sourceLabel(src),
+    start: all[id] ? lo[id] : NaN, end: all[id] ? hi[id] : NaN,
+    events: all[id], eventsInRange: inR[id], share: total ? inR[id] / total : 0,
+    material: total > 0 && inR[id] / total >= minShare,
+  })).filter(s => s.events > 0);
+}
+
+const FORMAT_NAMES = { email: 'Email', slack: 'Slack', teams: 'Teams', linkedin: 'LinkedIn', 'x-archive': 'X archive', whatsapp: 'WhatsApp', imessage: 'iMessage', telegram: 'Telegram', discord: 'Discord', reddit: 'Reddit', calendar: 'Calendar', mastodon: 'Mastodon', bluesky: 'Bluesky', threads: 'Threads', meta: 'Facebook/Instagram', synthetic: 'Generated data' };
+export function sourceLabel(src) {
+  const base = src.title || src.name || FORMAT_NAMES[src.format] || String(src.format || 'Source').replace(/^./, c => c.toUpperCase());
+  const file = (src.fileNames || []).find(f => f && !/^_chat\.txt$/i.test(f));
+  return src.title || src.name || !file ? base : `${base} (${file.split('/').pop()})`;
+}
+
+// Per person, the sources that carry at least `minShare` of what they did or
+// received. A person seen mostly in one mailbox "drops" when the mailbox
+// export ends; that is the export, not the person. Cached per dataset.
+const nodeSourceCache = new WeakMap();
+export function nodeSources(ds, { minShare = 0.25 } = {}) {
+  const key = `${minShare}`;
+  let c = nodeSourceCache.get(ds);
+  if (c?.[key]) return c[key];
+  const ev = ds.events, N = ds.nodes.count;
+  const counts = Array.from({ length: N }, () => null);
+  const bump = (i, s) => { if (i < 0 || i >= N) return; const m = counts[i] ||= new Map(); m.set(s, (m.get(s) || 0) + 1); };
+  for (let i = 0; i < ev.count; i++) {
+    const s = ev.source[i];
+    bump(ev.actor[i], s);
+    for (let j = ev.tOff[i]; j < ev.tOff[i + 1]; j++) bump(ev.tgt[j], s);
+  }
+  const out = counts.map(m => {
+    if (!m) return [];
+    let tot = 0;
+    for (const v of m.values()) tot += v;
+    return [...m].filter(([, v]) => v / tot >= minShare).map(([s]) => s);
+  });
+  (c ||= {})[key] = out;
+  nodeSourceCache.set(ds, c);
+  return out;
+}
+
 // ---- timeSeries ------------------------------------------------------------------
 
 // opts: { window: 'day'|'week'|'month'|ms|{size, step}, step, start, end,
@@ -94,8 +222,9 @@ export function timeSeries(ds, settings, opts = {}) {
   const N = ds.nodes.count;
   if (!sorted.order.length) return { windows: [], node: {}, network: {}, ties: { formed: [], dissolved: [], persisted: [], jaccard: [] }, activity: { node: [], total: [] }, meta: { empty: true } };
   const tMin = start ?? sorted.times[0], tMax = (end != null ? end - 1 : sorted.times[sorted.times.length - 1]);
-  let windows = makeWindows(tMin, tMax, opts.window ?? 'week', opts.step ?? null);
   const maxW = opts.maxWindows ?? 520;
+  const choice = opts.step ? { window: opts.window ?? 'week', requested: opts.window ?? 'week', reason: null } : chooseWindow(tMin, tMax, { window: opts.window ?? 'week', maxWindows: maxW });
+  let windows = makeWindows(tMin, tMax, choice.window, opts.step ?? null);
   if (windows.length > maxW) throw new Error(`${windows.length} windows requested; the limit is ${maxW}. Use a longer window.`);
   const metrics = opts.metrics ?? ['degree', 'strength'];
   const node = Object.fromEntries(metrics.map(m => [m, []]));
@@ -167,7 +296,16 @@ export function timeSeries(ds, settings, opts = {}) {
     progress((wi + 1) / windows.length, `window ${wi + 1}/${windows.length}`);
   });
   if (groupInfo) activity.group = { attr: groupInfo.attr, values: groupInfo.values, sizes: groupInfo.sizes, counts: groupInfo.counts };
-  return { windows, node, network, ties, activity, meta: { window: opts.window ?? 'week', metrics, eventsInRange: sorted.order.length, undatedExcluded: countUndated(ds) } };
+  // Where sources start and end inside the range, for shift suppression.
+  // Node series only care about the sources that carry that person.
+  const sources = sourceCoverage(ds, { start: tMin, end: tMax + 1 });
+  const ns = nodeSources(ds);
+  const nodeSrc = {};
+  for (let i = 0; i < N; i++) if (ns[i].length) nodeSrc[i] = ns[i];
+  return {
+    windows, node, network, ties, activity, sources, nodeSources: nodeSrc,
+    meta: { window: choice.window, windowRequested: choice.requested, windowReason: choice.reason, start: tMin, end: tMax + 1, metrics, eventsInRange: sorted.order.length, undatedExcluded: countUndated(ds) },
+  };
 }
 
 function countUndated(ds) {
@@ -249,7 +387,51 @@ export function detectShifts(series, opts = {}) {
   const partial = W.map(w => (w.coverage ?? 1) < minCov);
   const out = [];
   const raw = find;
-  const findMasked = (x, count, thr, noise) => { scanned++; return raw(Array.from(x, (v, i) => (partial[i] ? NaN : v)), count, thr, noise); };
+  // Source edges. A window holding a source's first or last event, and the
+  // windows either side, are not tested, and the series is cut there so the
+  // baseline after an export starts never includes the empty weeks before it.
+  // Whole-network and group series use the material sources (5% or more of
+  // the events); a person's series uses the sources that carry that person.
+  const winOf = (t) => { for (let k = 0; k < W.length; k++) if (t >= W[k].start && t < W[k].end) return k; return -1; };
+  const edgeCache = new Map();
+  const edgesOf = (ids) => {
+    const key = ids.join(',');
+    if (edgeCache.has(key)) return edgeCache.get(key);
+    const ks = new Set();
+    for (const id of ids) {
+      const src = (series.sources || []).find(x => x.id === id);
+      if (!src) continue;
+      const a = winOf(src.start), b = winOf(src.end);
+      if (a > 0) ks.add(a);
+      if (b >= 0 && b < W.length - 1) ks.add(b);
+    }
+    const r = [...ks].sort((p, q) => p - q);
+    edgeCache.set(key, r);
+    return r;
+  };
+  const materialIds = (series.sources || []).filter(x => x.material).map(x => x.id);
+  const netEdges = edgesOf(materialIds);
+  let suppressed = 0;
+  const findMasked = (x, count, thr, noise, edges = netEdges) => {
+    scanned++;
+    const m = Array.from(x, (v, i) => (partial[i] ? NaN : v));
+    if (!edges.length) return raw(m, count, thr, noise);
+    for (const k of edges) for (let j = k - 1; j <= k + 1; j++) if (j >= 0 && j < m.length) m[j] = NaN;
+    const segs = [];
+    let from = 0;
+    for (const k of edges) { segs.push([from, Math.max(from, k - 1)]); from = Math.max(from, k + 2); }
+    segs.push([from, m.length]);
+    const res = [];
+    for (const [a, b] of segs) {
+      if (b - a < 2) continue;
+      for (const r of raw(m.slice(a, b), count, thr, noise)) {
+        for (const f of ['window', 'end', 'peak', 'detected']) if (r[f] != null) r[f] += a;
+        res.push(r);
+      }
+    }
+    return res;
+  };
+  for (const k of netEdges) suppressed += Math.min(W.length, k + 2) - Math.max(0, k - 1);
   // Shares computed from m ties carry binomial noise sqrt(p(1-p)/m_eff).
   // Reciprocated ties come in pairs (m_eff = m/2) and each triangle closes
   // three triples (m_eff = m/3). Density from m ties has Poisson noise of
@@ -293,19 +475,26 @@ export function detectShifts(series, opts = {}) {
     const total = new Float64Array(N);
     for (const act of series.activity?.node || []) for (let i = 0; i < N; i++) total[i] += act[i];
     const top = Array.from({ length: N }, (_, i) => i).filter(i => total[i] > 0).sort((a, b) => total[b] - total[a]).slice(0, opts.topNodes ?? 200);
-    for (const i of top) push('node', i, opts.labels?.[i] ?? String(i), metric, findMasked(arrs.map(a => a[i]), COUNTS.has(metric), nodeThr));
+    for (const i of top) push('node', i, opts.labels?.[i] ?? String(i), metric, findMasked(arrs.map(a => a[i]), COUNTS.has(metric), nodeThr, null, edgesOf(series.nodeSources?.[i] || [])));
   }
   out.sort((a, b) => Math.abs(b.z ?? b.statistic) - Math.abs(a.z ?? a.statistic));
-  return { shifts: out, meta: { method, threshold: opts.threshold ?? (method === 'cusum' ? 6 : 3.5), nodeThreshold: nodeThr, groupThreshold: groupThr, baseline: opts.baseline ?? 8, windows: W.length, seriesScanned: scanned, partialWindowsSkipped: partial.filter(Boolean).length } };
+  return { shifts: out, meta: { method, threshold: opts.threshold ?? (method === 'cusum' ? 6 : 3.5), nodeThreshold: nodeThr, groupThreshold: groupThr, baseline: opts.baseline ?? 8, windows: W.length, seriesScanned: scanned, partialWindowsSkipped: partial.filter(Boolean).length,
+    sourceEdges: (series.sources || []).filter(x => x.material).flatMap(x => [['starts', x.start], ['ends', x.end]].map(([kind, t]) => ({ source: x.id, label: x.label, kind, t, window: winOf(t) }))).filter(e => netEdges.includes(e.window)),
+    sourceEdgeWindowsSkipped: suppressed } };
 }
 
 // ---- before / after -------------------------------------------------------------------
 
 // Compare equal-length periods either side of `date` (ms). opts: { span (ms),
-// metrics, attr, reps (permutation reps), seed, approx }.
+// start, end (limit the data, as timeSeries), metrics, attr, reps
+// (permutation reps), seed, approx }.
+//
+// cautions lists material sources that start or end inside either period: a
+// change there is partly the export, not behaviour. People mostly seen in such
+// a source carry sourceEdge (its label) in topIncreases / topDecreases.
 export function compareBeforeAfter(ds, settings, date, opts = {}) {
   const s = normalizeSettings(ds, settings);
-  const sorted = sortedEvents(ds, s.time?.start ?? null, s.time?.end ?? null);
+  const sorted = sortedEvents(ds, opts.start ?? s.time?.start ?? null, opts.end ?? s.time?.end ?? null);
   if (!sorted.times.length) throw new Error('No dated events.');
   const t0 = sorted.times[0], t1 = sorted.times[sorted.times.length - 1] + 1;
   const span = opts.span ?? Math.min(date - t0, t1 - date);
@@ -331,6 +520,22 @@ export function compareBeforeAfter(ds, settings, date, opts = {}) {
     }
     node[m] = pairedSummary(pairs, rng, reps, ds);
   }
+  // Sources whose first or last event falls strictly inside the compared
+  // span (more than a day from its outer edges).
+  const lo = date - span, hi = date + span;
+  const cov = sourceCoverage(ds, { start: lo, end: hi });
+  const inside = (t) => t > lo + DAY && t < hi - DAY;
+  const cautions = [];
+  for (const c of cov) {
+    if (inside(c.start)) cautions.push({ source: c.id, label: c.label, kind: 'starts', t: c.start, period: c.start < date ? 'before' : 'after', material: c.material });
+    if (inside(c.end)) cautions.push({ source: c.id, label: c.label, kind: 'ends', t: c.end, period: c.end < date ? 'before' : 'after', material: c.material });
+  }
+  const edgeLabel = new Map(cautions.map(c => [c.source, c.label]));
+  const ns = nodeSources(ds);
+  for (const m of metrics) for (const list of [node[m].topIncreases, node[m].topDecreases]) for (const p of list || []) {
+    const hit = ns[p.node]?.find(id => edgeLabel.has(id));
+    if (hit !== undefined) p.sourceEdge = edgeLabel.get(hit);
+  }
   const nb = before.n ? computeNetworkMetrics(before) : {}, na = after.n ? computeNetworkMetrics(after) : {};
   const network = {};
   for (const k of Object.keys({ ...nb, ...na })) if (typeof (nb[k] ?? na[k]) === 'number') network[k] = { before: nb[k], after: na[k], diff: (na[k] ?? NaN) - (nb[k] ?? NaN) };
@@ -343,7 +548,7 @@ export function compareBeforeAfter(ds, settings, date, opts = {}) {
   for (const k of ka) if (kb.has(k)) kept++;
   const res = {
     date, span, before: { start: date - span, end: date, nodes: before.n, ties: before.edges.count }, after: { start: date, end: date + span, nodes: after.n, ties: after.edges.count },
-    node, network,
+    node, network, cautions: cautions.filter(c => c.material),
     ties: { formed: ka.size - kept, dissolved: kb.size - kept, persisted: kept, jaccard: ka.size + kb.size - kept ? kept / (ka.size + kb.size - kept) : NaN },
     meta: { test: 'paired sign-flip permutation test on per-person differences', reps, effectSize: "Cohen's d_z = mean difference / sd of differences" },
   };

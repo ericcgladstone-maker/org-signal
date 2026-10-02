@@ -55,3 +55,34 @@ test('undirected, binary, disconnected and copresence-only networks are flagged'
   assert.equal(ap.hierarchy.level, 'ok');
   assert.equal(ap.timeSeries.level, 'caution');
 });
+
+test('ego-network interview: interview caveats, not mailbox ones', () => {
+  const b = new DatasetBuilder({ source: { format: 'ego-interview', family: 'survey', medium: 'survey', view: VIEWS.EGO, egoKey: 'ego:1', directed: true } });
+  const ego = b.node('ego:1', { label: 'Ego' });
+  const alters = Array.from({ length: 6 }, (_, i) => b.node('alter:' + i, { label: 'A' + i }));
+  for (const a of alters) b.event({ type: 'declared', actor: ego, t: Date.UTC(2026, 0, 1), targets: [[a, 'declared']] });
+  b.event({ type: 'declared', actor: alters[0], t: Date.UTC(2026, 0, 1), targets: [[alters[1], 'declared']] });
+  b.event({ type: 'declared', actor: alters[2], t: Date.UTC(2026, 0, 1), targets: [[alters[3], 'declared']] });
+  const ds = b.build();
+  const ap = applicability(ds, buildNetwork(ds, { ...defaultSettings(ds), directed: true }));
+  assert.equal(ap.reciprocity.level, 'na');
+  assert.match(ap.reciprocity.reason, /respondent reports every tie/);
+  assert.equal(ap.reciprocityNetwork.level, 'na');
+  assert.equal(ap.inDegree.level, 'na');
+  assert.match(ap.egoDensity.reason, /perceived, not observed/);
+  assert.equal(ap.betweenness.level, 'na');
+  assert.match(ap.betweenness.reason, /interview/);
+  for (const k of Object.keys(ap)) if (ap[k].reason) assert.doesNotMatch(ap[k].reason, /messages the owner sent|one person's export/, k);
+  assert.equal(ap.ego.level, 'ok');
+});
+
+test('ego exports caution group comparisons', () => {
+  const b = new DatasetBuilder({ source: { format: 'mbox', view: VIEWS.EGO, egoKey: 'e:me' } });
+  const me = b.node('e:me');
+  const others = Array.from({ length: 12 }, (_, i) => b.node('e:' + i, { attrs: { team: 'T' + (i % 3) } }));
+  for (const o of others) b.event({ actor: me, t: Date.UTC(2026, 0, 1) + o, targets: [[o, 'to']] });
+  const ds = b.build();
+  const ap = applicability(ds, buildNetwork(ds, defaultSettings(ds)));
+  assert.equal(ap.groups.level, 'caution');
+  assert.match(ap.groups.reason, /what the owner saw/);
+});

@@ -24,4 +24,15 @@ const PT = 'de a o que e do da em um para é com não uma os no se na por mais a
 const IT = 'il lo la i gli le di a da in con su per tra fra un uno una e ed o ma se che chi cui non più come anche io tu lui lei noi voi loro mi ti ci vi si del della dei delle al alla ai alle nel nella è sono era essere ho ha hanno questo questa quello quella ciao grazie sì';
 const NL = 'de het een en van in is dat op te zijn voor met die niet aan er maar om ook als bij of dan nog wel naar uit tot je ik we ze hij zij u dit wat hoe wie waar door over heb heeft had hebben was waren hallo dank ja nee';
 
-export const STOPWORDS = new Set([EN, ES, FR, DE, PT, IT, NL].join(' ').split(/\s+/).filter(Boolean));
+// Dates and mail furniture. Quoted-reply headers ("On Tue, 4 Feb 2025 at
+// 10:12, Ann wrote:") survive in mail that the reply stripper cannot parse,
+// and their words then dominate topics.
+const CAL = `mon tue tues wed thu thur thurs fri sat sun monday tuesday wednesday thursday friday saturday sunday
+jan feb mar apr jun jul aug sep sept oct nov dec january february march april june july august september october november december
+am pm utc gmt wrote fwd fw re cc bcc`;
+
+export const STOPWORDS = new Set([EN, ES, FR, DE, PT, IT, NL, CAL].join(' ').split(/\s+/).filter(Boolean));
+
+// Top-level and generic mail domain labels: never a person's name and never
+// a topic, but present in every address that slips through.
+export const DOMAIN_NOISE = new Set(['com', 'org', 'net', 'edu', 'gov', 'io', 'co', 'uk', 'us', 'de', 'fr', 'example', 'mail', 'gmail', 'googlemail', 'outlook', 'hotmail', 'yahoo', 'icloud', 'me', 'live', 'msn', 'aol', 'proton', 'protonmail', 'www']);

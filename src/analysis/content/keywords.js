@@ -46,5 +46,5 @@ export function keywords(ds, opts = {}) {
   });
   const top = Array.from(overall.keys()).filter(t => overall[t] > 0).sort((a, b) => overall[b] - overall[a]).slice(0, opts.overallK ?? 30)
     .map(t => ({ term: C.terms[t], count: overall[t], messages: C.df[t] }));
-  return { by, units: rows, overall: top, meta: { documents: C.docs.length, vocabulary: C.terms.length, units: N, truncated, method: 'TF-IDF over pooled unit documents, smooth idf' } };
+  return { by, units: rows, overall: top, meta: { cleaning: C.cleaning, documents: C.docs.length, vocabulary: C.terms.length, units: N, truncated, method: 'TF-IDF over pooled unit documents, smooth idf' } };
 }

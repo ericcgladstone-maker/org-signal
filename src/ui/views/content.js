@@ -1,17 +1,26 @@
-// Content view: what people wrote, measured without an LLM. Affect by group,
-// layer or month (lexicon-based, marked approximate, with coverage),
-// distinctive keywords by group, topics with their top terms and shares, and
-// a diffusion explorer for terms: adoption over time and the cascade along
-// ties, compared with a null in which adoption times are shuffled.
+// Content view: what people wrote, measured without an LLM. Affect by source,
+// group, person, layer or month (lexicon-based, marked approximate, with
+// coverage), distinctive keywords by group, topics with their top terms and
+// shares, and a diffusion explorer for terms: adoption over time and the
+// cascade along ties, compared with a null in which adoption times are
+// shuffled.
+//
+// Text is cleaned in the engine first (quoted replies, signatures, the names
+// of people in the data; see content/corpus.js) and the view says so.
 
-import { html, useState, useMemo } from '../../../vendor/preact.js';
-import { store, useStore } from '../store.js';
+import { html, useState, useMemo, useRef } from '../../../vendor/preact.js';
+import { useStore } from '../store.js';
 import { engine } from '../services/engine.js';
 import { ViewHead, NeedsData, Loading, ErrorLine, Select, ConstructionButton, useEngine, Flag, applicabilityReason } from '../components/common.js';
-import { BarList, LineChart } from '../components/charts.js';
 import { tokens } from '../lib/palette.js';
-import { groupableAttributes, hasText, textCoverage, label as nodeLabel } from '../lib/dsutil.js';
-import { fmtNum, fmtInt, fmtPct, fmtP, fmtDate, humanize } from '../lib/format.js';
+import { hasText, textCoverage, label as nodeLabel } from '../lib/dsutil.js';
+import { fmtNum, fmtInt, fmtPct, fmtP, fmtDate, humanize, columnFormat } from '../lib/format.js';
+import { suggestTimeRange } from '../../analysis/time.js';
+import { defaultGrouping } from '../../analysis/groups.js';
+import { TimeChart, cool, warm, fmtMonth } from './time.js';
+import { attrLabel, groupingAttributes } from './groups.js';
+
+const FEW = 20; // months or groups with fewer scored messages are shown faint
 
 export function ContentView() {
   const ds = useStore(s => s.dataset);
@@ -25,15 +34,31 @@ export function ContentView() {
   return html`<${ContentInner} ds=${ds} />`;
 }
 
+const TABS = [['affect', 'Affect'], ['keywords', 'Keywords'], ['topics', 'Topics'], ['diffusion', 'Diffusion']];
+
 function ContentInner({ ds }) {
   const [tab, setTab] = useState('affect');
   const coverage = useMemo(() => textCoverage(ds), [ds]);
+  const refs = useRef({});
+  // Tabs pattern: one tab stop, arrows move between tabs, Home and End jump.
+  const onKey = (e) => {
+    const i = TABS.findIndex(([id]) => id === tab);
+    let j = null;
+    if (e.key === 'ArrowRight') j = (i + 1) % TABS.length;
+    else if (e.key === 'ArrowLeft') j = (i - 1 + TABS.length) % TABS.length;
+    else if (e.key === 'Home') j = 0;
+    else if (e.key === 'End') j = TABS.length - 1;
+    if (j == null) return;
+    e.preventDefault();
+    setTab(TABS[j][0]);
+    refs.current[TABS[j][0]]?.focus();
+  };
   return html`<div class="view">
     <${ViewHead} title="Content" intro=${`Measured from message text on this device; nothing is sent anywhere. ${fmtPct(coverage)} of messages carry text.`} actions=${html`<${ConstructionButton} />`} />
-    <div class="tabs" role="tablist" aria-label="Content measures">
-      ${[['affect', 'Affect'], ['keywords', 'Keywords'], ['topics', 'Topics'], ['diffusion', 'Diffusion']].map(([id, l]) => html`<button role="tab" aria-selected=${String(tab === id)} onClick=${() => setTab(id)}>${l}</button>`)}
+    <div class="tabs" role="tablist" aria-label="Content measures" onKeyDown=${onKey}>
+      ${TABS.map(([id, l]) => html`<button type="button" role="tab" id=${`ct-tab-${id}`} aria-controls="ct-panel" aria-selected=${String(tab === id)} tabindex=${tab === id ? '0' : '-1'} ref=${el => { refs.current[id] = el; }} onClick=${() => setTab(id)}>${l}</button>`)}
     </div>
-    <div role="tabpanel">
+    <div role="tabpanel" id="ct-panel" aria-labelledby=${`ct-tab-${tab}`} tabindex="0">
       ${tab === 'affect' && html`<${Affect} ds=${ds} />`}
       ${tab === 'keywords' && html`<${Keywords} ds=${ds} />`}
       ${tab === 'topics' && html`<${Topics} />`}
@@ -42,13 +67,30 @@ function ContentInner({ ds }) {
   </div>`;
 }
 
-function byOptions(ds) {
+// ---- grouping choices -----------------------------------------------------------------
+
+function sourceFormats(ds) { return new Set((ds.meta?.sources || []).map(s => s.format)); }
+
+function byOptions(ds, { overall = true } = {}) {
   return [
-    ...groupableAttributes(ds).map(a => ({ value: `attr:${a.key}`, label: a.label })),
+    ...(sourceFormats(ds).size > 1 ? [{ value: 'source', label: 'Source (kind of export)' }] : []),
+    ...groupingAttributes(ds).map(a => ({ value: `attr:${a.key}`, label: attrLabel(ds, a.key) })),
+    { value: 'node', label: 'Person (most active)' },
     { value: 'window', label: 'Month' },
     { value: 'visibility', label: 'Visibility layer' },
-    { value: 'overall', label: 'Everyone together' },
+    ...(overall ? [{ value: 'overall', label: 'Everyone together' }] : []),
   ];
+}
+
+// The comparison a view opens on: kinds of export when several are mixed
+// (one person's mail vs their chats), else a department-like attribute,
+// else everyone (or people, for keywords, where one unit has nothing to
+// contrast).
+function defaultBy(ds, fallback) {
+  if (sourceFormats(ds).size > 1) return 'source';
+  const g = defaultGrouping(ds);
+  if (g && groupingAttributes(ds).some(a => a.key === g)) return `attr:${g}`;
+  return fallback;
 }
 
 // UI choice -> engine options ({ by: 'group', attr } | { by: 'window', window } | { by }).
@@ -58,63 +100,117 @@ function byOpts(choice) {
   return { by: choice };
 }
 const rowLabel = (g) => String(g.label ?? g.value ?? g.key);
-const byLabel = (choice) => (choice.startsWith('attr:') ? humanize(choice.slice(5)) : choice === 'window' ? 'month' : choice === 'visibility' ? 'visibility layer' : 'everyone');
+const byLabel = (ds, choice) => (choice.startsWith('attr:') ? attrLabel(ds, choice.slice(5)).toLowerCase() : { window: 'month', visibility: 'visibility layer', source: 'source', node: 'person', overall: 'everyone' }[choice] || choice);
+
+function CleaningNote({ c }) {
+  if (!c || !(c.quoted || c.signatures || c.nameWords)) return null;
+  return html`<p class="small muted cview__note">Before counting words, quoted replies were removed from ${fmtInt(c.quoted)} message${c.quoted === 1 ? '' : 's'} and signatures from ${fmtInt(c.signatures)}. Weekdays, months and ${fmtInt(c.nameWords)} words that name people in the data (name parts, mail domains) are not counted.</p>`;
+}
+
+// Horizontal bars with the value beside the bar end. rows: [{ label, value, n?, color, faint? }].
+// diverging: bars grow left or right of a center line.
+function Bars({ rows, title, sub, format, max, diverging = false, nLabel = 'messages' }) {
+  const mx = max ?? Math.max(1e-12, ...rows.map(r => Math.abs(r.value)).filter(Number.isFinite));
+  return html`<figure class="chart" style="margin:0">
+    ${title && html`<figcaption><div class="chart__title">${title}</div>${sub && html`<div class="chart__sub">${sub}</div>`}</figcaption>`}
+    <ul class="bars">${rows.map(r => {
+      const v = r.value;
+      const w = Number.isFinite(v) ? Math.min(1, Math.abs(v) / mx) * (diverging ? 50 : 100) : 0;
+      const pos = diverging ? (v >= 0 ? `left:50%;width:${w}%;border-radius:0 4px 4px 0` : `right:50%;width:${w}%;border-radius:4px 0 0 4px`) : `left:0;width:${w}%;border-radius:0 4px 4px 0`;
+      return html`<li title=${`${r.label}: ${format(v)}${r.n != null ? `, ${fmtInt(r.n)} ${nLabel}` : ''}`}>
+        <span class="bars__label">${r.label}${r.n != null ? html` <span class="bars__n">${fmtInt(r.n)}</span>` : ''}</span>
+        <span class="bars__track">${diverging && html`<span class="bars__axis"></span>`}<span class="bars__bar" style=${`${pos};background:${r.color};${r.faint ? 'opacity:.4' : ''}`}></span></span>
+        <span class="bars__val">${format(v)}</span>
+      </li>`;
+    })}</ul>
+  </figure>`;
+}
+
+// ---- affect -----------------------------------------------------------------------------
 
 function Affect({ ds }) {
-  const attrs = groupableAttributes(ds);
-  const [by, setBy] = useState(attrs[0] ? `attr:${attrs[0].key}` : 'window');
+  const [by, setBy] = useState(() => defaultBy(ds, 'overall'));
   const ap = useStore(s => s.applicability?.affect);
-  const q = useEngine('affect', (ctl) => engine.affect({ ...byOpts(by), ...ctl }), [by], { label: 'Scoring message tone' });
+  const dense = useMemo(() => suggestTimeRange(ds), [ds]);
+  const q = useEngine('affect', (ctl) => engine.affect({ ...byOpts(by), ...(by === 'node' ? { minMessages: FEW } : {}), ...ctl }), [by], { label: 'Scoring message tone' });
   const t = tokens();
   const r = q.data;
-  const groups = r?.groups || (r?.by ? Object.values(r.by)[0] : []) || [];
+  let groups = r?.groups || (r?.by ? Object.values(r.by)[0] : []) || [];
   const cov = r?.coverage;
-  const covShare = typeof cov === 'number' ? cov : cov?.withText ? cov.scored / cov.withText : null;
+  const covered = groups.reduce((s, g) => s + (g.n || 0), 0);
+  if (by === 'node') groups = groups.slice(0, 15);
+  const scored = cov?.scored ?? null;
+  const seFmt = { mean: columnFormat(groups.map(g => g.mean)), se: columnFormat(groups.map(g => g.se)) };
+  const toneColor = (m) => (m >= 0 ? cool() : warm());
+  // Months: thin months are faint and left out of the line; the dense period
+  // sets the axis so a stray 2008 message does not flatten the rest.
+  const monthPts = groups.map(g => ({ x: typeof g.key === 'number' ? g.key : Date.parse(`${g.label}-01T00:00:00Z`), y: g.mean, n: g.n, faint: g.n < FEW }));
+  const inDense = dense ? monthPts.filter(p => p.x >= dense.start - 31 * 86400000 && p.x < dense.end) : monthPts;
+  const outside = monthPts.length - inDense.length;
   return html`<div>
     <div class="toolbar"><${Select} label="Compare by" value=${by} onChange=${setBy} options=${byOptions(ds)} /></div>
-    <p class="small text2" style="max-width:66ch;margin-bottom:.8rem"><${Flag} level="caution">Approximate</${Flag}> ${r?.note || 'VADER sentiment (Hutto and Gilbert 2014): each message gets a compound score from -1 (negative) to +1 (positive) from a word list with rules for negation and emphasis. It misses sarcasm, jargon and non-English text. Compare averages over many messages; do not read single messages.'}${covShare != null ? ` ${fmtPct(covShare)} of messages with text were scored` : ''}${cov?.likelyNonEnglish ? `; ${fmtInt(cov.likelyNonEnglish)} look non-English` : ''}${covShare != null ? '.' : ''}${ap?.level === 'na' ? ` ${applicabilityReason(ap)}` : ''}</p>
+    <p class="small text2 cview__note"><${Flag} level="caution">Approximate</${Flag}> Word-list tone (VADER, Hutto and Gilbert 2014): each message gets a score from -1 (negative) to +1 (positive) from a word list with rules for negation and emphasis. It misses sarcasm, jargon and non-English text; compare averages over many messages, never single messages.${cov?.likelyNonEnglish ? ` ${fmtInt(cov.likelyNonEnglish)} messages look non-English.` : ''}${cov?.quotedRemoved ? ` Quoted replies were left out of ${fmtInt(cov.quotedRemoved)} messages before scoring, so each message is scored on its sender's own words.` : ''}${ap?.level === 'na' ? ` ${applicabilityReason(ap)}` : ''}</p>
+    ${r && scored != null && html`<p class="small cview__note">${covered < scored
+      ? html`${covered < 0.9 * scored ? html`<${Flag} level="caution" /> ` : ''}This comparison covers ${fmtInt(covered)} of ${fmtInt(scored)} scored messages${by.startsWith('attr:') ? `: only messages from people with a ${byLabel(ds, by)} value count` : by === 'node' ? `: people with at least ${FEW} messages, the 15 most active shown` : by === 'window' ? ': messages without a date are left out' : ''}${by.startsWith('attr:') || by === 'node' ? '' : '; messages from bots are never counted'}.`
+      : `This comparison covers all ${fmtInt(scored)} scored messages.`}</p>`}
     ${q.loading && html`<${Loading}>Scoring messages</${Loading}>`}<${ErrorLine} error=${q.error} onRetry=${q.retry} />
     ${r && (by === 'window'
-      ? html`<${LineChart} title="Mean tone by month" sub="Mean compound score of scored messages; the shaded band is not a confidence interval" series=${[{ id: 'a', label: 'Tone', color: t.cat[0], values: groups.map(g => ({ x: typeof g.key === 'number' ? g.key : Date.parse(`${g.label}-01T00:00:00Z`), y: g.mean })) }]} height=${220} />`
-      : html`<div style="max-width:46rem"><${BarList} diverging=${true} title=${`Mean tone by ${byLabel(by)}`} sub="Bars right of the line lean positive, left lean negative."
-          rows=${groups.map(g => ({ label: rowLabel(g), value: g.mean, color: g.mean >= 0 ? 'var(--div-neg-1)' : 'var(--div-pos-1)' }))} max=${Math.max(0.05, ...groups.map(g => Math.abs(g.mean)).filter(Number.isFinite))} format=${x => fmtNum(x, { digits: 2 })} /></div>`)}
-    ${r && html`<div class="table-wrap" style="margin-top:1rem;max-width:46rem"><table class="tbl">
-      <thead><tr><th scope="col">${humanize(byLabel(by))}</th><th scope="col" class="num">Mean</th><th scope="col" class="num">Std. error</th><th scope="col" class="num">Messages scored</th><th scope="col" class="num">Positive</th><th scope="col" class="num">Negative</th></tr></thead>
-      <tbody>${groups.map(g => html`<tr><td class="name">${rowLabel(g)}</td><td class="num">${fmtNum(g.mean, { digits: 2 })}</td><td class="num">${fmtNum(g.se, { digits: 2 })}</td><td class="num">${fmtInt(g.n)}</td><td class="num">${fmtPct(g.posShare)}</td><td class="num">${fmtPct(g.negShare)}</td></tr>`)}</tbody>
+      ? html`<div style="max-width:56rem"><${TimeChart} title="Mean tone by month" sub=${`Mean score of the month's messages. Hollow points are months with fewer than ${FEW} messages; they are not joined to the line.${outside ? ` ${fmtInt(outside)} month${outside === 1 ? '' : 's'} outside the busy period (${fmtDate(dense.start)} to ${fmtDate(dense.end)}) are in the table only.` : ''}`}
+          series=${[{ id: 'a', label: 'Tone', color: t.cat[0], values: inDense }]} height=${220} xName=${fmtMonth} unit="month" yFormat=${x => fmtNum(x, { digits: 2 })} yDomain=${[-1, 1]} nLabel="messages" tableLabel="Show every month as a table" /></div>`
+      : html`<div style="max-width:52rem"><${Bars} diverging=${true} title=${`Mean tone by ${byLabel(ds, by)}`} sub=${`Blue bars, right of the line, lean positive; red bars, left of it, lean negative. The small number is the count of messages; faint bars rest on fewer than ${FEW}.`}
+          rows=${groups.map(g => ({ label: rowLabel(g), value: g.mean, n: g.n, faint: g.n < FEW, color: toneColor(g.mean) }))} max=${Math.max(0.05, ...groups.map(g => Math.abs(g.mean)).filter(Number.isFinite))} format=${x => fmtNum(x, { digits: 2 })} /></div>`)}
+    ${r && html`<div class="table-wrap" style="margin-top:1rem;max-width:52rem"><table class="tbl">
+      <thead><tr><th scope="col">${humanize(byLabel(ds, by))}</th><th scope="col" class="num">Mean</th><th scope="col" class="num">Std. error</th><th scope="col" class="num">Messages scored</th><th scope="col" class="num">Positive</th><th scope="col" class="num">Negative</th></tr></thead>
+      <tbody>${groups.map(g => html`<tr><td class="name">${by === 'window' ? fmtMonth(typeof g.key === 'number' ? g.key : Date.parse(`${g.label}-01T00:00:00Z`)) : rowLabel(g)}</td><td class="num">${seFmt.mean(g.mean)}</td><td class="num">${seFmt.se(g.se)}</td><td class="num">${fmtInt(g.n)}</td><td class="num">${fmtPct(g.posShare)}</td><td class="num">${fmtPct(g.negShare)}</td></tr>`)}</tbody>
     </table></div>`}
   </div>`;
 }
 
+// ---- keywords ---------------------------------------------------------------------------
+
 function Keywords({ ds }) {
-  const attrs = groupableAttributes(ds);
-  const [by, setBy] = useState(attrs[0] ? `attr:${attrs[0].key}` : 'visibility');
+  const [by, setBy] = useState(() => defaultBy(ds, 'node'));
   const q = useEngine('keywords', (ctl) => engine.keywords({ ...byOpts(by), k: 10, ...ctl }), [by], { label: 'Finding distinctive words' });
   const units = q.data?.units || q.data?.groups || [];
   return html`<div>
-    <div class="toolbar"><${Select} label="Distinctive words by" value=${by} onChange=${setBy} options=${byOptions(ds)} /></div>
-    <p class="small text2" style="max-width:66ch;margin-bottom:.8rem">Words used more in one group than in the others (${q.data?.meta?.method || q.data?.method || 'TF-IDF across groups'}). Frequent words that every group uses are down-weighted.</p>
+    <div class="toolbar"><${Select} label="Distinctive words by" value=${by} onChange=${setBy} options=${byOptions(ds, { overall: false })} /></div>
+    <p class="small text2 cview__note">Words used more in one group than in the others (TF-IDF: how often a group uses a word, discounted when every group uses it).</p>
+    <${CleaningNote} c=${q.data?.meta?.cleaning} />
     ${q.loading && html`<${Loading}>Counting words</${Loading}>`}<${ErrorLine} error=${q.error} onRetry=${q.retry} />
     ${q.data && !units.length && html`<p class="small text2">Not enough text per group to find distinctive words.</p>`}
     ${q.data && html`<div class="grid-3">${units.slice(0, 30).map(g => html`<div>
-      <p class="label">${rowLabel(g)}</p>
-      <ol style="margin:0;padding-left:1.2rem;color:var(--text-2);font-size:.875rem">${(g.terms || []).map(t => html`<li><span style="color:var(--text)">${t.term}</span> <span class="meta">${fmtInt(t.count)}</span></li>`)}</ol>
+      <h3 class="label">${by === 'window' && typeof g.key === 'number' ? fmtMonth(g.key) : rowLabel(g)}</h3>
+      <ol style="margin:0;padding-left:1.2rem;color:var(--text-2);font-size:.875rem">${(g.terms || []).map(t => html`<li><span style="color:var(--text)">${t.term}</span> <span class="muted small">${fmtInt(t.count)}</span></li>`)}</ol>
     </div>`)}</div>`}
   </div>`;
 }
+
+// ---- topics -----------------------------------------------------------------------------
 
 function Topics() {
   const [k, setK] = useState(6);
   const q = useEngine('topics', (ctl) => engine.topics({ k, seed: 1, ...ctl }), [k], { label: 'Fitting topics' });
   const t = tokens();
   const r = q.data;
+  const terms = (tp) => (tp.terms || []).map(x => (typeof x === 'string' ? x : x.term));
+  const top = Math.max(1e-9, ...(r?.topics || []).map(tp => tp.share));
   return html`<div>
     <div class="toolbar"><${Select} label="Number of topics" value=${String(k)} onChange=${v => setK(Number(v))} options=${[4, 6, 8, 10, 12].map(n => ({ value: String(n), label: String(n) }))} /></div>
-    <p class="small text2" style="max-width:66ch;margin-bottom:.8rem">${r?.meta?.method || r?.method || 'Latent Dirichlet allocation (collapsed Gibbs sampling)'}${r?.meta?.documents ?? r?.documents ? ` over ${fmtInt(r.meta?.documents ?? r.documents)} documents` : ''}, seed ${r?.meta?.seed ?? r?.seed ?? 1}. Topics are word clusters, not themes someone named; read the terms before naming one. A different number of topics or seed gives a different split.</p>
+    <p class="small text2 cview__note">Word groups that tend to occur together (latent Dirichlet allocation)${r?.meta?.documents ? ` over ${fmtInt(r.meta.documents)} messages` : ''}, seed ${r?.meta?.seed ?? 1}. Topics are word clusters, not themes someone named; read the words before naming one. A different number of topics or seed gives a different split.</p>
+    <${CleaningNote} c=${r?.meta?.cleaning} />
     ${q.loading && html`<${Loading}>Fitting topics</${Loading}>`}<${ErrorLine} error=${q.error} onRetry=${q.retry} />
-    ${r && html`<div style="max-width:52rem"><${BarList} title="Share of messages by topic" color=${t.cat[0]}
-      rows=${(r.topics || []).map((tp, i) => ({ label: `${i + 1}. ${(tp.terms || []).slice(0, 4).map(x => (typeof x === 'string' ? x : x.term)).join(', ')}`, value: tp.share }))} format=${x => fmtPct(x)} max=${1} /></div>
-      <div class="grid-3" style="margin-top:1.25rem">${(r.topics || []).map((tp, i) => html`<div><p class="label">Topic ${i + 1} · ${fmtPct(tp.share)}</p><p class="small text2">${(tp.terms || []).map(x => (typeof x === 'string' ? x : x.term)).join(', ')}</p></div>`)}</div>`}
+    ${r && html`<div style="max-width:52rem"><${Bars} title="Share of words by topic" sub="Bars are scaled to the largest topic."
+      rows=${(r.topics || []).map((tp, i) => ({ label: `${i + 1}. ${terms(tp).slice(0, 4).join(', ')}`, value: tp.share, color: t.cat[0] }))} format=${x => fmtPct(x)} max=${top} /></div>
+      <div class="grid-3" style="margin-top:1.25rem">${(r.topics || []).map((tp, i) => html`<div><h3 class="label">Topic ${i + 1} · ${fmtPct(tp.share)}</h3><p class="small text2">${terms(tp).join(', ')}</p></div>`)}</div>`}
   </div>`;
+}
+
+// ---- diffusion --------------------------------------------------------------------------
+
+function verdictOf(ex) {
+  if (!ex || !Number.isFinite(ex.observed)) return { level: 'na', label: 'Too few adopters', text: 'Too few adopters to compare with the null.' };
+  if (ex.p < 0.05 && ex.observed > ex.mean) return { level: 'ok', label: 'Follows ties', text: 'Adopters had an earlier adopter among their contacts more often than chance timing gives. That fits spread along ties, though shared channels or outside events can produce the same pattern.' };
+  return { level: 'info', label: 'Not along ties', text: 'Exposure to earlier adopters is not clearly above the shuffled null, so the data do not show this term spreading along ties.' };
 }
 
 function Diffusion({ ds }) {
@@ -124,39 +220,38 @@ function Diffusion({ ds }) {
   const q = useEngine('diffusion', (ctl) => engine.diffusion({ ...(auto ? { auto: 8 } : { terms }), reps: 200, seed: 1, ...ctl }), [terms, auto], { enabled: auto || !!terms?.length, label: 'Tracing diffusion' });
   const t = tokens();
   const list = Array.isArray(q.data) ? q.data : q.data?.terms || [];
+  const norm = (d) => {
+    const ex = d.exposure || (d.null ? { observed: d.exposedShare, mean: d.null.mean, sd: d.null.sd, z: d.null.z, p: d.null.pUpper, reps: d.null.reps } : null);
+    const timeline = d.timeline || (d.adoptions || []).map((a, i) => ({ t: a.t, cumulative: i + 1 }));
+    const cascade = d.cascade && Array.isArray(d.cascade) ? d.cascade : (d.adoptions || []).filter(a => a.from != null).map(a => ({ from: a.from, to: a.node, t: a.t }));
+    return { ...d, ex, timeline, cascade };
+  };
+  const items = list.map(norm);
+  // One y-axis for every small chart, so their heights compare.
+  const yMax = Math.max(1, ...items.map(d => d.adopters || 0));
+  const xs = items.flatMap(d => d.timeline.map(p => p.t)).filter(Number.isFinite);
+  const xDomain = xs.length ? [Math.min(...xs), Math.max(...xs)] : null;
   return html`<div>
-    <form class="toolbar" onSubmit=${e => { e.preventDefault(); const ts = input.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).slice(0, 4); if (ts.length) setTerms(ts); }}>
+    <form class="toolbar" onSubmit=${e => { e.preventDefault(); const ts = input.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).slice(0, 6); if (ts.length) { setAuto(false); setTerms(ts); } }}>
       <label class="field field--grow"><span>Terms to trace (comma separated)</span><input class="input" value=${input} onInput=${e => setInput(e.currentTarget.value)} placeholder="for example: roadmap, offsite" /></label>
-      <button class="btn btn--primary" type="submit" onClick=${() => setAuto(false)}>Trace</button>
-      <button class="btn" type="button" onClick=${() => { setTerms(null); setAuto(true); }}>Find new words automatically</button>
+      <button class="btn btn--primary" type="submit">Trace</button>
+      <button class="tlink" type="button" onClick=${() => { setTerms(null); setAuto(true); }}>Find new words automatically</button>
     </form>
-    <p class="small text2" style="max-width:66ch;margin-bottom:.8rem">When a term spreads along ties, new adopters will often have a contact who used it first. The null model shuffles adoption times among the same adopters; only a share of exposed adopters clearly above that null suggests spread through the network rather than a shared outside cause.</p>
+    <p class="small text2 cview__note">When a term spreads along ties, new adopters will often have a contact who used it first. The null shuffles adoption times among the same adopters (200 replicates); only a share of exposed adopters clearly above that null suggests spread through the network rather than a shared outside cause. Names of people in the data are not traced.</p>
     ${q.loading && html`<${Loading}>Tracing adoption</${Loading}>`}<${ErrorLine} error=${q.error} onRetry=${q.retry} />
-    ${list.map(d => { const ex = d.exposure || (d.null ? { observed: d.exposedShare, mean: d.null.mean, sd: d.null.sd, z: d.null.z, p: d.null.pUpper, reps: d.null.reps, null: 'adoption times shuffled among the same adopters' } : null);
-      const timeline = d.timeline || (d.adoptions || []).map((a, i) => ({ t: a.t, cumulative: i + 1 }));
-      const cascade = d.cascade && Array.isArray(d.cascade) ? d.cascade : (d.adoptions || []).filter(a => a.from != null).map(a => ({ from: a.from, to: a.node, t: a.t }));
-      return html`<section class="section" aria-label=${`Diffusion of ${d.term}`}>
-      <h2 class="section__title">"${d.term}"</h2>
+    ${items.length > 0 && html`<div class="diff-grid">${items.map(d => { const v = verdictOf(d.ex); return html`<section class="diff-card" aria-label=${`Diffusion of ${d.term}`}>
+      <h3>"${d.term}"</h3>
       ${!d.adopters ? html`<p class="small text2">Nobody in the data used this term.</p>` : html`
-      <div class="grid-2">
-        <${LineChart} title="Adopters over time" sub="Cumulative number of people who have used the term" series=${[{ id: d.term, label: d.term, color: t.cat[0], values: timeline.map(p => ({ x: p.t, y: p.cumulative })) }]} height=${180} area=${true} />
-        <div>
-          <p class="label">Exposure compared with the null</p>
-          <dl class="kv">
-            <dt>Adopters</dt><dd>${fmtInt(d.adopters)}</dd>
-            <dt>Adopters with an earlier adopter among their contacts</dt><dd>${fmtPct(ex?.observed)}</dd>
-            <dt>Same, with adoption times shuffled</dt><dd>${fmtPct(ex?.mean)}</dd>
-            <dt>z</dt><dd>${fmtNum(ex?.z, { digits: 2 })}</dd>
-            <dt>p (one-sided)</dt><dd>${fmtP(ex?.p)}</dd>
-          </dl>
-          <div class="reading" style="margin-top:.8rem"><p>${ex && ex.p < 0.05 && ex.observed > ex.mean
-            ? `Adopters had an earlier adopter among their contacts more often than chance timing would give. That fits spread along ties, though shared channels or outside events can produce the same pattern.`
-            : `Exposure to earlier adopters is not clearly above the shuffled null, so the data do not show this term spreading along ties.`}</p></div>
-          <p class="basis">Null: ${ex?.null || 'adoption times shuffled across adopters'}, ${ex?.reps ?? 200} replicates.</p>
-        </div>
-      </div>
-      ${cascade.length > 0 && html`<details class="disclose"><summary>Cascade along ties (${fmtInt(cascade.length)} adoptions after a contact${d.cascade?.maxDepth ? `, longest chain ${d.cascade.maxDepth} steps` : ''})</summary>
-        <ol class="can-list">${cascade.slice(0, 40).map(c => html`<li>${nodeLabel(ds, c.to)} after ${nodeLabel(ds, c.from)}, ${fmtDate(c.t)}</li>`)}</ol></details>`}`}
-    </section>`; })}
+        <p class="small"><${Flag} level=${v.level}>${v.label}</${Flag}> <span class="text2">z ${fmtNum(d.ex?.z, { digits: 2 })}, ${fmtP(d.ex?.p)} (one-sided)</span></p>
+        <${TimeChart} series=${[{ id: d.term, label: 'Adopters', color: t.cat[0], values: d.timeline.map(p => ({ x: p.t, y: p.cumulative })) }]} height=${120} area=${true} yDomain=${[0, yMax]} xDomain=${xDomain} compact=${true} yFormat=${fmtInt} />
+        <dl class="kv">
+          <dt>Adopters</dt><dd>${fmtInt(d.adopters)}</dd>
+          <dt>With an earlier adopter among contacts</dt><dd>${fmtPct(d.ex?.observed)}</dd>
+          <dt>Same, adoption times shuffled</dt><dd>${fmtPct(d.ex?.mean)}</dd>
+        </dl>
+        ${d.cascade.length > 0 && html`<details class="disclose"><summary>Cascade along ties (${fmtInt(d.cascade.length)} adoptions after a contact)</summary>
+          <ol class="can-list small">${d.cascade.slice(0, 40).map(c => html`<li>${nodeLabel(ds, c.to)} after ${nodeLabel(ds, c.from)}, ${fmtDate(c.t)}</li>`)}</ol></details>`}`}
+    </section>`; })}</div>
+    <p class="basis">Charts share one y-axis (cumulative adopters, 0 to ${fmtInt(yMax)}) and one time axis.</p>`}
   </div>`;
 }

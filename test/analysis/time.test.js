@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatasetBuilder, VIEWS } from '../../src/core/model.js';
 import { defaultSettings } from '../../src/analysis/construct.js';
-import { makeWindows, timeSeries, detectShifts, compareBeforeAfter, robustShifts, cusumShifts } from '../../src/analysis/time.js';
+import { makeWindows, timeSeries, detectShifts, compareBeforeAfter, robustShifts, cusumShifts, chooseWindow, suggestTimeRange, sourceCoverage } from '../../src/analysis/time.js';
 import { createRng } from '../../src/analysis/rng.js';
 
 const DAY = 86400000;
@@ -106,4 +106,96 @@ test('compareBeforeAfter: planted increase is detected with an effect size', () 
   assert.ok(X.ratio > 2 && Y.ratio < 1.6);
   assert.ok(r.node.strength.topIncreases[0].label.startsWith('P'));
   assert.throws(() => compareBeforeAfter(ds, defaultSettings(ds), MON - DAY), /inside the data/);
+});
+
+test('window choice: auto picks by span, and a unit over the limit is coarsened, not refused', () => {
+  assert.equal(chooseWindow(MON, MON + 30 * DAY).window, 'day');
+  assert.equal(chooseWindow(MON, MON + 200 * DAY).window, 'week');
+  assert.equal(chooseWindow(MON, MON + 8 * 365 * DAY).window, 'month');
+  const c = chooseWindow(Date.UTC(2008, 5, 30), Date.UTC(2025, 11, 31), { window: 'week' });
+  assert.equal(c.window, 'month');
+  assert.match(c.reason, /exceed the limit of 520; using months/);
+  assert.equal(chooseWindow(MON, MON + 200 * DAY, { window: 'week' }).reason, null);
+  // 17 years of weekly windows used to throw "914 windows requested".
+  const b = new DatasetBuilder({ source: { format: 't', view: VIEWS.FULL } });
+  const [x, y] = ['x', 'y'].map(k => b.node('t:' + k));
+  b.event({ actor: x, t: Date.UTC(2008, 5, 30), targets: [[y, 'dm']] });
+  b.event({ actor: y, t: Date.UTC(2025, 11, 31), targets: [[x, 'dm']] });
+  const ds = b.build();
+  const ts = timeSeries(ds, defaultSettings(ds), { window: 'week' });
+  assert.equal(ts.meta.window, 'month');
+  assert.equal(ts.meta.windowRequested, 'week');
+  assert.ok(ts.windows.length <= 520 && ts.meta.windowReason);
+});
+
+test('suggested time range: the dense period, not a few very old dates', () => {
+  const b = new DatasetBuilder({ source: { format: 't', view: VIEWS.FULL } });
+  const [x, y] = ['x', 'y'].map(k => b.node('t:' + k));
+  for (let k = 0; k < 4; k++) b.event({ actor: x, t: Date.UTC(2009 + 3 * k, 2, 1), targets: [[y, 'declared']] });
+  for (let k = 0; k < 200; k++) b.event({ actor: k % 2 ? x : y, t: MON + k * 12 * 3600000, targets: [[k % 2 ? y : x, 'dm']] });
+  const ds = b.build();
+  const r = suggestTimeRange(ds);
+  assert.ok(r, 'a range is suggested');
+  assert.equal(r.start, MON);
+  assert.ok(r.end <= MON + 101 * DAY && r.end > MON + 90 * DAY);
+  assert.equal(r.outsideBefore, 4);
+  // Evenly spread data: use everything.
+  const even = shiftDataset({ shift: false });
+  assert.equal(suggestTimeRange(even), null);
+});
+
+// Two sources: a steady one for 20 weeks, and a larger export that starts in
+// week 10 and ends in week 16. Activity jumps at both edges without anyone
+// changing behaviour.
+function twoSourceDataset() {
+  const rng = createRng(2);
+  const b = new DatasetBuilder();
+  b.beginSource({ format: 'slack', view: VIEWS.FULL });
+  const ps = Array.from({ length: 12 }, (_, i) => b.node('t:' + i, { label: 'P' + i }));
+  for (let w = 0; w < 20; w++) for (let k = 0; k < 20; k++) {
+    const a = rng.int(12), c = (a + 1 + rng.int(11)) % 12;
+    b.event({ actor: ps[a], t: MON + w * 7 * DAY + Math.floor(rng() * 7 * DAY), targets: [[ps[c], 'dm']] });
+  }
+  b.beginSource({ format: 'email', view: VIEWS.EGO, egoKey: 'e:me' });
+  const me = b.node('e:me', { label: 'Me' });
+  const mail = Array.from({ length: 6 }, (_, i) => b.node('e:' + i, { label: 'M' + i }));
+  for (let w = 10; w < 16; w++) for (let k = 0; k < 60; k++) {
+    const o = mail[rng.int(6)];
+    b.event({ actor: k % 2 ? me : o, t: MON + w * 7 * DAY + Math.floor(rng() * 7 * DAY), targets: [[k % 2 ? o : me, 'to']] });
+  }
+  return b.build();
+}
+
+test('shifts at a source\'s start or end are suppressed, and the edges are reported', () => {
+  const ds = twoSourceDataset();
+  const cov = sourceCoverage(ds);
+  assert.equal(cov.length, 2);
+  assert.ok(cov[1].material && cov[1].start >= MON + 70 * DAY);
+  const ts = timeSeries(ds, defaultSettings(ds), { window: 'week', metrics: ['degree'] });
+  assert.equal(ts.sources.length, 2);
+  assert.deepEqual(ts.nodeSources[ds.nodes.keys.indexOf('e:me')], [1]);
+  const r = detectShifts(ts, { labels: ds.nodes.labels });
+  const near = (s, k) => s.window >= k - 1 && s.window <= k + 1;
+  assert.ok(!r.shifts.some(s => s.target === 'network' && (near(s, 10) || near(s, 15) || near(s, 16))), JSON.stringify(r.shifts.slice(0, 4)));
+  assert.ok(!r.shifts.some(s => s.target === 'node' && s.label === 'Me'), 'the mailbox owner does not "change" when the mailbox starts');
+  assert.deepEqual(r.meta.sourceEdges.map(e => [e.kind, e.window]), [['starts', 10], ['ends', 15]]);
+  assert.ok(r.meta.sourceEdgeWindowsSkipped >= 6);
+  // Without the coverage information the export's start reads as a rise.
+  const blind = detectShifts({ ...ts, sources: [], nodeSources: {} });
+  assert.ok(blind.shifts.some(s => s.target === 'network' && s.metric === 'activity' && s.direction === 'up' && near(s, 10)));
+});
+
+test('before/after: a source ending inside a period is a caution, and its people are marked', () => {
+  const ds = twoSourceDataset();
+  const date = MON + 14 * 7 * DAY;
+  const r = compareBeforeAfter(ds, defaultSettings(ds), date, { span: 4 * 7 * DAY, metrics: ['strength'], reps: 200 });
+  assert.equal(r.cautions.length, 1);
+  assert.equal(r.cautions[0].kind, 'ends');
+  assert.equal(r.cautions[0].period, 'after');
+  const dec = r.node.strength.topDecreases;
+  assert.ok(dec.some(p => p.label === 'Me' && p.sourceEdge), JSON.stringify(dec));
+  assert.ok(dec.filter(p => /^P/.test(p.label)).every(p => !p.sourceEdge), 'people of the steady source are not marked');
+  // Periods well inside both sources: no caution.
+  const q = compareBeforeAfter(ds, defaultSettings(ds), MON + 13 * 7 * DAY, { span: 2 * 7 * DAY, metrics: ['degree'], reps: 50 });
+  assert.equal(q.cautions.length, 0);
 });

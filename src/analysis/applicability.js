@@ -39,14 +39,27 @@ export function applicability(ds, net) {
   const globalMetrics = [...pathMetrics, 'eigenvector', 'pagerank', 'coreNumber', 'avgPathLength', 'degreeCentralization', 'communities'];
 
   // --- source view ---
-  if (only([VIEWS.EGO])) {
+  // An ego-network interview is also an ego view, but nothing in it is a
+  // message: the respondent names people and says who knows whom. Direction
+  // and reciprocity are not observed, and ties among the people named are
+  // the respondent's perception, which is the design, not a gap.
+  const interview = sources.length > 0 && sources.every(s => s.format === 'ego-interview' || s.family === 'survey' && s.view === VIEWS.EGO);
+  if (interview) {
+    flag(pathMetrics, 'na', 'In an ego-network interview every path runs through the respondent, so path measures describe the interview design, not anyone\'s position.');
+    flag(['eigenvector', 'pagerank', 'degreeCentralization', 'avgPathLength', 'coreNumber'], 'caution', 'Everyone here was named by one respondent; whole-network rankings mostly reflect who the respondent tied together.');
+    flag(['inDegree', 'outDegree', 'inStrength', 'outStrength', 'reciprocity', 'reciprocityNetwork'], 'na', 'The respondent reports every tie, so who named whom is not observed: direction and reciprocity mean nothing here. Treat the ties as undirected.');
+    flag(['constraint', 'effectiveSize', 'egoDensity', 'clustering', 'density', 'transitivity', 'avgClustering', 'communities'], 'caution', 'Ties among the people named are as the respondent sees them (perceived, not observed), and only people the respondent named are present.');
+    flag(['groups', 'nullModel'], 'caution', 'Everyone is tied to the respondent by design; rewired comparison networks ignore that, so read z and p as rough.');
+  } else if (only([VIEWS.EGO])) {
     flag(pathMetrics, 'na', "This is one person's export: every path runs through its owner, so path measures describe the export, not the network.");
     flag(['eigenvector', 'pagerank', 'degreeCentralization', 'avgPathLength', 'coreNumber'], 'caution', "In one person's export, others are seen only through their contact with the owner.");
     flag(['constraint', 'effectiveSize', 'egoDensity', 'clustering'], 'caution', "Ties among the owner's contacts are visible only when the owner was on the message; brokerage and density among alters are understated.");
     flag(['density', 'communities', 'transitivity', 'avgClustering'], 'caution', "Ties the owner never saw are missing, so the network looks sparser and more centralised than it is.");
     flag(['inDegree', 'reciprocity', 'reciprocityNetwork'], 'caution', "Only messages the owner sent or received are present.");
+    flag(['groups', 'nullModel'], 'caution', "In one person's export, ties among the owner's contacts are only partly visible: group mixing describes what the owner saw, and rewired comparison networks ignore that everyone is tied to the owner.");
   } else if (has(VIEWS.EGO)) {
     flag(globalMetrics, 'caution', "Some sources are one person's export; their owners look more central than they are.");
+    flag(['groups', 'nullModel'], 'caution', "Some sources are one person's export: ties among that person's contacts are only partly visible, so group mixing partly describes what the owner saw.");
   }
   if (only([VIEWS.CHAT])) {
     flag(pathMetrics, 'caution', 'A single conversation: everyone hears everyone, so differences in path position are small and mostly reflect who spoke when.');

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatasetBuilder, VIEWS } from '../../src/core/model.js';
 import { tokenize, affect, keywords, topics, diffusion, likelyNonEnglish } from '../../src/analysis/content/index.js';
+import { cleanText, nameStopwords, corpus } from '../../src/analysis/content/corpus.js';
 import { buildNetwork, defaultSettings, networkFromEdges } from '../../src/analysis/construct.js';
 import { createRng } from '../../src/analysis/rng.js';
 
@@ -125,4 +126,47 @@ test('diffusion: spread along ties beats the time-shuffle null; random adoption 
   assert.ok(auto.terms.some(t => t.term === 'zorblax'), JSON.stringify(auto.terms.map(t => t.term)));
   assert.ok(!auto.terms.some(t => t.term === 'status'));
   assert.ok(networkFromEdges);
+});
+
+test('quoted replies, forwarded headers and signatures are stripped before counting words', () => {
+  const reply = 'Makes sense to me. Ran the migration again.\n\nOn Wed, Mar 19, 2025 at 19:18, Yolanda Grunewald <yolanda@brightwellvale.example> wrote:\n> Really appreciate the help here.\n> Thanks\n\n--\nFelipe Ferreira\nBrightwell Vale';
+  const c = cleanText(reply);
+  assert.equal(c.text.trim(), 'Makes sense to me. Ran the migration again.');
+  assert.ok(c.quoted);
+  assert.equal(cleanText('Short answer\nOn Tue, 4 Feb 2025 at 10:12, Ann Lee <ann@x.org>\nwrote:\n> earlier').text.trim(), 'Short answer');
+  assert.equal(cleanText('See below\n\n-----Original Message-----\nFrom: Bo\nSent: Monday\nquoted').text.trim(), 'See below');
+  assert.equal(cleanText('Agreed\n________________\nFrom: Bo Chen\nSent: Tuesday').text.trim(), 'Agreed');
+  assert.equal(cleanText('Ok will do\n\nSent from my iPhone').text.trim(), 'Ok will do');
+  const plain = cleanText('one line, nothing quoted');
+  assert.equal(plain.text, 'one line, nothing quoted');
+  assert.ok(!plain.quoted && !plain.signature);
+});
+
+test('names in the data, weekdays and months are not keywords or topic words', () => {
+  const b = new DatasetBuilder({ source: { format: 'email', view: VIEWS.EGO } });
+  const me = b.node('email:felipe.ferreira@brightwellvale.example', { label: 'Felipe Ferreira' });
+  const yo = b.node('email:yolanda@brightwellvale.example', { label: 'Yolanda Grunewald' });
+  for (let k = 0; k < 60; k++) {
+    b.event({ actor: k % 2 ? me : yo, t: T0 + k * H, targets: [[k % 2 ? yo : me, 'to']],
+      text: k < 40
+        ? `Deploy schema migration review ${k % 3 ? 'staging' : 'rollback'}\n\nOn Tue, Feb 4, 2025 at 10:12, Felipe Ferreira <felipe.ferreira@brightwellvale.example> wrote:\n> Yolanda, Monday works\n\n--\nFelipe Ferreira, Brightwellvale`
+        : `Schema migration on staging, Yolanda\n-- \nFelipe Ferreira\nBrightwellvale, Thursday office hours` });
+  }
+  const ds = b.build();
+  const stop = nameStopwords(ds);
+  for (const w of ['felipe', 'ferreira', 'yolanda', 'grunewald', 'brightwellvale']) assert.ok(stop.has(w), w);
+  assert.ok(!stop.has('example') && !stop.has('com'));
+  const C = corpus(ds);
+  assert.equal(C.cleaning.quoted, 40);
+  assert.equal(C.cleaning.signatures, 20);
+  const words = new Set(C.terms);
+  for (const w of ['felipe', 'ferreira', 'yolanda', 'brightwellvale', 'wrote', 'tue', 'feb', 'monday', 'thursday']) assert.ok(!words.has(w), w);
+  assert.ok(words.has('migration') && words.has('schema'));
+  const kw = keywords(ds, { by: 'node', k: 5 });
+  assert.equal(kw.meta.cleaning.quoted, 40);
+  assert.ok(kw.units.every(u => u.terms.every(t => !['felipe', 'ferreira', 'wrote'].includes(t.term))));
+  // Sentiment scores only the sender's own words.
+  const a = affect(ds, { by: 'source' });
+  assert.equal(a.coverage.quotedRemoved, 40);
+  assert.deepEqual(a.groups.map(g => g.label), ['Email']);
 });

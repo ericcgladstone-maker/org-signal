@@ -33,6 +33,48 @@ export function attrCodes(net, ds, attrKey) {
   return { codes, values: order.map(i => values[i]), numeric, type: schema?.type ?? 'categorical' };
 }
 
+// ---- which attribute to group by ---------------------------------------------------
+
+// Bookkeeping fields: flags an importer or form adds about the record rather
+// than the person's place in a group (Responded, Is phone number, Is saved
+// contact, Deleted, Admin). They split a network into "has the flag" and
+// "doesn't", which is never the comparison anyone came for, so the views
+// hide them from grouping menus.
+const FLAG_PREFIX = [/^(is|has|was)[_\s-]/i, /^(is|has|was)[A-Z]/];
+const BOOKKEEPING_RE = /^(responded|response|completed|finished|consent|deleted|deactivated|admin|owner|bot|is_?bot|verified|invited|invitation|kind|ego|tz|tz_?offset|time_?zone|timezone)$/i;
+export function isBookkeepingAttr(a) {
+  if (!a) return true;
+  if (a.type === 'boolean') return true;
+  const label = String(a.label || '').replace(/\s+/g, '_');
+  return [a.key, label].some(x => BOOKKEEPING_RE.test(x) || FLAG_PREFIX.some(re => re.test(x)));
+}
+
+// Names that say "this is the group someone belongs to", best first.
+const GROUP_NAMES = [/^(dept|department)s?$/i, /^(team|squad)s?$/i, /^(group|groups|drawn_?group)$/i, /^(division|unit|org_?unit|section|function|cohort|class|homeroom)$/i,
+  /(^|[_\s-])(dept|department)([_\s-]|$)/i, /(^|[_\s-])(team|group|division|unit)([_\s-]|$)/i];
+
+// The attribute a Groups-style view should open on: one with 3 to 15 values
+// named like a department, team or group and known for at least half the
+// people. Anything else (a 33-value job title, an employer known for one
+// person in five, a Responded flag) is a worse default than the communities
+// detected in the network, so null means "use communities".
+// schema entries: { key, label, type, values[], coverage }.
+export function defaultGrouping(ds, { minLevels = 3, maxLevels = 15, minCoverage = 0.5 } = {}) {
+  // Groups someone drew by hand are the point of the drawing, even two of them.
+  const drawn = (ds.meta?.sources || []).some(s => s.format === 'draw')
+    && (ds.attributeSchema || []).find(a => a.key === 'group' && (a.values?.length ?? 0) >= 2);
+  if (drawn) return 'group';
+  const cands = (ds.attributeSchema || []).filter(a => ['categorical', 'ordinal'].includes(a.type) && !isBookkeepingAttr(a)
+    && (a.values?.length ?? 0) >= minLevels && (a.values?.length ?? 0) <= maxLevels && (a.coverage ?? 1) >= minCoverage);
+  let best = null, bestRank = Infinity;
+  for (const a of cands) {
+    const r = GROUP_NAMES.findIndex(re => re.test(a.key) || re.test(String(a.label || '')));
+    if (r < 0) continue;
+    if (r < bestRank || (r === bestRank && (a.coverage ?? 1) > (best.coverage ?? 1))) { best = a; bestRank = r; }
+  }
+  return best ? best.key : null;
+}
+
 export function groupMetrics(net, ds, attrKey, { maxGroups = 60 } = {}) {
   const A = attrCodes(net, ds, attrKey);
   const g = graphOf(net);

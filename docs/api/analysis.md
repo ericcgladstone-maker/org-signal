@@ -197,11 +197,15 @@ Builds a Network from an edge list. Duplicate ties are summed.
 - `lo` / `hi` are the 2.5% / 97.5% quantiles of the resampled rank.
 - `topShare` is the share of resamples with rank <= `top`.
 
+## Default grouping
+
+`groups.js`: `defaultGrouping(ds)` -> attribute key or `null` (use detected communities). It takes an attribute with 3 to 15 values, known for at least half the people, named like a department, team or group (best first: dept/department, team, group, division/unit/section/class); hand-drawn groups (`group` from a `draw` source) win with two or more values. `isBookkeepingAttr(a)` marks fields that describe the record, not a group (booleans, `is_*`/`has_*`, responded, deleted, admin, tz...), which are never defaults.
+
 ## Applicability
 
 `applicability(ds, net)` -> `{ [key]: { level: 'ok' | 'caution' | 'na', reason, reasons[] }, _context }` for every node metric, plus `density, reciprocityNetwork, transitivity, avgClustering, avgPathLength, degreeCentralization, strengthGini, degreeAssortativity, communities, groups, ego, nullModel, resampleRanks, timeSeries, detectShifts, compareBeforeAfter, affect, keywords, topics, diffusion, hierarchy`. The worst level wins. It checks:
 
-- source view (ego views make path measures `na`; chat, sample and authored views have their own rules);
+- source view (ego views make path measures `na`; chat, sample and authored views have their own rules; ego-network interviews (`format: 'ego-interview'`) get interview wording: direction, in-degree and reciprocity are `na` because the respondent reports every tie, and ties among the people named are flagged as perceived; ego sources also caution `groups` and `nullModel`);
 - direction and weighting;
 - copresence-only rules, adjacency, and undirected sources inside a directed network;
 - size, components and isolates;
@@ -214,7 +218,13 @@ Builds a Network from an edge list. Duplicate ties are summed.
 
 ## Time
 
-`timeSeries(ds, settings, { window = 'week', step, start, end, metrics = ['degree', 'strength'], network = true, attr, maxWindows = 520, approx })`. `window` is `'day' | 'week' | 'month'` (UTC; weeks start Monday), a number of ms, or `{ size, step }` for rolling windows. Each window rebuilds the network from its events with the same settings.
+`timeSeries(ds, settings, { window = 'week', step, start, end, metrics = ['degree', 'strength'], network = true, attr, maxWindows = 520, approx })`. `window` is `'auto' | 'day' | 'week' | 'month'` (UTC; weeks start Monday), a number of ms, or `{ size, step }` for rolling windows. Each window rebuilds the network from its events with the same settings. A calendar unit that would exceed `maxWindows` is coarsened (week to month, then fixed-length windows) instead of throwing; `meta.windowReason` says so.
+
+Helpers in `time.js`:
+- `chooseWindow(tMin, tMax, { window = 'auto', maxWindows })` -> `{ window, count, requested, reason }`. Auto: days under 12 weeks, weeks up to 260, months beyond.
+- `suggestTimeRange(ds, { share = 0.95, maxSpanShare = 0.5 })` -> `{ start, end, share, outsideBefore, outsideAfter, fullStart, fullEnd } | null`: the shortest whole-day interval holding 95% of dated events, offered only when it is at most half the full span (a few very old dates in a personal export).
+- `sourceCoverage(ds, { start, end, minShare = 0.05 })` -> `[{ id, format, label, start, end, events, eventsInRange, share, material }]`: first and last event per source; `material` = at least 5% of events in the range.
+- `nodeSources(ds, { minShare = 0.25 })` -> per dataset node, the source ids carrying at least 25% of what that person did or received.
 
 ```js
 { windows: [{ start, end, label, events, nodes, ties, coverage }],    // coverage = share of the window inside the data span
@@ -222,7 +232,8 @@ Builds a Network from an edge list. Duplicate ties are summed.
   network: { [key]: number[] per window },                           // every numeric key of computeNetworkMetrics
   ties: { formed[], dissolved[], persisted[], jaccard[] },           // vs the previous window
   activity: { node: [Float64Array(ds.nodes.count) per window], total[], group?: { attr, values[], sizes[], counts[value][window] } },
-  meta: { window, metrics, eventsInRange, undatedExcluded } }
+  sources: sourceCoverage(...) for the range, nodeSources: { [node]: [sourceId] },
+  meta: { window, windowRequested, windowReason, start, end, metrics, eventsInRange, undatedExcluded } }
 ```
 
 `detectShifts(series, { method = 'robust' | 'cusum', threshold, nodeThreshold, baseline = 8, minBaseline = 4, minCoverage = 0.6, nodeMetric, topNodes = 200, networkMetrics, labels })` ->
@@ -231,12 +242,13 @@ Builds a Network from an edge list. Duplicate ties are summed.
 - **Robust z** (default): compares each window with the median and MAD of the previous 8 windows, with threshold 3.5 (5 for node series). The scale has floors: 5% of the median, sqrt(median) for count series, and binomial noise for shares from the window's tie count (reciprocity uses m/2, transitivity m/3; density uses density/sqrt(m)).
 - **CUSUM**: two-sided, k = 0.5, h = 6 (12 for node series), with the same floors.
 - Partial windows (coverage < 0.6) are skipped.
+- Source edges: the window holding a source's first or last event and the windows either side are not tested, and the series is cut there so the baseline restarts (an export starting is not a rise). Whole-network and group series use material sources; a person's series uses the sources in `series.nodeSources`. Reported in `meta.sourceEdges` and `meta.sourceEdgeWindowsSkipped`.
 - Series scanned by default: network `ties, density, reciprocity, transitivity, nodes`, `crossGroupShare` (when `timeSeries` got an `attr`: the share of ties between different values of it), tie retention (Jaccard with the previous window), ties formed, ties dissolved, total activity, activity per group, and the top node series. A reorg or a silo changes who talks to whom more than how much, so it shows up in cross-group share and tie retention.
 - Group series use a stricter threshold, `groupThreshold` (4.5 robust, 9 CUSUM), because every group is scanned separately. Measured on 10 flat synthetic workplaces (2026-10-02): 0.1 false alarms per dataset; planted departure, silo, quiet team and consolidation found within 4 days, a planted reorg only partly.
 
-`compareBeforeAfter(ds, settings, date, { span, metrics = ['degree', 'strength', 'betweenness', 'constraint'], attr, reps = 2000, seed })` ->
+`compareBeforeAfter(ds, settings, date, { span, start, end, metrics = ['degree', 'strength', 'betweenness', 'constraint'], attr, reps = 2000, seed })` ->
 `{ date, span, before: { start, end, nodes, ties }, after, node: { [m]: { n, meanBefore, meanAfter, meanDiff, sdDiff, dz, p, topIncreases[], topDecreases[] } }, network: { [k]: { before, after, diff } }, ties: { formed, dissolved, persisted, jaccard }, groups?: [{ value, before, after, ratio }], meta }`.
-`p` comes from a paired sign-flip permutation test; `dz` = mean difference / sd of differences.
+`p` comes from a paired sign-flip permutation test; `dz` = mean difference / sd of differences. `cautions: [{ source, label, kind: 'starts'|'ends', t, period: 'before'|'after' }]` lists material sources that start or end inside either period; people mostly seen in such a source carry `sourceEdge` (its label) in `topIncreases` / `topDecreases`.
 
 ## Content
 
@@ -246,13 +258,17 @@ These functions read message events with text; bots are skipped.
 - applies NFKC and lowercases;
 - drops Slack markup, URLs, emails, @mentions, `:emoji_codes:` and emoji;
 - keeps hashtag words and drops possessive 's;
-- removes English stopwords, minimal es/fr/de/pt/it/nl lists, and chat filler.
+- removes English stopwords, minimal es/fr/de/pt/it/nl lists, chat filler, weekdays, months and mail furniture ("wrote", "fwd");
+- `extraStop` (a Set) removes more words.
+
+**Cleaning** (`content/corpus.js`): `cleanText(text)` -> `{ text, quoted, signature }` keeps only what the sender wrote: it drops `>` quoted lines and everything after an "On ... wrote:" line (also split over two lines, and the fr/de/es/it/nl/pt forms), Outlook "Original Message" and "From:/Sent:" blocks, forwarded-message markers, the "-- " signature and "Sent from my ..." lines. `nameStopwords(ds)` is the set of words that name people in the data (label parts, email local parts and non-generic mail domains). The corpus (keywords, topics, diffusion) uses both, and `keywords().meta.cleaning` / `topics().meta.cleaning` = `{ messages, quoted, signatures, nameWords }`. Sentiment scores the cleaned text and reports `coverage.quotedRemoved`.
 
 **`by` units:**
 - `'overall'`
 - `'node'`: key = dataset index
 - `'group'`: needs `attr`; key = the value
 - `'context'`: key = context index, label = context name
+- `'source'`: key = label of the source's format (Email, WhatsApp, X ...), all sources of one kind together
 - `'visibility'`
 - `'window'`: with `window`; key = window start in ms
 

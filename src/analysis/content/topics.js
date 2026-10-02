@@ -133,7 +133,7 @@ export function topics(ds, opts = {}) {
   const res = {
     topics: out,
     byNode: agg('node'),
-    meta: { k: K, seed: opts.seed ?? 1, iterations: iters, alpha, beta, documents: D, tokens: Ntok, vocabulary: V, pool: opts.pool || 'none', sampled,
+    meta: { cleaning: C.cleaning, k: K, seed: opts.seed ?? 1, iterations: iters, alpha, beta, documents: D, tokens: Ntok, vocabulary: V, pool: opts.pool || 'none', sampled,
       note: 'Topics are exploratory: they change with k, seed and pooling. Name them from their words, and check a few messages before relying on one.' },
   };
   if (opts.attr) res.byGroup = agg('group');

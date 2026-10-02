@@ -6,7 +6,7 @@
 // them, and the unit of comparison is a group of messages, never one message.
 
 import vaderModule from '../../../vendor/vader.js';
-import { unitResolver } from './corpus.js';
+import { unitResolver, cleanText } from './corpus.js';
 
 const SIA = vaderModule.SentimentIntensityAnalyzer;
 const cache = new WeakMap();
@@ -20,7 +20,7 @@ export function scoreMessages(ds, { onProgress, maxMessages = Infinity } = {}) {
   if (c && c.maxMessages >= maxMessages) return c;
   const ev = ds.events, E = ev.count;
   const compound = new Float32Array(E).fill(NaN), pos = new Float32Array(E).fill(NaN), neg = new Float32Array(E).fill(NaN), neu = new Float32Array(E).fill(NaN);
-  let messages = 0, withText = 0, scored = 0, nonEnglish = 0;
+  let messages = 0, withText = 0, scored = 0, nonEnglish = 0, quoted = 0;
   const textIdx = [];
   for (let i = 0; i < E; i++) {
     if (ev.type[i] !== 0) continue;
@@ -34,14 +34,17 @@ export function scoreMessages(ds, { onProgress, maxMessages = Infinity } = {}) {
   for (let k = 0; k < textIdx.length; k++) {
     if (stride > 1) { if (k < next) continue; next += stride; }
     const i = textIdx[k];
-    const text = String(ev.text[i]);
+    // Score only what the sender wrote: quoted replies carry someone else's tone.
+    const cl = cleanText(ev.text[i]);
+    if (cl.quoted) quoted++;
+    const text = cl.text.trim() ? cl.text : String(ev.text[i]);
     if (likelyNonEnglish(text)) nonEnglish++;
     const s = SIA.polarity_scores(text.length > 5000 ? text.slice(0, 5000) : text);
     compound[i] = s.compound; pos[i] = s.pos; neg[i] = s.neg; neu[i] = s.neu;
     scored++;
     if (onProgress && k % step === 0) onProgress(k / textIdx.length, `sentiment ${k}/${textIdx.length}`);
   }
-  c = { compound, pos, neg, neu, coverage: { messages, withText, scored, likelyNonEnglish: nonEnglish, sampled: stride > 1 }, maxMessages };
+  c = { compound, pos, neg, neu, coverage: { messages, withText, scored, likelyNonEnglish: nonEnglish, quotedRemoved: quoted, sampled: stride > 1 }, maxMessages };
   cache.set(ds, c);
   return c;
 }
