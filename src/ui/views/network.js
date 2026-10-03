@@ -10,8 +10,13 @@
 // Figure style (design rules): solid mint-family ties, a ring of the canvas
 // ground around every person so dense clusters stay separable, 12px labels
 // with a halo, placed by our own pass that skips any label that would collide
-// with another or run off the canvas, and community numbers at each cluster
-// so communities never rely on color alone.
+// with another or run off the canvas, and community numbers or group names
+// at each cluster so groups never rely on color alone.
+//
+// Groups (communities or an attribute) take the eight hues in fixed order.
+// Past eight the map is in highlight mode (lib/grouping.js): the rest share
+// "Other groups", the legend lists every group, and choosing one lights it
+// up in the accent.
 
 import { html, useState, useEffect, useRef, useMemo, useCallback } from '../../../vendor/preact.js';
 import { Sigma, NodeCircleProgram } from '../../../vendor/sigma.js';
@@ -21,12 +26,13 @@ import { engine } from '../services/engine.js';
 import { gloss } from '../services/glossary.js';
 import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, Flag, Swatch, ConstructionButton, useEngine, download, Icon } from '../components/common.js';
 import { RampLegend } from '../components/charts.js';
-import { categoricalScale, sequentialScale, tokens, dim, mixTo } from '../lib/palette.js';
-import { preferredAttributes, isBookkeeping, orderedValues, label as nodeLabel, RULE_LABEL, VISIBILITY_LABEL } from '../lib/dsutil.js';
+import { sequentialScale, tokens, dim, mixTo } from '../lib/palette.js';
+import { preferredAttributes, isBookkeeping, orderedValues, defaultGroupAttr, label as nodeLabel, RULE_LABEL, VISIBILITY_LABEL } from '../lib/dsutil.js';
+import { groupColoring, groupLabelMin, OTHER, MISSING } from '../lib/grouping.js';
 import { fmtNum, fmtInt, fmtDateTime, fmtP, fmtAttr, humanize, plural } from '../lib/format.js';
 import { withContacts, metricLabel, displayKey, isDeactivated } from '../lib/measures.js';
 import { communityScale } from '../lib/communities.js';
-import { orientLayout, labelBudget, overlaps } from '../lib/labels.js';
+import { orientLayout, labelBudget, overlaps, groupAnchors } from '../lib/labels.js';
 import { VISIBILITY } from '../../core/model.js';
 import { cachedRender, getRender, clearRender, tiesOf } from '../lib/render-cache.js';
 
@@ -78,11 +84,14 @@ function drawnPositions(ds) {
   return Array.isArray(p) && p.length === ds.nodes.count ? p : null;
 }
 
+// The same default as People and Groups (defaultGroupAttr): a coarse
+// department-like attribute, else the communities.
 function defaultColor(ds, communities, attrs) {
-  const drawn = (ds.meta?.sources || []).some(s => s.format === 'draw');
-  if (drawn && attrs.some(a => a.key === 'group')) return 'attr:group';
+  const key = defaultGroupAttr(ds, { communities });
+  if (key && attrs.some(a => a.key === key)) return `attr:${key}`;
   if (communities) return 'community';
-  const a = attrs.find(x => !isBookkeeping(x));
+  const plain = attrs.filter(x => !isBookkeeping(x));
+  const a = plain.find(x => (x.values?.length ?? 0) <= 8) || plain[0];
   return a ? `attr:${a.key}` : 'none';
 }
 
@@ -104,7 +113,11 @@ function NetworkInner({ ds, net }) {
   const setLayout = v => { prefs.layout = v; setLayout0(v); };
   const [rulesOff, setRulesOff] = useState(new Set());
   const [visOff, setVisOff] = useState(new Set());
-  const [focusCat, setFocusCat] = useState(null);
+  // The legend row chosen (click or Enter) and the one under the pointer or
+  // keyboard focus; the second previews over the first.
+  const [pinCat, setPinCat] = useState(null);
+  const [hoverCat, setHoverCat] = useState(null);
+  const focusCat = hoverCat ?? pinCat;
   const [edgeSel, setEdgeSel] = useState(null); // { a, b } dataset indices
   const sigmaRef = useRef(null);
   const sideRef = useRef(null);
@@ -119,27 +132,20 @@ function NetworkInner({ ds, net }) {
     const ids = r.data.nodeIds;
     const ni = r.data.netIndex;
     if (colorBy === 'community' && communities?.membership) {
-      const sc = communityScale(communities);
       const k = communities.count ?? 0;
       const sizes = communities.sizes || Array.from({ length: k }, (_, i) => communities.membership.filter(m => m === i).length);
       const key = v => String(communities.membership[ni[v]]);
-      // Every community is listed (numbers tell the gray ones apart), up to
-      // a dozen; the long tail of tiny ones is summed.
-      const listed = Math.min(k, 12);
-      return { kind: 'cat', community: true, of: v => sc.color(key(v)), key,
-        legend: Array.from({ length: listed }, (_, c) => ({ value: String(c), color: sc.color(String(c)), label: `Community ${c + 1}`, count: sizes[c], folded: c >= sc.entries.length })),
-        folded: k > listed, foldedCount: sizes.slice(listed).reduce((a, b) => a + b, 0), foldedLabel: `${plural(k - listed, 'smaller community', 'smaller communities')}`,
-        hues: sc.entries.length, other: sc.otherColor, title: 'Community (found by Louvain)' };
+      const gc = groupColoring(Array.from({ length: k }, (_, c) => ({ value: String(c), label: `Community ${c + 1}`, count: sizes[c] })));
+      return { kind: 'cat', community: true, gc, of: v => gc.color(key(v)), key, title: 'Community (found by Louvain)' };
     }
     if (colorBy.startsWith('attr:')) {
       const key = colorBy.slice(5);
       const ov = orderedValues(ds, key);
-      const sc = categoricalScale(ov.map(o => o.value));
-      const shownCount = sc.entries.length;
       const a = attrs.find(x => x.key === key);
-      return { kind: 'cat', of: v => { const x = ds.nodes.attrs[ids[v]][key]; return x == null || x === '' ? t.other : sc.color(String(x)); }, key: v => String(ds.nodes.attrs[ids[v]][key] ?? ''),
-        legend: sc.entries.map((e, i) => ({ ...e, label: fmtAttr(key, e.value), count: ov[i].count })), folded: sc.folded, foldedCount: ov.slice(shownCount).reduce((x, b) => x + b.count, 0), foldedLabel: 'Other (smaller groups)',
-        other: sc.otherColor, title: a?.label || humanize(key), missing: ds.nodes.count - ov.reduce((x, b) => x + b.count, 0) };
+      const missing = ds.nodes.count - ov.reduce((x, b) => x + b.count, 0);
+      const gc = groupColoring(ov.map(o => ({ value: o.value, label: fmtAttr(key, o.value), count: o.count })), { missing });
+      const keyOf = v => { const x = ds.nodes.attrs[ids[v]][key]; return x == null || x === '' ? '' : String(x); };
+      return { kind: 'cat', gc, of: v => gc.color(keyOf(v)), key: keyOf, title: a?.label || humanize(key) };
     }
     if (colorBy.startsWith('metric:')) {
       const m = colorBy.slice(7);
@@ -202,7 +208,7 @@ function NetworkInner({ ds, net }) {
       actions=${html`<div class="tlinks"><${ConstructionButton} /><${ExportMenu} sigmaRef=${sigmaRef} data=${r.data} coloring=${coloring} ds=${ds} /></div>`} />
     <${RecoveryBanner} ds=${ds} />
     <div class="toolbar" role="group" aria-label="Network display">
-      <${Select} label="Color by" value=${colorBy} onChange=${v => { setColorBy(v); setFocusCat(null); }} options=${colorOptions} />
+      <${Select} label="Color by" value=${colorBy} onChange=${v => { setColorBy(v); setPinCat(null); setHoverCat(null); }} options=${colorOptions} />
       <${Select} label="Size by" value=${sizeBy} onChange=${setSizeBy} options=${sizeOptions} />
       ${positions && html`<${Select} label="Layout" value=${layout} onChange=${setLayout} options=${[{ value: 'drawn', label: 'As drawn' }, { value: 'force', label: 'Force-directed' }]} />`}
       <${Search} ds=${ds} ids=${r.data?.nodeIds} onPick=${(i) => { selectNode(i); sigmaRef.current?.focusNode(i); }} />
@@ -225,7 +231,7 @@ function NetworkInner({ ds, net }) {
       </div>
       <aside class="split__side" aria-label="Details" ref=${sideRef}>
         <div class="section net-legend">
-          <${Legend} coloring=${coloring} focusCat=${focusCat} setFocusCat=${setFocusCat} sizeBy=${sizeBy} directed=${net.directed} />
+          <${Legend} coloring=${coloring} pinCat=${pinCat} setPinCat=${setPinCat} setHoverCat=${setHoverCat} sizeBy=${sizeBy} directed=${net.directed} />
         </div>
         <div class="section">
           ${edgeSel ? html`<${Evidence} ds=${ds} a=${edgeSel.a} b=${edgeSel.b} onClose=${() => setEdgeSel(null)} />`
@@ -443,8 +449,12 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
         if (focusSet) {
           if (!focusSet.has(v)) { res.color = dim(res.color, 0.82); res.dimmed = true; res.zIndex = 0; }
           else { res.zIndex = 2; if (sel.includes(attr.ds)) { res.highlighted = true; res.forceLabel = true; } }
-        } else if (s.focusCat != null && s.coloring?.key) {
-          if (s.coloring.key(v) !== s.focusCat) { res.color = dim(res.color, 0.8); res.dimmed = true; res.zIndex = 0; } else res.zIndex = 2;
+        } else if (s.focusCat != null && s.coloring?.gc) {
+          // Highlight mode lights the chosen group in the accent (it may be
+          // one of the gray "Other groups"); otherwise it keeps its own hue.
+          const many = s.coloring.gc.many;
+          if (!s.coloring.gc.matches(s.coloring.key(v), s.focusCat)) { res.color = dim(res.color, many ? 0.88 : 0.8); res.dimmed = true; res.zIndex = 0; }
+          else { res.zIndex = 2; if (many) res.color = t.accent; }
         }
         if (hv === key) res.highlighted = true;
         return res;
@@ -468,9 +478,10 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
           const sel = focus.current.core;
           if (sel.has(+a) || sel.has(+b)) { res.color = edgeHi; res.size = Math.max(1, attr.size); res.zIndex = 2; }
           else { res.hidden = true; }
-        } else if (s.focusCat != null && s.coloring?.key) {
+        } else if (s.focusCat != null && s.coloring?.gc) {
           const [a, b] = g.extremities(key);
-          if (s.coloring.key(+a) !== s.focusCat && s.coloring.key(+b) !== s.focusCat) res.hidden = true;
+          const gc = s.coloring.gc;
+          if (!gc.matches(s.coloring.key(+a), s.focusCat) && !gc.matches(s.coloring.key(+b), s.focusCat)) res.hidden = true;
         }
         if (s.edgeSel) {
           const [a, b] = g.extremities(key);
@@ -485,8 +496,8 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
     // Our label layer sits above sigma's node and label layers and below the
     // hover box.
     renderer.createCanvasContext('f2labels', { afterLayer: 'labels' });
-    const placed = { labels: [], badges: [] };
-    const centres = communityCentres(g, data, state);
+    const placed = { labels: [], badges: [], groups: [] };
+    const centres = groupCentres(g, state);
     renderer.on('afterRender', () => {
       try { drawLabels(renderer, g, data, state.current, focus.current, hoverRef.current, centres, placed); } catch { /* killed mid-frame */ }
     });
@@ -578,23 +589,19 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
   </div>`;
 }
 
-// Mean position of each community's members in graph coordinates, for the
-// number badges. Read lazily so a new coloring needs no graph rebuild.
-function communityCentres(g, data, state) {
+// Where each group sits on the map (lib/labels.js groupAnchors), for the
+// community numbers and the group names. Read lazily so a new coloring needs
+// no graph rebuild.
+function groupCentres(g, state) {
   let cacheFor = null, cache = null;
   return () => {
     const c = state.current.coloring;
-    if (!c?.community) return null;
+    if (!c?.gc) return null;
     if (cacheFor === c) return cache;
-    const acc = new Map();
-    g.forEachNode((key, a) => {
-      const k = c.key(+key);
-      const e = acc.get(k) || { x: 0, y: 0, n: 0 };
-      e.x += a.x; e.y += a.y; e.n++;
-      acc.set(k, e);
-    });
-    cache = [...acc.entries()].filter(([, e]) => e.n >= 3).map(([k, e]) => ({ key: k, x: e.x / e.n, y: e.y / e.n, n: e.n }))
-      .sort((a, b) => b.n - a.n);
+    const n = g.order;
+    const x = new Float64Array(n), y = new Float64Array(n);
+    g.forEachNode((key, a) => { x[+key] = a.x; y[+key] = a.y; });
+    cache = groupAnchors(x, y, v => c.key(v));
     cacheFor = c;
     return cache;
   };
@@ -621,21 +628,24 @@ function drawLabels(renderer, g, data, s, focus, hovered, centres, placed) {
   ctx.setTransform(pr, 0, 0, pr, 0, 0);
   const t = tokens();
   const rects = [];
-  placed.labels = []; placed.badges = [];
+  placed.labels = []; placed.badges = []; placed.groups = [];
   const ratio = renderer.getCamera().getState().ratio;
+  const gc = s.coloring?.gc;
+  const shownKey = k => s.focusCat == null || gc.matches(k, s.focusCat);
+  const inside = b => b.x >= 2 && b.y >= 2 && b.x + b.w <= W - 2 && b.y + b.h <= H - 2;
 
   // Community numbers first: they are the non-color cue for communities.
   const cs = centres();
-  if (cs && !focus.set) {
+  if (cs && !focus.set && s.coloring.community) {
     ctx.font = `600 11px ${LABEL_FONT}`;
     for (const c of cs) {
+      if (c.n < 3 || !shownKey(c.key)) continue;
       const p = renderer.graphToViewport({ x: c.x, y: c.y });
       const text = String(Number(c.key) + 1);
       const rad = 9;
       const box = { x: p.x - rad, y: p.y - rad, w: rad * 2, h: rad * 2 };
-      if (box.x < 2 || box.y < 2 || box.x + box.w > W - 2 || box.y + box.h > H - 2 || overlaps(box, rects)) continue;
-      if (s.focusCat != null && s.focusCat !== c.key) continue;
-      const color = s.coloring.legend.find(e => e.value === c.key)?.color ?? s.coloring.other;
+      if (!inside(box) || overlaps(box, rects)) continue;
+      const color = gc.many && s.focusCat != null ? t.accent : gc.color(c.key);
       ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
       ctx.fillStyle = t.bgDeep; ctx.fill();
       ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
@@ -645,6 +655,33 @@ function drawLabels(renderer, g, data, s, focus, hovered, centres, placed) {
       placed.badges.push({ x: p.x, y: p.y, r: rad, text, color });
     }
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  } else if (cs && !focus.set) {
+    // Attribute groups above the size threshold are named where most of
+    // each sits, so no group relies on color alone (a dot in its color, the
+    // name in ink with a halo),
+    // largest first, skipping any name that would collide or leave the map.
+    const min = groupLabelMin(g.order);
+    const byKey = new Map(gc.entries.map(e => [e.value, e]));
+    ctx.font = `600 13px ${LABEL_FONT}`;
+    ctx.lineJoin = 'round';
+    for (const c of cs) {
+      const e = byKey.get(c.key);
+      if (!e || !shownKey(c.key) || (c.n < min && s.focusCat == null)) continue;
+      const p = renderer.graphToViewport({ x: c.x, y: c.y });
+      const w = ctx.measureText(e.label).width + 12, h = 17;
+      const box = { x: p.x - w / 2, y: p.y - h / 2, w, h };
+      if (!inside(box) || overlaps(box, rects)) continue;
+      const color = s.focusCat != null && gc.many ? t.accent : e.color;
+      ctx.beginPath(); ctx.arc(box.x + 4, p.y, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = t.bgDeep; ctx.stroke();
+      ctx.lineWidth = 4; ctx.strokeStyle = t.bgDeep;
+      ctx.strokeText(e.label, box.x + 12, p.y + 4);
+      ctx.fillStyle = t.text;
+      ctx.fillText(e.label, box.x + 12, p.y + 4);
+      rects.push(box);
+      placed.groups.push({ x: box.x, y: p.y, text: e.label, color });
+    }
   }
 
   const n = g.order;
@@ -690,20 +727,42 @@ function drawLabels(renderer, g, data, s, focus, hovered, centres, placed) {
 
 // ---- side panel -----------------------------------------------------------------
 
-function Legend({ coloring, focusCat, setFocusCat, sizeBy, directed }) {
+// Legend rows are buttons: hover or keyboard focus previews a group, click or
+// Enter pins it (again to unpin), arrow keys move between rows. In highlight
+// mode every group is listed (the list scrolls) under the eight colored ones
+// and the "Other groups" row; "Not recorded" always has its own row.
+const LEGEND_MAX = 200;
+
+function Legend({ coloring, pinCat, setPinCat, setHoverCat, sizeBy, directed }) {
   if (!coloring) return null;
+  const gc = coloring.gc;
+  const row = (value, color, label, count, { sub = false, missing = false, title } = {}) => html`<button type="button" class=${`legend__item${sub ? ' legend__item--sub' : ''}`} aria-pressed=${String(pinCat === value)} title=${title}
+      onClick=${() => setPinCat(pinCat === value ? null : value)} onMouseEnter=${() => setHoverCat(value)} onMouseLeave=${() => setHoverCat(null)}
+      onFocus=${() => setHoverCat(value)} onBlur=${() => setHoverCat(null)}>
+    <span class=${`swatch${missing ? ' swatch--missing' : ''}`} style=${`background:${color}`} aria-hidden="true"></span><span class="grow">${label}</span><span class="legend__count">${fmtInt(count)}</span></button>`;
+  const onKey = (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = [...e.currentTarget.querySelectorAll('.legend__item')];
+    const i = items.indexOf(document.activeElement);
+    if (i < 0) return;
+    e.preventDefault();
+    items[Math.max(0, Math.min(items.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))].focus();
+  };
+  const listed = gc ? gc.others.slice(0, LEGEND_MAX) : [];
+  const unlisted = gc ? gc.others.slice(LEGEND_MAX) : [];
   return html`<div>
     ${coloring.kind === 'cat' && html`<h2 class="label">Color: ${coloring.title}</h2>
-      <div class="legend">
-        ${coloring.legend.map(e => html`<button type="button" class="legend__item" aria-pressed=${String(focusCat === e.value)} onClick=${() => setFocusCat(focusCat === e.value ? null : e.value)}
-            onMouseEnter=${() => setFocusCat(e.value)} onMouseLeave=${() => setFocusCat(null)}>
-          <${Swatch} color=${e.color} /><span class="grow">${e.label}</span><span class="legend__count">${fmtInt(e.count)}</span></button>`)}
-        ${coloring.folded && html`<div class="legend__item" style="cursor:default"><${Swatch} color=${coloring.other} /><span class="grow">${coloring.foldedLabel}</span><span class="legend__count">${fmtInt(coloring.foldedCount)}</span></div>`}
-        ${coloring.missing > 0 && html`<div class="legend__item" style="cursor:default"><${Swatch} color=${coloring.other} /><span class="grow">Not recorded</span><span class="legend__count">${fmtInt(coloring.missing)}</span></div>`}
+      ${gc.many && html`<p class="small text2 net-legend__lead">${fmtInt(gc.entries.length)} groups: the eight largest in color, the rest gray. Choose any group to light it up.</p>`}
+      <div class=${`legend${gc.many ? ' legend--scroll' : ''}`} onKeyDown=${onKey} role="group" aria-label=${`Groups by ${coloring.title}`}>
+        ${gc.colored.map(e => row(e.value, e.color, e.label, e.count))}
+        ${gc.many && row(OTHER, gc.otherColor, gc.otherLabel, gc.otherPeople, { title: 'All groups after the eight largest; they share gray' })}
+        ${listed.map(e => row(e.value, e.color, e.label, e.count, { sub: true }))}
+        ${unlisted.length > 0 && html`<p class="legend__more small muted">and ${plural(unlisted.length, coloring.community ? 'smaller community' : 'smaller group', coloring.community ? 'smaller communities' : 'smaller groups')} (${plural(unlisted.reduce((a, e) => a + e.count, 0), 'person', 'people')})</p>`}
+        ${gc.missing > 0 && row(MISSING, gc.missingColor, gc.missingLabel, gc.missing, { missing: true, title: `No ${coloring.title.toLowerCase()} in the data` })}
       </div>
       <p class="basis">${coloring.community
-        ? `Numbers on the map mark each community of three or more people.${coloring.legend.some(e => e.folded) ? ` Communities after the ${['', 'first', 'second', 'third', 'fourth', 'fifth'][coloring.hues] || coloring.hues + 'th'} share gray, so colors stay distinct for color-blind readers; select one to pick it out.` : ''}`
-        : 'Hover or select a group to pick it out.'} Colors stay fixed while you filter.</p>`}
+        ? `Numbers on the map mark each community of three or more people.${gc.many ? ' Communities after the eighth share gray; choose one to light it up.' : ' Hover or select a community to pick it out.'}`
+        : `Groups of 1% of the people or more are named on the map where most of their members sit.${gc.many ? '' : ' Hover or select a group to pick it out.'}`}${gc.missing > 0 ? ` Not recorded: people with no ${coloring.title.toLowerCase()} in the data, not a group.` : ''} Colors stay fixed while you filter.</p>`}
     ${coloring.kind === 'seq' && html`<${RampLegend} scale=${coloring.scale} label=${`Color: ${coloring.title}`} />`}
     ${sizeBy !== 'none' && html`<h2 class="label" style="margin-top:1rem">Size: ${metricLabel(sizeBy, directed)}</h2><p class="basis" style="margin-top:0">Area grows with the value (square-root scale).</p>`}
   </div>`;
@@ -876,14 +935,19 @@ function buildSVG(ref, coloring, ds) {
   });
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const placed = ref.placed || { labels: [], badges: [] };
-  const items = coloring?.kind === 'cat' ? [...coloring.legend.filter(e => !e.folded), ...(coloring.legend.some(e => e.folded) || coloring.folded ? [{ color: coloring.other, label: coloring.community ? 'Other communities (numbered on the map)' : coloring.foldedLabel }] : [])] : [];
-  const legend = items.map((e, i) => `<g transform="translate(16,${height - 16 - (items.length - i) * 16})"><circle r="5" cx="5" cy="-4" fill="${e.color}"/><text x="16" y="0" fill="${t.text2}" font-size="11">${esc(e.label)}</text></g>`).join('');
+  const gc = coloring?.kind === 'cat' ? coloring.gc : null;
+  const items = gc ? [...gc.colored.map(e => ({ color: e.color, label: e.label })),
+    ...(gc.many ? [{ color: gc.otherColor, label: coloring.community ? `${gc.otherLabel}, numbered on the map` : gc.otherLabel }] : []),
+    ...(gc.missing > 0 ? [{ color: gc.missingColor, label: `${gc.missingLabel} (${plural(gc.missing, 'person', 'people')})`, missing: true }] : [])] : [];
+  const legend = items.map((e, i) => `<g transform="translate(16,${height - 16 - (items.length - i) * 16})"><circle r="5" cx="5" cy="-4" fill="${e.color}"${e.missing ? ` stroke="${t.muted}" stroke-width="1.2"` : ''}/><text x="16" y="0" fill="${t.text2}" font-size="11">${esc(e.label)}</text></g>`).join('');
+  const groupNames = (placed.groups || []).map(l => `<circle cx="${(l.x + 4).toFixed(1)}" cy="${l.y.toFixed(1)}" r="4.5" fill="${l.color}" stroke="${t.bgDeep}" stroke-width="1.5"/><text x="${(l.x + 12).toFixed(1)}" y="${(l.y + 4).toFixed(1)}" fill="${t.text}" font-weight="600" stroke="${t.bgDeep}" stroke-width="4" stroke-linejoin="round" paint-order="stroke">${esc(l.text)}</text>`).join('');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="Geist, system-ui, sans-serif">
 <rect width="100%" height="100%" fill="${t.bgDeep}"/>
 <g>${edges.join('')}</g>
 <g stroke="${t.bgDeep}" stroke-width="1.5">${nodes.map(n => `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(n.r + 0.75).toFixed(2)}" fill="${n.color}"/>`).join('')}</g>
 <g font-size="11" font-weight="600">${placed.badges.map(b => `<circle cx="${b.x.toFixed(1)}" cy="${b.y.toFixed(1)}" r="${b.r}" fill="${t.bgDeep}" stroke="${b.color}" stroke-width="2"/><text x="${b.x.toFixed(1)}" y="${(b.y + 4).toFixed(1)}" text-anchor="middle" fill="${t.text}">${esc(b.text)}</text>`).join('')}</g>
+<g font-size="13">${groupNames}</g>
 <g font-size="12" stroke="${t.bgDeep}" stroke-width="4" stroke-linejoin="round" paint-order="stroke">${placed.labels.map(l => `<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" fill="${l.strong ? t.text : t.text2}"${l.strong ? ' font-weight="600"' : ''}>${esc(l.text)}</text>`).join('')}</g>
 ${legend}
 <text x="${width - 12}" y="${height - 10}" text-anchor="end" font-size="10" fill="${t.muted}">${esc(ds.meta.name)} · Org Signal</text>

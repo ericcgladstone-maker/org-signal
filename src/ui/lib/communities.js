@@ -6,10 +6,11 @@
 
 import { categoricalScale } from './palette.js';
 
-// Hues on the map: any two communities can sit side by side there, so only
-// slots that stay apart under every color-vision deficiency are used; the
-// rest share "Other" and are told apart by their number at the cluster.
-export const MAP_HUES = 5;
+// Hues on the map: all eight slots stay apart under every color-vision
+// deficiency for every pair, so any two communities may sit side by side;
+// the rest share "Other groups" and are told apart by their number at the
+// cluster.
+export const MAP_HUES = 8;
 
 export function communityScale(communities) {
   if (!communities) return null;

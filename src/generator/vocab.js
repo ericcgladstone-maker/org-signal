@@ -5,22 +5,26 @@
 // clearly positive or negative, so the affect the generator plants can be
 // measured back from the text. Neutral templates avoid VADER lexicon words.
 
+// Department bases. `division` is the function a department rolls up to, as
+// the top level of a real HR export would record it: seven functions (plus
+// the CEO's Executive) whatever the number of departments, so a regional
+// department like "Sales Americas" sits in division "Sales".
 export const DEPT_BASES = [
-  { id: 'eng', name: 'Engineering', role: 'Software Engineer', words: ['pull request', 'migration', 'staging deploy', 'API spec', 'test suite', 'incident review', 'build pipeline', 'schema change', 'load test', 'feature flag'] },
-  { id: 'sales', name: 'Sales', role: 'Account Executive', words: ['pipeline review', 'renewal', 'pricing quote', 'forecast', 'demo', 'discovery call', 'territory plan', 'order form'] },
-  { id: 'mkt', name: 'Marketing', role: 'Marketing Specialist', words: ['campaign brief', 'landing page', 'launch copy', 'webinar', 'newsletter', 'brand guidelines', 'ad spend report'] },
-  { id: 'fin', name: 'Finance', role: 'Financial Analyst', words: ['budget model', 'quarterly close', 'invoice batch', 'expense report', 'variance analysis', 'audit checklist'] },
-  { id: 'people', name: 'People', role: 'People Partner', words: ['onboarding plan', 'offer letter', 'review cycle', 'benefits update', 'hiring plan', 'engagement survey'] },
-  { id: 'ops', name: 'Operations', role: 'Operations Specialist', words: ['vendor contract', 'runbook', 'capacity plan', 'shipping schedule', 'warehouse report', 'process map'] },
-  { id: 'design', name: 'Design', role: 'Product Designer', words: ['mockups', 'prototype', 'design review', 'user flow', 'style guide', 'usability notes'] },
-  { id: 'product', name: 'Product', role: 'Product Manager', words: ['roadmap', 'spec', 'PRD', 'release notes', 'backlog', 'customer interviews'] },
-  { id: 'support', name: 'Customer Support', role: 'Support Specialist', words: ['ticket queue', 'escalation', 'help center article', 'CSAT report', 'macro update'] },
-  { id: 'data', name: 'Data', role: 'Data Analyst', words: ['dashboard', 'metrics definition', 'query', 'data model', 'experiment readout', 'pipeline backfill'] },
-  { id: 'legal', name: 'Legal', role: 'Counsel', words: ['contract redline', 'NDA', 'policy draft', 'compliance checklist', 'processing addendum'] },
-  { id: 'research', name: 'Research', role: 'Research Scientist', words: ['literature review', 'experiment plan', 'results memo', 'paper draft', 'dataset audit'] },
-  { id: 'it', name: 'IT', role: 'Systems Administrator', words: ['laptop refresh', 'access request', 'SSO rollout', 'device inventory', 'patch window'] },
-  { id: 'partner', name: 'Partnerships', role: 'Partner Manager', words: ['partner deck', 'co-marketing plan', 'integration brief', 'referral report'] },
-  { id: 'facilities', name: 'Facilities', role: 'Workplace Coordinator', words: ['office move', 'desk booking', 'floor plan', 'catering order'] },
+  { id: 'eng', division: 'Engineering', name: 'Engineering', role: 'Software Engineer', words: ['pull request', 'migration', 'staging deploy', 'API spec', 'test suite', 'incident review', 'build pipeline', 'schema change', 'load test', 'feature flag'] },
+  { id: 'sales', division: 'Sales', name: 'Sales', role: 'Account Executive', words: ['pipeline review', 'renewal', 'pricing quote', 'forecast', 'demo', 'discovery call', 'territory plan', 'order form'] },
+  { id: 'mkt', division: 'Marketing', name: 'Marketing', role: 'Marketing Specialist', words: ['campaign brief', 'landing page', 'launch copy', 'webinar', 'newsletter', 'brand guidelines', 'ad spend report'] },
+  { id: 'fin', division: 'Finance', name: 'Finance', role: 'Financial Analyst', words: ['budget model', 'quarterly close', 'invoice batch', 'expense report', 'variance analysis', 'audit checklist'] },
+  { id: 'people', division: 'Operations', name: 'People', role: 'People Partner', words: ['onboarding plan', 'offer letter', 'review cycle', 'benefits update', 'hiring plan', 'engagement survey'] },
+  { id: 'ops', division: 'Operations', name: 'Operations', role: 'Operations Specialist', words: ['vendor contract', 'runbook', 'capacity plan', 'shipping schedule', 'warehouse report', 'process map'] },
+  { id: 'design', division: 'Product', name: 'Design', role: 'Product Designer', words: ['mockups', 'prototype', 'design review', 'user flow', 'style guide', 'usability notes'] },
+  { id: 'product', division: 'Product', name: 'Product', role: 'Product Manager', words: ['roadmap', 'spec', 'PRD', 'release notes', 'backlog', 'customer interviews'] },
+  { id: 'support', division: 'Customer Support', name: 'Customer Support', role: 'Support Specialist', words: ['ticket queue', 'escalation', 'help center article', 'CSAT report', 'macro update'] },
+  { id: 'data', division: 'Engineering', name: 'Data', role: 'Data Analyst', words: ['dashboard', 'metrics definition', 'query', 'data model', 'experiment readout', 'pipeline backfill'] },
+  { id: 'legal', division: 'Finance', name: 'Legal', role: 'Counsel', words: ['contract redline', 'NDA', 'policy draft', 'compliance checklist', 'processing addendum'] },
+  { id: 'research', division: 'Product', name: 'Research', role: 'Research Scientist', words: ['literature review', 'experiment plan', 'results memo', 'paper draft', 'dataset audit'] },
+  { id: 'it', division: 'Engineering', name: 'IT', role: 'Systems Administrator', words: ['laptop refresh', 'access request', 'SSO rollout', 'device inventory', 'patch window'] },
+  { id: 'partner', division: 'Sales', name: 'Partnerships', role: 'Partner Manager', words: ['partner deck', 'co-marketing plan', 'integration brief', 'referral report'] },
+  { id: 'facilities', division: 'Operations', name: 'Facilities', role: 'Workplace Coordinator', words: ['office move', 'desk booking', 'floor plan', 'catering order'] },
 ];
 
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'tomorrow', 'end of week', 'next week'];

@@ -35,3 +35,51 @@ export function overlaps(a, list, pad = 2) {
   for (const b of list) if (a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y) return true;
   return false;
 }
+
+// Where to name each group on the map: not the mean of all its members (a
+// group spread over the map would be named in the middle of someone else's
+// cluster) but the mean of its members in the densest 3x3 block of a grid
+// laid over the layout, where most of the group actually sits. keyOf(i)
+// gives node i's group ('' or null for none). Returns [{ key, x, y, n }],
+// n being the whole group's size, largest first.
+export function groupAnchors(x, y, keyOf, { grid = 24 } = {}) {
+  const n = x.length;
+  if (!n) return [];
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < n; i++) { if (x[i] < x0) x0 = x[i]; if (x[i] > x1) x1 = x[i]; if (y[i] < y0) y0 = y[i]; if (y[i] > y1) y1 = y[i]; }
+  const sx = (x1 - x0) / grid || 1, sy = (y1 - y0) / grid || 1;
+  const cellOf = i => Math.min(grid - 1, Math.floor((x[i] - x0) / sx)) * grid + Math.min(grid - 1, Math.floor((y[i] - y0) / sy));
+  const groups = new Map();
+  for (let i = 0; i < n; i++) {
+    const k = keyOf(i);
+    if (k == null || k === '') continue;
+    let g = groups.get(k);
+    if (!g) groups.set(k, g = { n: 0, cells: new Map() });
+    g.n++;
+    const c = cellOf(i);
+    g.cells.set(c, (g.cells.get(c) || 0) + 1);
+  }
+  const best = new Map();
+  for (const [k, g] of groups) {
+    let top = -1, at = 0;
+    for (const c of g.cells.keys()) {
+      const cx = Math.floor(c / grid), cy = c % grid;
+      let s = 0;
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const X = cx + dx, Y = cy + dy;
+        if (X >= 0 && Y >= 0 && X < grid && Y < grid) s += g.cells.get(X * grid + Y) || 0;
+      }
+      if (s > top || (s === top && c < at)) { top = s; at = c; }
+    }
+    best.set(k, { cx: Math.floor(at / grid), cy: at % grid, sx: 0, sy: 0, m: 0 });
+  }
+  for (let i = 0; i < n; i++) {
+    const k = keyOf(i);
+    const b = k == null || k === '' ? null : best.get(k);
+    if (!b) continue;
+    const c = cellOf(i);
+    if (Math.abs(Math.floor(c / grid) - b.cx) <= 1 && Math.abs((c % grid) - b.cy) <= 1) { b.sx += x[i]; b.sy += y[i]; b.m++; }
+  }
+  return [...groups.entries()].map(([key, g]) => { const b = best.get(key); return { key, x: b.sx / b.m, y: b.sy / b.m, n: g.n }; })
+    .sort((a, b) => b.n - a.n || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+}

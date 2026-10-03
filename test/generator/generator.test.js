@@ -320,3 +320,33 @@ test('planted groups are one attribute, planted_group, never "community"', () =>
   const { dataset } = generate({ context: 'workplace', medium: 'slack', size: 30, seed: 1, content: 'none', timespan: { days: 7 } });
   assert.ok(dataset.nodes.attrs.some(a => a && a.department));
 });
+
+test('workplace: every department rolls up to a division, at most eight of them, deterministically', () => {
+  const spec = { context: 'workplace', medium: 'network', size: 600, departments: 33, seed: 7, content: 'none', timespan: { days: 7 } };
+  const { dataset, groundTruth } = generate(spec);
+  const attrs = groundTruth.people.attrs;
+  const deptToDiv = new Map();
+  for (const a of attrs) {
+    assert.ok(a.division, 'every person has a division');
+    const prev = deptToDiv.get(a.department);
+    assert.ok(prev == null || prev === a.division, `${a.department} sits in one division`);
+    deptToDiv.set(a.department, a.division);
+  }
+  const departments = new Set(attrs.map(a => a.department));
+  const divisions = new Set(attrs.map(a => a.division));
+  assert.ok(departments.size > 8);
+  assert.ok(divisions.size >= 2 && divisions.size <= 8, `${divisions.size} divisions`);
+  assert.equal(attrs[0].division, 'Executive');
+  // Regional departments sit in their function's division.
+  for (const [d, v] of deptToDiv) {
+    if (/^Sales\b/.test(d)) assert.equal(v, 'Sales', d);
+    if (/^Engineering\b/.test(d)) assert.equal(v, 'Engineering', d);
+  }
+  assert.ok([...departments].some(d => /^Sales (Americas|EMEA|APAC)/.test(d)));
+  // The imported dataset carries division as an attribute, next to department.
+  assert.ok(dataset.attributeSchema.some(a => a.key === 'division'));
+  assert.ok(dataset.attributeSchema.some(a => a.key === 'department'));
+  // Same seed, same divisions.
+  const again = generate(spec).groundTruth.people.attrs.map(a => a.division);
+  assert.deepEqual(again, attrs.map(a => a.division));
+});

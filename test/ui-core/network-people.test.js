@@ -66,11 +66,12 @@ test('attribute values: time zone offsets in seconds read as UTC offsets', () =>
   assert.equal(displayKey('slack:U012'), 'slack:U012');
 });
 
-test('the map folds communities past the fifth into Other; other charts keep eight', () => {
-  const sc = communityScale({ count: 7 });
-  assert.equal(sc.entries.length, MAP_HUES);
-  assert.equal(sc.color('5'), sc.otherColor);
-  assert.notEqual(sc.color('4'), sc.otherColor);
+test('the map uses all eight hues for communities before folding into Other', () => {
+  assert.equal(MAP_HUES, 8);
+  const sc = communityScale({ count: 10 });
+  assert.equal(sc.entries.length, 8);
+  assert.notEqual(sc.color('7'), sc.otherColor);
+  assert.equal(sc.color('8'), sc.otherColor);
   assert.equal(categoricalScale(['a', 'b', 'c', 'd', 'e', 'f']).entries.length, 6);
   assert.equal(categoricalScale(['a', 'b', 'c'], { hues: 5 }).folded, false);
 });

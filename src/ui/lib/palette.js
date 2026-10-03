@@ -11,7 +11,10 @@
 //  - categorical hues are assigned in fixed slot order to a FIXED ordering of
 //    the categories (decided once per attribute over the whole dataset), so a
 //    filter never repaints the survivors;
-//  - more than 8 categories fold the tail into "Other", never a 9th hue;
+//  - the 8 largest categories take the 8 hues; the rest fold into "Other
+//    groups" (--cat-other), never a 9th hue;
+//  - "Not recorded" (no value) has its own darker gray (--cat-missing, or the
+//    fallback below), so it can never be read as "Other groups";
 //  - sequential is one hue, dark (near the ground) to light;
 //  - diverging is two hues with a neutral midpoint.
 
@@ -22,6 +25,9 @@ const FALLBACK = {
   seq: ['#16594b', '#1f7d69', '#29a288', '#46c6aa', '#7be9cd', '#c5fcec'],
   div: ['#85b6e9', '#4e90d2', '#2a3a48', '#cf6b5b', '#e59c8f'],
   other: '#444c52',
+  // Not recorded: near the ground, so it reads as absence. OKLab dE >= 10.7
+  // from Other and >= 18.8 from every slot under every CVD simulation.
+  missing: '#243039',
   node: '#D8F2FF',
   edge: '#6FA79B',
   accent: '#6FD8BE',
@@ -46,7 +52,7 @@ export function tokens() {
     if (seq.length >= 5) out.seq = seq;
     const div = ['--div-cool-2', '--div-cool-1', '--div-mid', '--div-warm-1', '--div-warm-2'].map(v);
     if (div.every(Boolean)) out.div = div;
-    for (const [k, name] of [['other', '--cat-other'], ['node', '--node'], ['edge', '--edge'], ['accent', '--accent'],
+    for (const [k, name] of [['other', '--cat-other'], ['missing', '--cat-missing'], ['node', '--node'], ['edge', '--edge'], ['accent', '--accent'],
       ['bg', '--bg'], ['bgDeep', '--bg-deep'], ['text', '--text'], ['text2', '--text-2'], ['muted', '--text-muted']]) {
       const x = v(name); if (x) out[k] = x;
     }
@@ -59,20 +65,21 @@ export function tokens() {
 // caller wants (by size over the whole dataset, then name), so the mapping is
 // decided once and reused by every filter state.
 //
-// `hues` caps the distinct hues: where any two groups can touch (the network
-// map), only the first few slots stay apart under every color-vision
-// deficiency, so the map passes hues: 5 and the rest share "Other".
-export function categoricalScale(values, { hues = null } = {}) {
+// All eight slots are used (they pass all-pairs separation, so any two may
+// touch, as on the network map); a ninth category and beyond share Other.
+// `hues` can cap the distinct hues lower.
+export function categoricalScale(values, { hues = 8 } = {}) {
   const t = tokens();
   const map = new Map();
-  const shown = hues != null ? values.slice(0, hues) : values.length > 8 ? values.slice(0, 7) : values.slice(0, 8);
+  const shown = values.slice(0, Math.min(8, hues));
   shown.forEach((v, i) => map.set(String(v), t.cat[i]));
   const folded = values.length > shown.length;
   return {
     color: v => map.get(String(v)) ?? t.other,
     entries: [...map.entries()].map(([value, color]) => ({ value, color })),
-    folded,             // true when an "Other" swatch is needed
+    folded,             // true when an "Other groups" swatch is needed
     otherColor: t.other,
+    missingColor: t.missing,
   };
 }
 

@@ -34,8 +34,9 @@ test('unverified numbers are wrapped by index, and mismatched spans are left alo
 
 test('categorical colours follow the given order and fold the tail into Other', () => {
   const sc = categoricalScale(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']);
-  assert.equal(sc.entries.length, 7);
+  assert.equal(sc.entries.length, 8);
   assert.equal(sc.folded, true);
+  assert.notEqual(sc.color('h'), sc.otherColor);
   assert.equal(sc.color('i'), sc.otherColor);
   assert.notEqual(sc.color('a'), sc.color('b'));
 });

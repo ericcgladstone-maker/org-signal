@@ -4,8 +4,9 @@
 // null-model z and p, and a plain-language reading that only claims what the
 // null comparison supports.
 //
-// The view opens on a department-like attribute when there is one
-// (defaultGrouping), else on the detected communities; bookkeeping flags
+// The view opens on the same grouping as Network and People (dsutil
+// defaultGroupAttr: a department-like attribute with up to eight values, else
+// the detected communities); bookkeeping flags
 // (Responded, Is phone number) are not offered. The descriptive table shows
 // as soon as it is counted; the null model fills in the reading after.
 
@@ -13,13 +14,13 @@ import { html, useState, useMemo } from '../../../vendor/preact.js';
 import { store, useStore } from '../store.js';
 import { engine } from '../services/engine.js';
 import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, Swatch, ConstructionButton, useEngine, Flag, Seg, applicabilityReason } from '../components/common.js';
-import { categoricalScale, tokens } from '../lib/palette.js';
+import { tokens } from '../lib/palette.js';
+import { groupColoring } from '../lib/grouping.js';
 import * as d3 from '../../../vendor/d3.js';
-import { preferredAttributes, isBookkeeping, orderedValues, label as nodeLabel } from '../lib/dsutil.js';
-import { communityScale } from '../lib/communities.js';
+import { preferredAttributes, isBookkeeping, orderedValues, defaultGroupAttr, label as nodeLabel } from '../lib/dsutil.js';
 import { cachedRender } from '../lib/render-cache.js';
 import { fmtNum, fmtInt, fmtP, fmtPct, humanize, columnFormat } from '../lib/format.js';
-import { defaultGrouping, isBookkeepingAttr } from '../../analysis/groups.js';
+import { isBookkeepingAttr } from '../../analysis/groups.js';
 import { cssVar } from './time.js';
 
 const MEAN_METRICS = ['degree', 'strength', 'betweenness', 'constraint'];
@@ -55,7 +56,7 @@ function GroupsInner({ ds, net }) {
   const ap = useStore(s => s.applicability) || {};
   const attrs = useMemo(() => groupingAttributes(ds), [ds]);
   const [by, setBy] = useState(() => {
-    const d = defaultGrouping(ds);
+    const d = defaultGroupAttr(ds, { communities });
     if (d && attrs.some(a => a.key === d)) return d;
     return communities || !attrs.length ? '__community' : attrs[0].key;
   });
@@ -75,15 +76,13 @@ function GroupsInner({ ds, net }) {
   const r = res.data;
   const name = attrLabel(ds, by);
   const labelOf = (v) => (isComm ? `Community ${Number(v) + 1}` : String(v));
-  const order = useMemo(() => {
-    if (!r?.groups) return [];
-    if (isComm) return r.groups.map(g => String(g.value));
-    const ov = orderedValues(ds, by).map(o => o.value);
-    return ov.filter(v => r.groups.some(g => String(g.value) === v));
-  }, [r, by]);
-  // Communities take the map's colors (same numbers, same hues, folded past
-  // the fifth) so a community looks the same here as on the Network view.
-  const scale = useMemo(() => (isComm && communities ? communityScale(communities) : categoricalScale(order)), [order, isComm, communities]);
+  // Colors as on the Network view: communities by number, attribute values
+  // by size over the whole dataset (not just the people in the network), the
+  // eight largest in color and the rest in the "Other groups" gray.
+  const scale = useMemo(() => {
+    if (isComm) return groupColoring(Array.from({ length: communities?.count ?? 0 }, (_, c) => ({ value: String(c) })));
+    return groupColoring(orderedValues(ds, by));
+  }, [ds, by, isComm, communities]);
   const means = useMemo(() => groupMeans(ds, net, metrics, by, communities), [ds, net, metrics, by, communities]);
   const members = useMemo(() => groupMembers(ds, net, metrics, by, communities), [ds, net, metrics, by, communities]);
   const shownMeans = MEAN_METRICS.filter(m => metrics?.node?.[m] && ap[m]?.level !== 'na');
@@ -135,7 +134,7 @@ function GroupsInner({ ds, net }) {
             ${shownMeans.map(m => html`<th scope="col" class="num">Mean <${MetricName} metric=${m} short=${true} iconOnly=${true} /></th>`)}
           </tr></thead>
           <tbody>${groupsSorted.map(g => { const v = String(g.value); const open = openGroup === v; const mem = members[v] || []; return html`<tr>
-            <td class="name"><button type="button" class="gview__rowbtn" aria-expanded=${String(open)} onClick=${() => setOpenGroup(open ? null : v)}><span class="gview__chev" aria-hidden="true"></span><${Swatch} color=${scale.color(v)} /> ${labelOf(g.value)}</button></td>
+            <td class="name"><button type="button" class="gview__rowbtn" aria-expanded=${String(open)} onClick=${() => setOpenGroup(open ? null : v)}><span class="gview__chev" aria-hidden="true"></span><span title=${scale.isOther(v) ? 'Past the eight largest groups: gray (Other groups) on the map' : undefined}><${Swatch} color=${scale.color(v)} /></span> ${labelOf(g.value)}</button></td>
             <td class="num">${fmtInt(g.size)}</td>
             <td class="num">${colFmt.density(g.density)}</td>
             <td class="num">${fmtInt(g.internalTies ?? g.internal)}</td>

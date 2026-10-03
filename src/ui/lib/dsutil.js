@@ -4,6 +4,7 @@
 // analysis engine, not here.
 
 import { EVENT_TYPES, ROLES, VISIBILITY } from '../../core/model.js';
+import { defaultGrouping } from '../../analysis/groups.js';
 
 export const RULES = ['reply', 'mention', 'dm', 'to', 'cc', 'bcc', 'adjacency', 'copresence', 'declared', 'repost', 'like', 'follow', 'reaction'];
 
@@ -76,16 +77,39 @@ export function isBookkeeping(a) {
   return yesNo || /^(is|has)[ _-]?|^responded$|^deactivated$|^deleted$|^bot$/i.test(a.key);
 }
 
-// Groupable attributes in the order a reader most likely wants them: names
-// like department or team first, then attributes with 3-15 values, then the
-// rest; bookkeeping fields last.
+// The attribute Network, People and Groups open on (null = the detected
+// communities). First choice: a department-, division- or team-like field
+// with 2 to 8 values, which the eight hues show without folding. Failing
+// that, a 3-15 value one (defaultGrouping), but only when the communities
+// are not the coarser grouping. The generator's planted ground truth is never
+// the default; it stays one choice away.
+export function defaultGroupAttr(ds, { communities = null } = {}) {
+  if (!ds) return null;
+  const schema = (ds.attributeSchema || []).filter(a => a.key !== 'planted_group');
+  const view = { ...ds, attributeSchema: schema };
+  const fine = defaultGrouping(view, { minLevels: 2, maxLevels: 8 });
+  if (fine) return fine;
+  const coarse = defaultGrouping(view);
+  if (!coarse) return null;
+  const k = schema.find(a => a.key === coarse)?.values?.length ?? Infinity;
+  const kc = communities ? (communities.nontrivial ?? communities.count ?? Infinity) : Infinity;
+  return kc < k ? null : coarse;
+}
+
+// Groupable attributes in the order a reader most likely wants them: the
+// default grouping first, then other department-like names with at most 8
+// values, the rest of the department-like names, attributes with 3-15
+// values, the rest; bookkeeping fields last.
+const GROUPISH = /(^|[ _-])(dept|department|team|group|division|unit|office|function|planted)/i;
 export function preferredAttributes(ds) {
   const attrs = groupableAttributes(ds);
+  const def = defaultGroupAttr(ds);
   const score = (a) => {
-    if (isBookkeeping(a)) return 3;
-    if (/(^|[ _-])(dept|department|team|group|division|unit|office|function|planted)/i.test(`${a.key} ${a.label || ''}`)) return 0;
+    if (isBookkeeping(a)) return 4;
+    if (a.key === def) return -1;
     const k = a.values?.length ?? 0;
-    return k >= 3 && k <= 15 ? 1 : 2;
+    if (GROUPISH.test(`${a.key} ${a.label || ''}`)) return k <= 8 ? 0 : 1;
+    return k >= 3 && k <= 15 ? 2 : 3;
   };
   return attrs.map((a, i) => ({ a, i, s: score(a) })).sort((x, y) => x.s - y.s || x.i - y.i).map(x => x.a);
 }

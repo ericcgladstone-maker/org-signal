@@ -1,4 +1,5 @@
-// Workplace context: an organization with departments, a reporting tree,
+// Workplace context: an organization with divisions (the function each
+// department rolls up to) and departments, a reporting tree,
 // teams, locations and tenure. True ties come from the hierarchy (manager and
 // report), team membership, a department stochastic-block structure with
 // location homophily and moderate degree inequality, a few cross-department
@@ -73,7 +74,7 @@ export function build(spec, rng, span) {
     if (d >= DEPT_BASES.length) name = `${base.name} ${['Americas', 'EMEA', 'APAC', 'North', 'South', 'Platform', 'Growth'][Math.floor(d / DEPT_BASES.length) - 1] || Math.floor(d / DEPT_BASES.length)}`;
     while (used.has(name)) name += ' II';
     used.add(name);
-    deptNames.push({ name, base: base.id });
+    deptNames.push({ name, base: base.id, division: base.division });
   }
   const dw = Array.from({ length: D }, () => r.lognormal(0, 0.35));
   const dwSum = dw.reduce((a, b) => a + b, 0);
@@ -130,6 +131,7 @@ export function build(spec, rng, span) {
     const mgr = reports[i].length > 0;
     const tenure = round(Math.min(30, tr.lognormal(mgr ? 1.4 : 0.8, 0.7)), 1);
     attrs.push({
+      division: i === 0 ? 'Executive' : deptNames[dept[i]].division,
       department: i === 0 ? 'Executive' : deptNames[dept[i]].name,
       title: titleFor(i),
       level: depth[i] + 1, // 1 = top of the tree
@@ -212,7 +214,7 @@ export function build(spec, rng, span) {
     orgName: org, domain,
     people: { label: names.label, first: names.first, last: names.last, attrs, email: emails },
     isBot: new Uint8Array(n),
-    group: dept, groups: deptNames.map(d => ({ name: d.name, kind: 'department', base: d.base })),
+    group: dept, groups: deptNames.map(d => ({ name: d.name, kind: 'department', base: d.base, division: d.division })),
     groupAttr: 'department',
     ties, brokers, bridgeTies,
     hierarchy: { manager, depth, root: 0, managerAfter: null },
