@@ -49,7 +49,11 @@ const T0 = Date.UTC(2026, 2, 2, 9);
 //   excludedBotCountedAsBot: with excludeBots off, an event by a bot listed in
 //     excludeNodes is counted under dropped.bots instead of dropped.excluded
 //     (summary only; the ties are right).
-export const KNOWN = ['adjacencyNotSymmetric', 'excludedTargetNotGiven', 'declaredParentFallback', 'declaredFallbackDoubleCount', 'excludedBotCountedAsBot'];
+// Engine behaviors that differ from the doc and are kept on purpose. The
+// quirks fixed on 2026-10-03 (excluded targets redirecting replies, declared
+// ties double-counted via the parent, excluded bots counted as bots) are no
+// longer listed, so the naive reference now enforces the corrected rules.
+export const KNOWN = ['adjacencyNotSymmetric', 'declaredParentFallback'];
 
 // ---- random datasets ----------------------------------------------------------------
 
@@ -194,7 +198,7 @@ export function naiveNetwork(rec, s, opts = {}) {
     if (!visAllowed.has(vis)) { drop.visibility++; continue; }
     if (mediaAllowed && !mediaAllowed.has(ctx ? ctx.medium : rec.sources[e.source].medium)) { drop.media++; continue; }
     drop.used++;
-    const amt = Math.fround(e.weight) * m;
+    const amt = e.weight * m;
     const sym = rec.sources[e.source].directed === false;
     const targets = e.targets.filter(([x]) => x !== e.actor);   // the builder drops self-targets
     if (e.type === 'copresence') {
@@ -226,7 +230,7 @@ export function naiveNetwork(rec, s, opts = {}) {
     let fallback = null;
     if (e.type === 'message' && !given('reply')) fallback = 'reply';
     else if (['repost', 'like', 'follow', 'reaction'].includes(e.type) && !given('subject')) fallback = e.type;
-    else if ((opts.declaredParentFallback || opts.declaredFallbackDoubleCount) && e.type === 'declared' && !given('subject')) fallback = 'declared';
+    else if ((opts.declaredParentFallback || opts.declaredFallbackDoubleCount) && e.type === 'declared' && !given('subject') && !given('declared')) fallback = 'declared';
     if (fallback && p >= 0 && on(fallback)) {
       const x = evs[p].actor;
       const key = fallback + ',' + x + (opts.declaredFallbackDoubleCount && fallback === 'declared' ? ',parent' : '');
@@ -247,7 +251,7 @@ export function naiveNetwork(rec, s, opts = {}) {
         if (!cur.untargeted) continue;
         const a = evs[cur.i].actor, b = evs[prev.i].actor;
         if (a === b || evs[cur.i].t - evs[prev.i].t > win) continue;
-        emit(a, b, 'adjacency', Math.fround(evs[cur.i].weight) * cur.m, cur.vis, opts.adjacencyNotSymmetric ? false : cur.sym);
+        emit(a, b, 'adjacency', evs[cur.i].weight * cur.m, cur.vis, opts.adjacencyNotSymmetric ? false : cur.sym);
       }
     }
   }
@@ -419,7 +423,7 @@ export async function run({ count = 300, seed = 1, log = () => {}, settingsPerDa
   };
   t.stats.examples = examples;
   t.notes.push(
-    'Reference reads docs/api/analysis.md (Construction); event weights are float32 (DatasetBuilder), so the reference applies Math.fround.',
+    'Reference reads docs/api/analysis.md (Construction); event weights are float64 throughout.',
     'Conventions taken where the doc is silent (the implementation agrees): self-ties never form; the broadcast cutoff counts every distinct addressee, bots included; copresence size k and normalisation count eligible people only (bots and excluded people are ignored); an event is untargeted for turn-taking only if it has no targets at all (an audience-only member list makes it addressed); turn-taking ties form when the gap is <= windowMin; copresence.maxSize <= 0 means "use maxRecipients"; minWeight compares raw (before the weighting transform); filters apply in the order time, actor, visibility, media for the dropped counts.',
     'Bootstrap multiplicity scales a turn-taking tie by the multiplicity; a dataset with the message really repeated would count the repeat as a run by one speaker (once). The repeated-events comparison therefore turns adjacency off.',
     'Known differences between doc and implementation are counted in stats.knownDifferences with a shrunk example in stats.examples.',

@@ -66,7 +66,7 @@ test('egor wide one-file: semicolons, decimal comma, netsize drops empty slots',
   assert.deepEqual(ev.map(e => [e.actor, e.targets[0][0], e.weight]), [
     ['survey:1', 'survey:1:1', 0.75], ['survey:1', 'survey:1:2', 0.5], ['survey:1', 'survey:1:3', 0.25],
     ['survey:1:1', 'survey:1:2', 2], ['survey:1:2', 'survey:1:3', 3],
-    ['survey:2', 'survey:2:1', 1], ['survey:2', 'survey:2:2', Math.fround(0.333)], // weights are Float32
+    ['survey:2', 'survey:2:1', 1], ['survey:2', 'survey:2:2', 0.333], // weights are float64, so 0.333 is exact
     ['survey:2:1', 'survey:2:2', 1],
   ]);
   assert.equal(warning(source, 'pair-outside-netsize').count, 2);

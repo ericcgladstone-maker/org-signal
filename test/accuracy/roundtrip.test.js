@@ -26,16 +26,7 @@ for (const f of Object.keys(FORMATS)) {
 // One small directed weighted case, used by the pinned cases below.
 const SMALL = { spec: { seed: 1 }, n: 4, directed: true, edges: [[0, 1, 0.1], [1, 2, 2], [2, 1, 2], [2, 0, 1e-3]] };
 
-test('weights come back as float32: the Dataset stores event weights in a Float32Array', async () => {
-  const ds = caseDataset(SMALL);
-  const net = networkFromEdges(4, SMALL.edges, { directed: true });
-  const ds2 = await importText([['g.graphml', exportGraphML(ds, net)]]);
-  const net2 = buildNetwork(ds2, defaultSettings(ds2));
-  const w = Array.from(net2.edges.w).sort((a, b) => a - b);
-  assert.deepEqual(w, [Math.fround(1e-3), Math.fround(0.1), 2, 2]);
-});
-
-test('weights survive at float64 precision', { skip: 'reported: src/core/model.js build() stores events.weight as Float32Array, so 0.1 re-imports as 0.10000000149011612 (relative error up to 6e-8)' }, async () => {
+test('weights survive at float64 precision', async () => {
   const ds = caseDataset(SMALL);
   const net = networkFromEdges(4, SMALL.edges, { directed: true });
   const ds2 = await importText([['g.graphml', exportGraphML(ds, net)]]);

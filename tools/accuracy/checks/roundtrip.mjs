@@ -12,7 +12,7 @@
 // representation that parses back to the same float64, so the files are
 // lossless. The Dataset stores event weights as Float32Array
 // (src/core/model.js build()), so after re-import a weight w becomes
-// Math.fround(w): exact for integers and dyadic values (int, tied, unit
+// w: exact for integers and dyadic values (int, tied, unit
 // schemes), relative error up to 6e-8 for continuous weights. The comparison
 // therefore uses the original graph with float32 weights as the expectation
 // (tolerance 1e-9) and records the float64 drift separately.
@@ -122,8 +122,8 @@ export async function roundTrip(c, fmtName, { t = null } = {}) {
   if (netDefault.directed !== c.directed) {
     let symmetric = true;
     if (c.directed) {
-      const w = new Map(edges.map(([a, b, x]) => [a + ',' + b, Math.fround(x)]));
-      for (const [a, b, x] of edges) if (w.get(b + ',' + a) !== Math.fround(x)) { symmetric = false; break; }
+      const w = new Map(edges.map(([a, b, x]) => [a + ',' + b, x]));
+      for (const [a, b, x] of edges) if (w.get(b + ',' + a) !== x) { symmetric = false; break; }
     }
     // A Gephi edge table says Directed/Undirected per row: with no rows the
     // direction cannot be read (the importer's default is directed).
@@ -144,7 +144,7 @@ export async function roundTrip(c, fmtName, { t = null } = {}) {
   let maxDrift = 0;
   for (const [k, w] of exp) {
     if (!got.has(k)) { problems.push(`tie ${k} missing`); break; }
-    if (got.get(k) !== Math.fround(w)) { problems.push(`tie ${k} weight ${got.get(k)}, expected ${Math.fround(w)} (float32 of ${w})`); break; }
+    if (got.get(k) !== w) { problems.push(`tie ${k} weight ${got.get(k)}, expected ${w} (exact)`); break; }
     maxDrift = Math.max(maxDrift, Math.abs(got.get(k) - w) / Math.abs(w));
   }
 
@@ -172,7 +172,7 @@ export async function roundTrip(c, fmtName, { t = null } = {}) {
   // Measures: the re-imported network (forced direction) against the
   // original graph with float32 weights, node by node through the mapping.
   if (!fmt.isolates && expectedNodes < c.n) return { problems, losses, maxDrift };
-  const expNet = networkFromEdges(c.n, edges.map(([a, b, w]) => [a, b, Math.fround(w)]), { directed: c.directed });
+  const expNet = networkFromEdges(c.n, edges.map(([a, b, w]) => [a, b, w]), { directed: c.directed });
   const m1 = computeNodeMetrics(expNet, { which: NODE_KEYS, approx: false });
   const m2 = computeNodeMetrics(net2, { which: NODE_KEYS, approx: false });
   for (const k of NODE_KEYS) {
@@ -218,7 +218,7 @@ export async function run({ count = 200, seed = 1, log = () => {}, formats = Obj
   t.stats.formats = per;
   t.stats.maxFloat32WeightDrift = maxDrift;
   t.stats.seconds = (Date.now() - t0) / 1000;
-  t.notes.push('Files are lossless (shortest float64 text); the Dataset stores event weights as Float32Array, so continuous weights come back as Math.fround(w) (relative drift recorded in maxFloat32WeightDrift). Measures are compared with the float32-weighted original at 1e-9 (1e-7 eigenvector, pagerank).');
+  t.notes.push('Files are lossless (shortest float64 text); the Dataset stores event weights as Float32Array, so continuous weights come back as w (relative drift recorded in maxFloat32WeightDrift). Measures are compared with the float32-weighted original at 1e-9 (1e-7 eigenvector, pagerank).');
   t.notes.push('Expected format losses: Pajek and UCINET DL carry no attributes; DL has no direction flag (a symmetric directed graph reads back undirected); GML, Pajek and DL key nodes by label (GML keeps the dataset key as an extra `key` attribute; GML and Pajek turn tabs and newlines in labels into spaces; DL sanitises labels); an edge-only CSV drops isolates and labels, and a Gephi CSV without ties cannot say whether it was directed.');
   return t.result();
 }

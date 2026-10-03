@@ -222,7 +222,7 @@ export class DatasetBuilder {
       actor: Int32Array.from(ev.actor),
       context: Int32Array.from(ev.context),
       parent,
-      weight: Float32Array.from(ev.weight),
+      weight: Float64Array.from(ev.weight),
       source: Uint16Array.from(ev.source),
       tOff: Int32Array.from(ev.tOff),
       tgt: Int32Array.from(ev.tgt),

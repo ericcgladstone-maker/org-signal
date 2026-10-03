@@ -248,7 +248,9 @@ export function forEachEvidence(ds, settings, emit, opts = {}) {
       if ((start != null && t < start) || (end != null && t >= end)) { drop.time++; return; }
     }
     const actor = ev.actor[i];
-    if (!nodeOk[actor]) { if (ds.nodes.isBot[actor]) drop.bots++; else drop.excluded++; return; }
+    // Count a drop as "bots" only when bots are being excluded; an account
+    // removed by hand is "excluded" even if it happens to be a bot.
+    if (!nodeOk[actor]) { if (s.excludeBots && ds.nodes.isBot[actor]) drop.bots++; else drop.excluded++; return; }
     const c = ev.context[i];
     const vis = c >= 0 ? ds.contexts.visibility[c] : UNKNOWN_VIS;
     if (!visOk[vis]) { drop.visibility++; return; }
@@ -295,17 +297,22 @@ export function forEachEvidence(ds, settings, emit, opts = {}) {
     const done = a1 - a0 > 1 ? new Set() : null;
     for (let j = a0; j < a1; j++) {
       const x = ev.tgt[j], role = ev.role[j];
+      // Whether the importer named a target decides the parent fallback below,
+      // so note it before filtering: a reply to an excluded account must not be
+      // redirected to whoever wrote the parent message.
+      if (role === R.reply) hasReplyTarget = true;
+      else if (role === R.subject || (role === R.declared && ty === T.declared)) hasSubject = true;
       if (!nodeOk[x] || x === actor) continue;
       let rule = -1;
       switch (role) {
-        case R.reply: rule = RI.reply; hasReplyTarget = true; break;
+        case R.reply: rule = RI.reply; break;
         case R.mention: rule = broadcast ? -1 : RI.mention; break;
         case R.dm: rule = broadcast ? -1 : RI.dm; break;
         case R.to: rule = broadcast ? -1 : RI.to; break;
         case R.cc: rule = broadcast ? -1 : RI.cc; break;
         case R.bcc: rule = broadcast ? -1 : RI.bcc; break;
         case R.declared: rule = RI.declared; break;
-        case R.subject: rule = subjectRule(ty); hasSubject = true; break;
+        case R.subject: rule = subjectRule(ty); break;
         default: rule = -1;
       }
       if (rule < 0 || !on[rule]) continue;
@@ -576,6 +583,9 @@ export function networkFromEdges(n, edgeList, { directed = false, nodeIds = null
   const key = new Map();
   const ea = [], eb = [], ew = [];
   for (const [a0, b0, w0 = 1] of edgeList) {
+    if (!(Number.isInteger(a0) && Number.isInteger(b0) && a0 >= 0 && b0 >= 0 && a0 < n && b0 < n)) {
+      throw new RangeError(`networkFromEdges: edge (${a0}, ${b0}) names a node outside 0..${n - 1}.`);
+    }
     if (a0 === b0) continue;
     const a = directed ? a0 : Math.min(a0, b0), b = directed ? b0 : Math.max(a0, b0);
     const k = a * n + b;

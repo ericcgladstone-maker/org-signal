@@ -41,6 +41,9 @@ export function makeDatasetSink({ world, medium, ident, obs, name, seed, allNode
   b.beginSource({
     format: 'synthetic', family: FAMILY[medium] || 'custom', medium, view: obs.view, context: world.context, tz: 'UTC',
     fileNames: [], egoKey, generator: { context: world.context, medium, preset: world.preset, seed },
+    // A network file holds the true ties, which are mutual; the importer reads
+    // its GraphML the same way.
+    ...(medium === 'network' ? { directed: false } : {}),
   });
   const keep = makeFilter(obs);
   const nodeIdx = new Int32Array(world.n).fill(-1);

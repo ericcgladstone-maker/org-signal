@@ -70,7 +70,7 @@ test('network medium measured undirected matches the true ties exactly', () => {
 // source does not set directed: false, so default construction reads each
 // undirected true tie as one-way and fidelity falls to about 0.7. The native
 // GraphML round trip is correct (edgedefault="undirected" -> directed: false).
-test('network medium dataset declares undirected ties', { todo: 'generator: network-medium dataset source lacks directed: false' }, () => {
+test('network medium dataset declares undirected ties', () => {
   const { dataset, groundTruth } = world('distributed', 401, 'network');
   assert.equal(groundTruth.ties.directed, false);
   assert.equal(dataset.meta.sources[0].directed, false);

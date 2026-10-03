@@ -64,7 +64,7 @@ test('pinned: a declared event without a subject ties to its resolved parent\'s 
   assert.deepEqual(ties(ds, buildNetwork(ds, only(['declared']))), [['A', 'B', 1]]);
 });
 
-test('reported: a declared target who also wrote the parent is counted once', { skip: 'reported: construct.js:317-322 emits the parent fallback for declared events without de-duplicating it against the declared targets, so this tie gets raw 2' }, () => {
+test('a declared target who also wrote the parent is counted once', () => {
   const b = new DatasetBuilder({ source: { format: 't' } });
   const A = b.node('t:a', { label: 'A' }), B = b.node('t:b', { label: 'B' });
   b.event({ actor: B, t: T0, key: 'm' });
@@ -73,7 +73,7 @@ test('reported: a declared target who also wrote the parent is counted once', { 
   assert.deepEqual(ties(ds, buildNetwork(ds, only(['declared']))), [['A', 'B', 1]]);
 });
 
-test('reported: a reply whose reply target is a bot does not fall back to the parent author', { skip: 'reported: construct.js:298 skips excluded targets before hasReplyTarget/hasSubject are set, so the parent fallback (317-322) fires although a target was given' }, () => {
+test('a reply whose reply target is a bot does not fall back to the parent author', () => {
   const b = new DatasetBuilder({ source: { format: 't' } });
   const A = b.node('t:a', { label: 'A' }), B = b.node('t:b', { label: 'B' });
   const Bot = b.node('t:bot', { label: 'Bot', isBot: true });
@@ -83,7 +83,7 @@ test('reported: a reply whose reply target is a bot does not fall back to the pa
   assert.deepEqual(ties(ds, buildNetwork(ds, only(['reply']))), []);
 });
 
-test('reported: with excludeBots off, an excluded bot\'s events count as excluded, not bots', { skip: 'reported: construct.js:251 tests isBot without excludeBots when attributing the drop' }, () => {
+test('with excludeBots off, an excluded bot\'s events count as excluded, not bots', () => {
   const b = new DatasetBuilder({ source: { format: 't' } });
   const A = b.node('t:a', { label: 'A' }), Bot = b.node('t:bot', { label: 'Bot', isBot: true });
   b.event({ actor: Bot, t: T0, targets: [[A, 'dm']] });

@@ -25,7 +25,7 @@ export function mergeDatasets(list, { name } = {}) {
   for (const ds of list) { total += ds.events.count; tgtTotal += ds.events.tgt.length; }
   const E = {
     type: new Uint8Array(total), t: new Float64Array(total), actor: new Int32Array(total), context: new Int32Array(total),
-    parent: new Int32Array(total), weight: new Float32Array(total), source: new Uint16Array(total),
+    parent: new Int32Array(total), weight: new Float64Array(total), source: new Uint16Array(total),
     tOff: new Int32Array(total + 1), tgt: new Int32Array(tgtTotal), role: new Uint8Array(tgtTotal), text: [], keys: [],
     // Tie fields stay null unless some input carries them.
     attrs: list.some(d => d.events.attrs) ? new Array(total).fill(null) : null,
