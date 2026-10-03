@@ -1,6 +1,7 @@
-// Learn (#learn, #learn/<key>): the beginner-support home (decision 1). Three
+// Learn (#learn, #learn/<key>): the beginner-support home (decision 1). Four
 // parts: "Find it in the app" (the course's questions, each with where to go),
-// worked examples that open in Build, and every concept from the glossary
+// worked examples that open in Build, the classic datasets library
+// (learn/classic.js), and every concept from the glossary
 // with its meaning, where it appears, how to read it, the common mistake, and
 // a tiny figure for the five core ideas. Meanings come from the glossary
 // (src/analysis/glossary.js), so Learn, tooltips and the API docs agree.
@@ -12,6 +13,7 @@ import { GLOSSARY, GLOSSARY_ALIASES } from '../../analysis/glossary.js';
 import { viewInfo } from '../actions.js';
 import { SECTIONS, TEACH, TASKS, EXAMPLES } from './learn/concepts.js';
 import { DIAGRAMS } from './learn/diagrams.js';
+import { ClassicList, ClassicCard } from './learn/classic.js';
 
 // Every glossary key appears once: in its section, or under "More measures".
 function allSections() {
@@ -85,6 +87,7 @@ function Examples() {
 
 export function LearnView() {
   const learnKey = useStore(s => s.learnKey);
+  const loadedExample = useStore(s => s.dataset?.meta?.example);
   const explain = useStore(s => s.explain !== false);
   const [q, setQ] = useState('');
   const sections = useMemo(allSections, []);
@@ -114,6 +117,7 @@ export function LearnView() {
     <nav class="tlinks learn__jump" aria-label="On this page">
       <a class="tlink" href="#learn-tasks" onClick=${e => { e.preventDefault(); document.getElementById('learn-tasks')?.scrollIntoView({ block: 'start' }); }}>Find it in the app</a>
       <a class="tlink" href="#learn-examples" onClick=${e => { e.preventDefault(); document.getElementById('learn-examples')?.scrollIntoView({ block: 'start' }); }}>Worked examples</a>
+      <a class="tlink" href="#learn-classic" onClick=${e => { e.preventDefault(); document.getElementById('learn-classic')?.scrollIntoView({ block: 'start' }); }}>Classic datasets</a>
       <a class="tlink" href="#learn-concepts" onClick=${e => { e.preventDefault(); document.getElementById('learn-concepts')?.scrollIntoView({ block: 'start' }); }}>Concepts</a>
       <span class="small text2 learn__explain">Explanations are ${explain ? 'on' : 'off'}: they show "How to read this" under numbers in every view. <button type="button" class="tlink tlink--quiet" onClick=${() => store.actions.setExplain(!explain)}>Turn ${explain ? 'off' : 'on'}</button></span>
     </nav>
@@ -129,6 +133,11 @@ export function LearnView() {
       <p class="prose">Small networks to open in Build and check against what you expect. Each opens as a drawing you can change, then Analyze.</p>
       <${Examples} />
     </section>
+
+    <div class="learn__part" id="learn-classic">
+      ${loadedExample?.classic && html`<${ClassicCard} example=${loadedExample} title="Loaded now" />`}
+      <${ClassicList} headingId="learn-classic-h" />
+    </div>
 
     <section class="section learn__part" id="learn-concepts" aria-labelledby="learn-concepts-h">
       <div class="learn__concepts-head">

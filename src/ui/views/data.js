@@ -12,7 +12,9 @@
 //
 // With nothing loaded the page starts with three equal ways in (decision 3):
 // draw or type a small network (Build), explore the sample organization, or
-// analyze your own exports (the drop zone below), then a link to Learn.
+// analyze your own exports (the drop zone below), then a link to Learn and
+// the classic datasets library (learn/classic.js). A loaded classic dataset
+// shows its card above the sources.
 // A dropped Org Signal project file is recognized and opened here too (C9).
 //
 // Pieces live in ./data/: io.js (reading, detecting, importing, naming),
@@ -31,6 +33,7 @@ import { ownersOf, ownerPairs, Owners, MatchList, ManualMerge, IdentityPanel } f
 import { JoinSetup, ProfileJoin } from './data/join.js';
 import { isProjectInput, readProject, projectSummary, openProject } from './data/project.js';
 import { rederivableSource, rederiveSurvey, RULE_NAME } from '../../importers/survey-response.js';
+import { ClassicList, ClassicCard } from './learn/classic.js';
 
 export { ReportView };
 
@@ -164,6 +167,7 @@ export function DataView() {
     <p class="visually-hidden" role="status" aria-live="polite">${detectionSummary(inputs)}</p>
     ${projects.length > 0 && !pending && html`<${ProjectInputs} projects=${projects} hasData=${hasData} busy=${busy} onOpen=${openProj} onRemove=${id => setProjects(ps => ps.filter(p => p.id !== id))} />`}
     ${!hasData && !inputs.length && !pending && !projects.length && html`<${EmptyState} onFiles=${addInputs} />`}
+    ${hasData && !pending && !showInputs && dataset.meta?.example?.classic && html`<${ClassicCard} example=${dataset.meta.example} />`}
     ${hasData && !pending && !showInputs && html`<${CurrentData} dataset=${dataset} report=${report} tab=${tab} onTab=${setTab} />`}
     ${hasData && !pending && !showInputs && html`<section class="section dv-more" aria-label="Add data">
       <${DropLine} onFiles=${addInputs} />
@@ -259,6 +263,7 @@ function EmptyState({ onFiles }) {
       </li>`)}
     </ul>
     <p class="dv-learn">New to network analysis? <a class="tlink tlink--arrow" href="#learn" onClick=${e => { e.preventDefault(); store.actions.setView('learn'); }}>Learn the ideas</a></p>
+    <div class="dv-classic" style="margin-top:2.25rem"><${ClassicList} level=${3} headingId="dv-classic-h" /></div>
     <p class="small text2 dv-gen">Or <button type="button" class="tlink" onClick=${() => store.actions.setView('generate')}>generate a synthetic organization</button> with planted structure, to test what the measures recover.</p>
     <section class="dv-import" id="dv-import" aria-labelledby="dv-import-h" tabindex="-1">
       <h3 id="dv-import-h" class="dv-h3">Analyze your own exports</h3>

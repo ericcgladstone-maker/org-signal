@@ -5,3 +5,4 @@ _deploy/
 .wrangler/
 *.log
 test/.tmp/
+data/classic-pending/

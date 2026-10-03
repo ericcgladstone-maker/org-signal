@@ -18,9 +18,15 @@ rm -rf _deploy
 mkdir -p _deploy
 cp _headers index.html _deploy/
 for item in assets src vendor; do cp -R "$item" _deploy/; done
+# Classic datasets: only data/classic/ (the bundled ones and the manifest).
+# data/classic-pending/ holds datasets whose redistribution terms are not
+# settled (docs/datasets.md) and is never deployed.
+mkdir -p _deploy/data
+cp -R data/classic _deploy/data/
 find _deploy \( -name '.DS_Store' -o -name 'Icon' -o -name 'Icon?' -o -name '._*' \) -delete 2>/dev/null || true
 # The mock services are a development aid; they stay out of the deployed build.
 rm -f _deploy/src/ui/services/mock.js
+if [ -d _deploy/data/classic-pending ]; then echo "ERROR: pending classic datasets in _deploy" >&2; exit 1; fi
 
 if ! grep -q 'Content-Security-Policy' _deploy/_headers || ! grep -q 'X-Content-Type-Options' _deploy/_headers; then
   echo "ERROR: _deploy/_headers missing or incomplete; refusing to stage." >&2

@@ -185,10 +185,11 @@ function NetworkInner({ ds, net }) {
   const sizeOptions = [{ value: 'none', label: 'Same size' }, ...nodeMetricKeys.map(k => ({ value: k, label: mlabel(k) }))];
   const sel = selection[selection.length - 1];
   const touch = coarse();
+  const noun = ds.meta?.nodeNoun || ['person', 'people'];
   const layouts = layoutOptions(net, { drawn: !!positions });
   const arranged = !!arrangeFor(layout) && twoModeView;
   const intro = tm ? `${twoModeIntro(tm, fmtInt(net.n), fmtInt(net.edgeCount))}${tm.view !== 'two-mode' ? ` ${projectionSentence(tm)}` : ''} ${touch ? 'Tap' : 'Click'} a node to see its neighborhood, or a tie to see the events behind it.`
-    : `${fmtInt(net.n)} people and ${fmtInt(net.edgeCount)} ties${net.directed ? ' (directed: a two-way tie counts as two)' : ''}. ${touch ? 'Tap' : 'Click'} a person to see their neighborhood, or a tie to see the events behind it.`;
+    : `${fmtInt(net.n)} ${noun[1]} and ${fmtInt(net.edgeCount)} ties${net.directed ? ' (directed: a two-way tie counts as two)' : ''}. ${touch ? 'Tap' : 'Click'} a ${noun[0]} to see their neighborhood, or a tie to see the events behind it.`;
 
   return html`<div class="view">
     <${ViewHead} title="Network" intro=${intro}
