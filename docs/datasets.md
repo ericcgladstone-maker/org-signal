@@ -9,42 +9,39 @@ Built 2026-10-03. Owner of this area: datasets (`data/**`, `tools/datasets/**`, 
 | id | Dataset | Distribution | Nodes | Ties (published) | Ties (converted) | Mode | File |
 |---|---|---|---|---|---|---|---|
 | `karate` | Zachary's karate club (1977) | bundled | 34 | 78 | 78, valued 1-7 (sum 231) | one | 8 KB |
-| `florentine` | Padgett's Florentine families | bundled: marriage; pending: + business, attributes | 16 | 20 marriage, 15 business | 20 (bundled); 20 + 15 (pending) | one | 3 KB / 5 KB |
-| `krackhardt` | Krackhardt's high-tech managers (1987) | pending | 21 | 190 advice, 102 friendship, 20 reports-to; 21 perceived matrices each | same | one | 22 KB + 43 KB perceptions |
-| `sampson` | Sampson's monastery (1968) | pending | 25 (18 at T4) | like T2-T4: 55, 57, 56 (UCINET) | like T1-T5: 39, 55, 57, 56, 21; dislike 37, 49, 48, 47, 21 | one | 39 KB |
-| `kapferer` | Kapferer's tailor shop (1972) | pending | 39 | sociational 158 / 223, instrumental 109 / 147 | same | one (mixed direction) | 59 KB |
-| `newcomb` | Newcomb's fraternity (1961) | pending | 17 | 15 weekly rankings of 16 | 15 x 272 = 4,080 valued arcs | one | 272 KB |
-| `wiring` | Bank wiring room (1939) | pending | 14 | games 28, arguments 19, friendship 13, antagonism 19, helping 24 arcs, job trading 7 arcs | same | one (mixed direction) | 11 KB |
+| `florentine` | Padgett's Florentine families | bundled (marriage by default; business; attributes) | 16 | 20 marriage, 15 business | 20 + 15 | one | 5 KB |
+| `krackhardt` | Krackhardt's high-tech managers (1987) | bundled | 21 | 190 advice, 102 friendship, 20 reports-to; 21 perceived matrices each | same | one | 22 KB + 43 KB perceptions |
+| `sampson` | Sampson's monastery (1968) | bundled | 25 (18 at T4) | like T2-T4: 55, 57, 56 (UCINET) | like T1-T5: 39, 55, 57, 56, 21; dislike 37, 49, 48, 47, 21 | one | 39 KB |
+| `kapferer` | Kapferer's tailor shop (1972) | bundled | 39 | sociational 158 / 223, instrumental 109 / 147 | same | one (mixed direction) | 59 KB |
+| `newcomb` | Newcomb's fraternity (1961) | bundled | 17 | 15 weekly rankings of 16 | 15 x 272 = 4,080 valued arcs | one | 272 KB |
+| `wiring` | Bank wiring room (1939) | bundled | 14 | games 28, arguments 19, friendship 13, antagonism 19, helping 24 arcs, job trading 7 arcs | same | one (mixed direction) | 11 KB |
 | `davis` | Davis's Southern Women (1941) | bundled | 18 women + 14 events | 89 attendances | 89 | two | 10 KB |
 | `lesmis` | Les Miserables co-appearances | bundled | 77 | 254, weights sum 820 | same | one | 18 KB |
 | `dolphins` | Lusseau's dolphins (2003) | bundled | 62 | 159 | 159 | one | 11 KB |
-| `enron` | Enron email, core employees, headers only | pending | 148 | (see Enron) | 21,052 messages, 2,440 directed ties | one | 0.6 MB gzip |
+| `enron` | Enron email, core employees, headers only | bundled | 148 | (see Enron) | 21,052 messages, 2,440 directed ties | one | 0.6 MB gzip |
 
 "Published" means the count in the original publication or the standard distribution (UCINET IV, networkx, Newman's data page), checked independently with networkx on the raw files (`tools/datasets/verify.py`).
 
 ## Licenses: what is bundled and why
 
-Most classic network datasets carry no license. They were printed in books and articles decades ago and have been passed around in software collections since. The rule applied here: **bundle only when a distributor or author clearly allows redistribution; otherwise build the file but do not ship it ("pending") until the owner decides.**
+Most classic network datasets carry no license. They were printed in books and articles decades ago and have been passed around in software collections since. The first rule applied was to bundle only where a distributor or author clearly allows redistribution and hold the rest back. **On 2026-10-03 the owner decided to bundle all eleven**: the held-back datasets are facts printed in the original studies, redistributed freely for decades in textbooks and software, and each ships with its citation and source. Enron ships with its ethics note (real people's communications; headers only; the 2026 questions about forged messages).
 
-Bundled (clear terms):
-- **karate, davis, florentine (marriage)**: shipped inside networkx 3.2.1 (BSD-3-Clause) as `karate_club_graph`, `davis_southern_women_graph`, `florentine_families_graph`; karate is also on Mark Newman's page ("free for scientific use ... the original authors have already made the data freely available").
+Terms as found:
+- **karate, davis**: shipped inside networkx 3.2.1 (BSD-3-Clause) as `karate_club_graph`, `davis_southern_women_graph`; karate is also on Mark Newman's page ("free for scientific use ... the original authors have already made the data freely available").
 - **lesmis**: Stanford GraphBase data, "public-domain sources for all programs and data" (Knuth, https://www-cs-faculty.stanford.edu/~knuth/sgb.html). The `jean.dat` header asks that the file itself not be changed; we ship a derived network (Newman's GML of it), not the file.
 - **dolphins**: Mark Newman's page, posted "with David Lusseau's permission", "free for scientific use".
+- **florentine, krackhardt, sampson, kapferer, newcomb, wiring**: from the UCINET IV dataset collection (Borgatti, Everett and Freeman; mirrored by Batagelj and Mrvar's Pajek site) and the Pajek ESNA collection. Neither states a license. The UCI Network Data Repository's copies carry a default "by-nc-nd/2.5" label for data whose source does not say otherwise. Several are also inside GPL-licensed R packages (NetData, ergm, networkdata). Florentine's marriage ties are identical to networkx's `florentine_families_graph`.
+- **enron**: made public by FERC during its investigation; CMU distributes it "as a resource for researchers who are interested in improving current email tools" with no license. Custodian names and titles: EnronData.org, CC BY 3.0 US.
 
-Pending (terms unclear; built into `data/classic-pending/`, never deployed):
-- **florentine business ties and attributes, krackhardt, sampson, kapferer, newcomb, wiring**: from the UCINET IV dataset collection (Borgatti, Everett and Freeman; mirrored by Batagelj and Mrvar's Pajek site) and the Pajek ESNA collection. Neither states a license. The UCI Network Data Repository's copies say "If the source of the data set does not specified otherwise, this data set is protected by the Creative Commons License by-nc-nd/2.5" (checked on its kaptail, sampson and davis pages): a repository label, but one that would forbid our derived files. Several are also inside GPL-licensed R packages (NetData, ergm, networkdata), which does not settle the original rights either.
-- **enron**: made public by FERC during its investigation; CMU distributes it "as a resource for researchers who are interested in improving current email tools" with no license. Redistribution of real people's communications also needs an ethics decision, not only a legal one (see Enron).
-
-Alternatives for the owner, per pending dataset: (1) decide they may ship (facts printed in the original works, redistributed freely for decades) and run `node tools/datasets/build.mjs --raw <dir> --bundle id,id` (moves them into `data/classic/`); (2) keep them out and let users load the original file themselves: every UCINET / Pajek source file imports through Data as is (the network-files importer reads DL and Pajek), though without the card, attributes from other sources and tie fields; (3) ask the distributors (Analytic Technologies for UCINET; the Pajek authors) for permission. A load-on-demand fetch from the public source is not possible in the browser today: none of the sources sends CORS headers, and the Pajek server was unreachable on 2026-10-03.
-
-**Do not commit `data/classic-pending/` to a public repository** until the decision is made; `tools/stage.sh` refuses to stage it.
+If a rights holder objects, remove the dataset from `BUNDLED` in `tools/datasets/build.mjs` and rebuild: it then builds into `data/classic-pending/`, which `tools/stage.sh` refuses to deploy and `.gitignore` keeps out of the repository, and the app lists it as "Not included" with a link to the public source.
 
 ## Files and API
 
 ```
-data/classic/index.json             manifest (all 11 entries, bundled and pending)
+data/classic/index.json             manifest (all 11 entries)
 data/classic/<id>.json              bundled datasets (toJSON from src/core/model.js)
-data/classic-pending/<id>.json[.gz] pending datasets; krackhardt-css.json (perceptions)
+data/classic/krackhardt-css.json    Krackhardt's 21 perceived networks (Build > Perceived)
+data/classic-pending/               only if a dataset is held back (not committed, not deployed)
 tools/datasets/fetch.sh <raw>       download every raw file and prepare derived inputs
 tools/datasets/build.mjs --raw <raw> [--bundle ids]   convert, write files and the manifest
 tools/datasets/cards.mjs            card text (description, findings, lookFor, citation, license)
@@ -64,7 +61,7 @@ test/datasets/classic.test.js       counts, attributes, known values, lookFor nu
 - `loadClassicPerceived(id, relation)` -> a perceived-network study in the model of `src/builders/perceived.js` (Krackhardt: `advice`, `friendship`).
 - `classicExample(entry)`, `classicSize(bytes)`.
 
-Manifest entry fields: `id, title, year, description, nodes, ties, tiesBy {relation (time): count}, mode ('one'|'two'), modes?, relations[], directed (true|false|'mixed'), valued, valuedNote?, timePoints[], knownAnswers[], findings, assignment, citation, sourceUrls[], license, ethics, lookFor[], distribution ('bundled'|'pending'), file, bytes, perceived?, pendingVersion?` (Florentine: the fuller pending build).
+Manifest entry fields: `id, title, year, description, nodes, ties, tiesBy {relation (time): count}, mode ('one'|'two'), modes?, relations[], directed (true|false|'mixed'), valued, valuedNote?, timePoints[], knownAnswers[], findings, assignment, citation, sourceUrls[], license, ethics, lookFor[], distribution ('bundled'|'pending'), file, bytes, perceived?, pendingVersion?` (`pendingVersion` is used only when a fuller build of a bundled dataset is held back; none is now).
 
 In the app, the address flag `?classic=pending` lists pending datasets as loadable and fetches them from `data/classic-pending/` (development server only; the deployed build does not have the files).
 
@@ -86,15 +83,14 @@ In the app, the address flag `?classic=pending` lists pending datasets as loadab
 - Verified: 34 / 78 equal UCINET ZACHE (78) and Newman's GML; density 0.139037, transitivity 0.255682, betweenness Mr. Hi 0.437635 and John A. 0.304075 (networkx and app agree to 1e-6); faction E-I index -0.718; Louvain (seed 1) gives 4 communities with one member in a community dominated by the other faction.
 - Discrepancies: Netzschleuder has two versions, 77 and 78 edges, "due to an ambiguous typo in the original study"; we use 78 (networkx, UCINET, Newman). The `faction` here is the club each member joined (networkx `club`, 17 / 17); Netzschleuder's `groups` agree exactly. Zachary's own ideological faction assignment differs for member 9, the one his model mispredicted.
 
-### Padgett's Florentine families (`florentine`, bundled marriage; pending full)
+### Padgett's Florentine families (`florentine`)
 
 - Citation: Padgett, J. F., & Ansell, C. K. (1993). Robust action and the rise of the Medici, 1400-1434. AJS 98(6), 1259-1319. Subset of Breiger & Pattison (1986), Social Networks 8, 215-256.
 - Opened: networkx `florentine_families_graph`; UCINET `padgett.dat`, `padgw.dat` and the UCINET IV dataset page (archived copies); Netzschleuder `florentine_families` metadata.
-- Bundled conversion: networkx's 15 families and 20 marriage ties, plus Pucci (the 16th family of the standard subset, no marriage ties) as an isolate, so counts and normalization match UCINET and most textbooks.
-- Pending conversion: PADGM (marriage, 20) and PADGB (business, 15) from UCINET; PADGW gives `wealth` (1427, thousands of lira), `priorates` (seats 1282-1344) and `ties_all_116` (ties in the full 116-family data). PADGW lists the families in a different order from PADGETT; rows are matched by name. PADGW gives 0 priorates for six families (Barbadori, Lamberteschi, Pazzi, Tornabuoni, Ginori, Pucci); whether some of these zeros mean "none" or "not recorded" is not stated, and we keep UCINET's coding.
+- Conversion: all 16 families of the standard subset (Pucci has no marriage ties and is an isolate in that relation, so counts and normalization match UCINET and most textbooks). PADGM (marriage, 20) and PADGB (business, 15) from UCINET; PADGW gives `wealth` (1427, thousands of lira), `priorates` (seats 1282-1344) and `ties_all_116` (ties in the full 116-family data). PADGW lists the families in a different order from PADGETT; rows are matched by name. PADGW gives 0 priorates for six families (Barbadori, Lamberteschi, Pazzi, Tornabuoni, Ginori, Pucci); whether some of these zeros mean "none" or "not recorded" is not stated, and we keep UCINET's coding.
 - Verified: networkx's marriage edges equal UCINET's PADGM exactly; Medici betweenness 0.452381 (16 families; 0.521978 with networkx's 15), Guadagni 0.220635, Albizzi 0.184127; degrees Medici 6, Strozzi 4, Guadagni 4; Medici wealth 103, priorates 53, Strozzi 146, 74.
 
-### Krackhardt's high-tech managers (`krackhardt`, pending)
+### Krackhardt's high-tech managers (`krackhardt`)
 
 - Citation: Krackhardt, D. (1987). Cognitive social structures. Social Networks, 9(2), 109-134. https://doi.org/10.1016/0378-8733(87)90009-8 (the UCINET page gives pages 104-134; the journal says 109-134).
 - Opened: UCINET `krackad.dat`, `krackfr.dat` (21 matrices of 21 x 21 each); CRAN archive `NetData_0.3.tar.gz` (`kracknets.rda`: edge lists and attributes AGE, TENURE, LEVEL, DEPT; GPL-2, "ported from UCINet").
@@ -103,7 +99,7 @@ In the app, the address flag `?classic=pending` lists pending datasets as loadab
 - Verified: self-reports equal the NetData edge lists exactly (190 advice, 102 friendship); advice density 0.452381, reciprocity 0.473684; Manager 2 has the most advice in-ties (18); Manager 18 the highest advice betweenness (0.234). Perceptions: consensus (at least half of 21) 95 ties, LAS union 276, LAS intersection 129 (numpy on krackad.dat and the builder agree); scored against the consensus of the other 20, Manager 8 perceives advice best (Jaccard 0.58).
 - Discrepancy: NetData's documentation describes a unionization campaign at "Silicon Systems"; that is Krackhardt's 1992 study of a different firm. The 21-manager data are the 1987 CSS study; the card says only that.
 
-### Sampson's monastery (`sampson`, pending)
+### Sampson's monastery (`sampson`)
 
 - Citation: Sampson, S. F. (1968). A novitiate in a period of change. PhD dissertation, Cornell. Coded by W. de Nooy for de Nooy, Mrvar & Batagelj, Exploratory Social Network Analysis with Pajek (2005), ch. 4.
 - Opened: Pajek ESNA page `esna/sampson.htm` and `Sampson.zip` (archived copies; "Copyright: No living author traced. Main author has deceased."); UCINET `sampson.dat` and its description.
@@ -111,7 +107,7 @@ In the app, the address flag `?classic=pending` lists pending datasets as loadab
 - Verified: liking ties T2, T3, T4 = 55, 57, 56, exactly UCINET's SAMPLK1-3 (which the UCINET page says are three of the time points; SAMPLK3 was collected with the other T4 relations); T1 39, T5 21; faction E-I index -0.357, assortativity 0.542; Gregory, Bonaventure and Winfrid each liked by 6 at T4.
 - Discrepancy: UCINET's ten matrices cover 18 novices and relations other than liking (esteem, influence, praise); the ESNA file covers liking and disliking only, for 25 novices at five times. We use ESNA for liking over time; esteem, influence and praise are not included.
 
-### Kapferer's tailor shop (`kapferer`, pending)
+### Kapferer's tailor shop (`kapferer`)
 
 - Citation: Kapferer, B. (1972). Strategy and transaction in an African factory. Manchester University Press.
 - Opened: UCINET `kaptail.dat` and description; UCI Network Data Repository kaptail page (license note); ergm's `kapferer` documentation.
@@ -119,7 +115,7 @@ In the app, the address flag `?classic=pending` lists pending datasets as loadab
 - Verified: 158, 223, 109, 147 ties as published; sociational density 0.213225 and 0.300945; most sociational ties: Chisokone (24) at Time 1, Mukubwa (25) at Time 2.
 - Discrepancies: UCINET says the two periods were "seven months apart" and each "over a period of one month"; ergm dates the first collection June to August 1965 and the second September 1965 to January 1966. We date by month, seven months apart, starting June 1965, and say so on the card. ergm reports 43 workers in all, 39 present at both times; the UCINET matrices have the 39.
 
-### Newcomb's fraternity (`newcomb`, pending)
+### Newcomb's fraternity (`newcomb`)
 
 - Citation: Newcomb, T. M. (1961). The acquaintance process. Nordlie, P. G. (1958), PhD dissertation, University of Michigan.
 - Opened: UCINET `newfrat.dat` and description; visone wiki page (same source).
@@ -127,7 +123,7 @@ In the app, the address flag `?classic=pending` lists pending datasets as loadab
 - Verified: 15 x 272 arcs; top-three network over the term: 129 ties, reciprocity 0.558; top-three reciprocity in week 0 0.470588, in week 15 0.352941 (networkx agrees).
 - Discrepancy: UCINET dates the cohort to fall 1956; Newcomb's project ran 1953-1956 with two cohorts. We follow UCINET.
 
-### Bank wiring room (`wiring`, pending)
+### Bank wiring room (`wiring`)
 
 - Citation: Roethlisberger, F. J., & Dickson, W. J. (1939). Management and the worker. Homans, G. C. (1950). The human group.
 - Opened: UCINET `wiring.dat` and description; Steiber (1981), Mid-American Review of Sociology 6(1), 17-40 (KU ScholarWorks PDF), for Homans's cliques.
@@ -161,7 +157,7 @@ In the app, the address flag `?classic=pending` lists pending datasets as loadab
 - Verified: density 0.084082, transitivity 0.308776, SN100 betweenness 0.248237, Beescratch 0.213324; split E-I index -0.925 (6 ties cross).
 - Discrepancy: community-graphs' "ground truth" labels (42 / 20) differ from the Girvan-Newman split in one dolphin, SN89; its source is not documented, so we use the reproducible split.
 
-### Enron email, core employees, headers only (`enron`, pending)
+### Enron email, core employees, headers only (`enron`)
 
 - Sources: CMU Enron Email Dataset, May 7, 2015 version (`https://www.cs.cmu.edu/~enron/enron_mail_20150507.tar.gz`, 443 MB, 517,394 message files in 150 mailboxes); EnronData.org custodian list (`edo_enron-custodians-data.html`, CC BY 3.0 US: 148 people, names and positions). Paper: Klimt & Yang (2004).
 - Which subset and why: the 150 CMU mailboxes are the "core employees" every study of the corpus starts from; EnronData.org shows they belong to 148 people (`phanis-s` duplicates `panus-s`, `whalley-l` duplicates `whalley-g`; `crandell-s`, `rodrique-r` are misspellings). Only messages from one of them to at least one other (to / cc / bcc) are kept, with only the core recipients. All of 1998-2002 fits (0.6 MB gzip), so no time window was needed.
@@ -175,13 +171,8 @@ In the app, the address flag `?classic=pending` lists pending datasets as loadab
 
 ## UI
 
-- Data start page: a "Classic datasets" list below the three start choices and the Learn link (`ClassicList` from `src/ui/views/learn/classic.js`): title, year, one line, size, mode in words, Load. Pending entries say "Not included yet" with a link to the public source.
+- Data start page: a "Classic datasets" list below the three start choices and the Learn link (`ClassicList` from `src/ui/views/learn/classic.js`): title, year, one line, size, mode in words, Load. An entry held back (none now) says "Not included yet" with a link to the public source.
 - Learn: the same list as its own section ("Classic datasets" in the jump links), and the card of the loaded classic dataset ("Loaded now").
-- After loading: Network opens; "Who stands out" shows the card's title and "what to look for" lines (`ds.meta.example`). The Data view shows the full card ("About this dataset") above the sources.
-- Krackhardt: "Perceptions in Build" writes the advice study into the Perceived builder's saved draft (`localStorage` key `orgsignal.build.perceived`, asking first when another study is there) and opens Build on the Perceived tab.
+- After loading: Network opens; "Who stands out" shows the card's title and "what to look for" lines (`ds.meta.example`), with "Known answer, citation and license" folded underneath (`ClassicFacts`) and a link to the whole card on Data. The Data view shows the full card ("About this dataset") above the sources. Datasets whose nodes are not people set `ds.meta.nodeNoun` (dolphins, families, characters), which Network's header uses.
+- Krackhardt: "Advice perceptions in Build" and "Friendship perceptions in Build" open `#build?perceived=krackhardt:<relation>` (`perceivedFromHash` in `src/ui/build/hash.js`). Build opens Perceived on Compare with that study, asking first when it would replace another one. The builder's reference network follows the tie filters in Construction settings (`referenceFromDataset(ds, people, { tieFields })`), says which relation it uses, and warns when that is not the relation the informants reported on. The grid-filling symmetry warning is not shown for a published study.
 
-## Requests to other owners
-
-- ui-core (`src/ui/views/network.js`): "Who stands out" shows only `title` and `lookFor`. To show the citation, the known answer and the license where students look, render `ClassicCard` from `src/ui/views/learn/classic.js` (or a "More about this dataset" link to Data) when `ds.meta.example.classic` is set.
-- ui-build (`src/ui/build/perceived/`): a supported way to open a study, e.g. `#build?perceived=classic:krackhardt:advice`, instead of writing the builder's storage key. Also: when a dataset is loaded, the builder's reference network (`referenceFromDataset`) takes every event, ignoring tie-field filters; with Krackhardt loaded, the reference is advice, friendship and reports-to together. It should use the built network (or the active filters).
-- lead: decide the pending datasets (above). `data/classic-pending/` should not go to a public repository until then.

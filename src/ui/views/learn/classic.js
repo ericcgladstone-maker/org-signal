@@ -11,7 +11,7 @@
 
 import { html, useState, useEffect } from '../../../../vendor/preact.js';
 import { store } from '../../store.js';
-import { listClassic, loadClassic, loadClassicPerceived, classicSize } from '../../../core/classic.js';
+import { listClassic, loadClassic, classicSize } from '../../../core/classic.js';
 import { fmtInt } from '../../lib/format.js';
 
 export function pendingAllowed() {
@@ -64,25 +64,11 @@ export async function openClassic(entry) {
   }
 }
 
-// Krackhardt's managers' perceptions into Build > Perceived. The builder keeps
-// its study in localStorage under its own key and reads it when Build opens,
-// so this writes that key (asking first when a study is there) and opens the
-// Perceived tab. A Build address parameter for this would be cleaner: see the
-// report in docs/datasets.md ("Perceived builder").
-const CSS_KEY = 'orgsignal.build.perceived', TAB_KEY = 'orgsignal.build.tab';
-export async function openPerceived(entry, relation = 'advice') {
-  try {
-    const css = await loadClassicPerceived(entry.id, relation, { pending: pendingAllowed() });
-    let old = null;
-    try { old = JSON.parse(localStorage.getItem(CSS_KEY) || 'null'); } catch { /* storage unavailable */ }
-    if (old?.people?.length && old.classic !== entry.id && !confirm('Open the managers\' perceptions in Build > Perceived? The perceived-network study there now is replaced.')) return;
-    try { localStorage.setItem(CSS_KEY, JSON.stringify(css)); localStorage.setItem(TAB_KEY, JSON.stringify('perceived')); } catch {
-      store.actions.notify('error', 'This browser does not allow saving the study for Build (site data is blocked).');
-      return;
-    }
-    store.actions.setView('build');
-    store.actions.notify('info', `Opened ${css.people.length} managers and their ${css.informants.length} reports (${relation}) in Build > Perceived. Go to Compare for consensus and accuracy.`);
-  } catch (e) { store.actions.notify('error', `Could not open the perceptions: ${e.message}`); }
+// Krackhardt's managers' perceptions into Build > Perceived, through Build's
+// link (#build?perceived=<id>:<relation>; src/ui/build/hash.js). Build asks
+// before replacing a study and opens Compare.
+export function openPerceived(entry, relation = 'advice') {
+  location.hash = `#build?perceived=${entry.id}:${relation}`;
 }
 
 function Item({ e }) {
@@ -94,7 +80,7 @@ function Item({ e }) {
     <p class="example__what">${e.description}</p>
     ${e.loadable
       ? html`<p class="tlinks"><button type="button" class="tlink tlink--arrow" onClick=${load} disabled=${busy} aria-label=${`Load ${e.title}`}>${busy ? 'Loading' : 'Load'}</button>
-          ${e.perceived && html`<button type="button" class="tlink" onClick=${() => openPerceived(e, 'advice')}>Perceptions in Build</button>`}</p>`
+          ${e.perceived && e.perceived.relations.map(r => html`<button type="button" class="tlink" onClick=${() => openPerceived(e, r)}>${r[0].toUpperCase() + r.slice(1)} perceptions in Build</button>`)}</p>`
       : html`<p class="small text2">Not included yet: its redistribution terms are not settled. <a class="linkish" href=${e.sourceUrls[0]} target="_blank" rel="noopener">Public source</a></p>`}
   </li>`;
 }
@@ -130,4 +116,21 @@ export function ClassicCard({ example: x, title = 'About this dataset' }) {
       ${x.ethics && html`<dt>Ethics</dt><dd>${x.ethics}</dd>`}
     </dl>
   </section>`;
+}
+
+// The checkable part of a classic dataset's card, folded under Network's "Who
+// stands out" (where students look): the known answer, the ethics note, the
+// citation and the license, with a link to the whole card on Data.
+export function ClassicFacts({ example: x }) {
+  if (!x?.classic) return null;
+  return html`<details class="classic-facts">
+    <summary class="small">Known answer, citation and license</summary>
+    <dl class="concept__dl small">
+      ${x.knownAnswers?.length > 0 && html`<dt>Known answer</dt><dd>${x.knownAnswers.map(k => html`<p>${k.key ? html`<span class="concept__k">${k.key}</span>: ` : ''}${k.meaning}</p>`)}</dd>`}
+      ${x.ethics && html`<dt>Ethics</dt><dd>${x.ethics}</dd>`}
+      <dt>Citation</dt><dd>${x.citation} ${x.sourceUrls?.[0] && html`<a class="linkish" href=${x.sourceUrls[0]} target="_blank" rel="noopener">Source</a>`}</dd>
+      <dt>License</dt><dd>${x.license}</dd>
+    </dl>
+    <p class="small"><a class="linkish" href="#data" onClick=${ev => { ev.preventDefault(); store.actions.setView('data'); }}>The whole card, with what the study found and an assignment, is on Data</a></p>
+  </details>`;
 }

@@ -128,3 +128,7 @@
 .standout__modeh .meta{margin-left:.4rem}
 .standout--twomode .basis{margin-top:.6rem}
 .standout__example ul{margin:.3rem 0 0;padding-left:1.1rem}
+.classic-facts{margin-top:.6rem}
+.classic-facts summary{cursor:pointer;color:var(--text-2)}
+.classic-facts .concept__dl{margin:.5rem 0}
+.classic-facts dd p{margin:0 0 .3rem}

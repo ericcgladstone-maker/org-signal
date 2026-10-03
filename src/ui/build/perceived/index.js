@@ -1,14 +1,14 @@
 // Perceived networks (cognitive social structures) UI:
 // people -> informants -> each informant's report -> results.
 
-import { html, useState, useMemo } from '../../../../vendor/preact.js';
+import { html, useState, useMemo, useEffect } from '../../../../vendor/preact.js';
 import { newCSS, addInformant, perInformantAccuracy, disagreement, referenceFromDataset, viewTies, viewLabel, toDataset, las,
   undirectedOf, setUndirected, setInformantTie, toggleInformantTie, symmetrize, symmetryCheck, bestPerceiver, isMutualRelation, CSS_RELATIONS, reportedCount } from '../../../builders/perceived.js';
 import { parseAdjacencyCSV, adjacencyCSV, splitKey } from '../../../builders/matrix.js';
 import { Term, Verdict } from '../../components/common.js';
 import { Steps, HandOffBar, usePersistentState, pickFile, readFileText, downloadText } from '../shared.js';
 import { currentDataset } from '../service.js';
-import { useStore } from '../../store.js';
+import { useStore, store } from '../../store.js';
 import { Matrix } from '../roster/Matrix.js';
 import { PeopleEditor } from '../roster/People.js';
 
@@ -20,9 +20,21 @@ const STEPS = [
   { id: 'results', label: 'Compare' },
 ];
 
-export function PerceivedBuilder() {
+// study: { css, nonce } from a #build?perceived=... link (a classic dataset's
+// perceptions). It replaces the study here, asking first when one is entered
+// and it is not the same dataset's, and opens Compare.
+export function PerceivedBuilder({ study = null } = {}) {
   const [css, setCss] = usePersistentState(KEY, newCSS);
   const [step, setStep] = useState(css.people.length ? (css.informants.length ? 'reports' : 'informants') : 'people');
+  useEffect(() => {
+    if (!study) return;
+    const s = study.css;
+    const same = css.classic && css.classic === s.classic && css.relation?.name === s.relation?.name;
+    if (css.people.length && !same && !confirm(`Open ${s.name || 'these perceived networks'} in Perceived? The study entered here now is replaced.`)) return;
+    setCss(s);
+    setStep('results');
+    store.actions.notify?.('info', `Opened ${s.people.length} people and ${s.informants.length} informants' reports (${s.relation?.name}). Compare shows consensus and accuracy.`);
+  }, [study?.nonce]);
   const patch = p => setCss(c => ({ ...c, ...(typeof p === 'function' ? p(c) : p) }));
   const idx = STEPS.findIndex(s => s.id === step);
   const done = [css.people.length > 1 && 'people', css.informants.length > 1 && 'informants',
@@ -121,13 +133,16 @@ function Reports({ css, patch }) {
     ${msg ? html`<p class=${msg.err ? 'ob-note ob-err' : 'ob-note'} role="status">${msg.text}</p>` : null}
     <p class="ob-note">The network as ${inf.label} sees it${css.relation.question ? html`, answering "${css.relation.question}"` : ''}.
       ${und ? ` ${css.relation.name || 'This relation'} is mutual: tick a pair once, in either cell, and its mirror is ticked too. Clicking the mirror keeps the tie; to clear it, click the cell you ticked or press Delete.` : ` A row is the person who ${css.relation.name ? `has the ${css.relation.name.toLowerCase()} tie` : 'sends the tie'}, a column the person it goes to.`}</p>
-    <${SymmetryNote} sym=${sym} />
+    <${SymmetryNote} sym=${css.classic ? null : sym} />
     <${Matrix} people=${css.people} values=${inf.ties} onSet=${onSet} onToggle=${onToggle} mutual=${und} caption=${`${inf.label}'s view`} />
   </div>`;
 }
 
 // Mutual off: informants whose matrices differ in symmetry are named (M1).
+// Not shown for a published study (css.classic): its informants' answers are
+// the data, and a one-way relation such as advice is often returned.
 function SymmetryNote({ sym }) {
+  if (!sym) return null;
   const share = l => { const r = sym.rows.find(x => x.label === l); return `${l} ${Math.round(r.share * 100)}%`; };
   if (sym.mixed) return html`<p class="ob-note ob-warn" role="status">Informants filled in the grid in different ways. Share of each one's ties ticked in both directions: ${[...sym.twoWay, ...sym.oneWay].map(share).join(', ')}. Compared as one-way ties, the two-way reports count as extra ties and score worse. If the relation is mutual, turn on Mutual relation under Informants.</p>`;
   if (sym.allTwoWay) return html`<p class="ob-note" role="status">Every informant ticked (almost) every tie in both directions, so the relation looks mutual. Turn on Mutual relation under Informants to count each pair once.</p>`;
@@ -138,12 +153,25 @@ const andList = a => (a.length < 3 ? a.join(' and ') : `${a.slice(0, -1).join(',
 const pct = x => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '—');
 const num = x => (Number.isFinite(x) ? x.toFixed(2) : '—');
 
+// The reference's tie filters in words ("; only relation: advice"), and a
+// warning when the loaded network's relation is not the one the informants
+// reported on (Construction settings decide which relation is loaded).
+const refFilterWords = ref => (ref?.filters?.length ? `; only ${ref.filters.map(f => `${f.key}: ${f.values ? f.values.join(', ') : `${f.min ?? ''}-${f.max ?? ''}`}`).join('; ')}, as in Construction settings` : '');
+function relationMismatch(css, ref) {
+  const f = ref?.filters?.find(x => x.key === 'relation' && x.values);
+  const name = String(css.relation?.name || '').trim().toLowerCase();
+  if (!name) return '';
+  if (!f) return ref?.multiRelation ? ` The loaded network mixes several relations; set its relation filter to ${css.relation.name} in Construction settings.` : '';
+  return f.values.some(v => String(v).toLowerCase() === name) ? '' : ` Note: the informants reported ${css.relation.name}, but the loaded network shows ${f.values.join(', ')}. Change the relation filter in Construction settings to compare like with like.`;
+}
+
 function Results({ css }) {
   const [threshold, setThreshold] = useState(0.5);
   const [view, setView] = useState('consensus');
   const und = undirectedOf(css);
   const ds = useStore(s => s.dataset) ?? currentDataset();
-  const ref = useMemo(() => (ds ? referenceFromDataset(ds, css.people) : null), [ds, css]);
+  const tieFields = useStore(s => s.settings?.tieFields) || null;
+  const ref = useMemo(() => (ds ? referenceFromDataset(ds, css.people, { tieFields }) : null), [ds, css, tieFields]);
   const refTies = ref && !ref.fromStudy && ref.matched >= 2 ? (und ? symmetrize(ref.ties) : ref.ties) : null;
   const acc = useMemo(() => perInformantAccuracy(css, { threshold, reference: refTies }), [css, threshold, refTies]);
   const dis = useMemo(() => disagreement(css, { limit: 15 }), [css]);
@@ -169,10 +197,10 @@ function Results({ css }) {
   // 0 for some people are then artifacts of which cell was ticked (M2).
   const oneWayOnly = !und && tieCount > 2 && !Object.keys(ties).some(k => { const [i, j] = splitKey(k); return ties[`${j}|${i}`]; });
   return html`<div class="ob-stack">
-    <${SymmetryNote} sym=${sym} />
+    <${SymmetryNote} sym=${css.classic ? null : sym} />
     ${best ? html`<${Verdict} verdict=${best.tied ? `${andList(best.labels)} perceive the network equally well.` : `${best.labels[0]} perceives the network best.`}
       plain=${`Highest Jaccard against the ${crit}: ${num(best.jaccard)} (1 = the same ties exactly, 0 = no tie in common).${bestOthers ? ` Against the consensus of the other informants: ${andList(bestOthers.labels)} (${num(bestOthers.jaccard)}).` : ''}`}
-      details=${refTies ? `The reference is the loaded network (${ref.matched} roster members matched by name).` : `Each informant is scored against the consensus of the other ${css.informants.length - 1} informant${css.informants.length > 2 ? 's' : ''} (${css.informants.length > 2 ? `ties at least ${Math.round(threshold * 100)}% of them reported` : 'the other one\'s report'}), leaving their own report out, so nobody is scored against themselves.${ref?.fromStudy ? ' The network now loaded was built from these reports, so it is not used as a reference: that would be circular.' : ''}`} />` : null}
+      details=${refTies ? `The reference is the loaded network (${ref.matched} roster members matched by name${refFilterWords(ref)}).${relationMismatch(css, ref)}` : `Each informant is scored against the consensus of the other ${css.informants.length - 1} informant${css.informants.length > 2 ? 's' : ''} (${css.informants.length > 2 ? `ties at least ${Math.round(threshold * 100)}% of them reported` : 'the other one\'s report'}), leaving their own report out, so nobody is scored against themselves.${ref?.fromStudy ? ' The network now loaded was built from these reports, so it is not used as a reference: that would be circular.' : ''}`} />` : null}
     <div class="field">
       <label class="field__label" for="ob-css-th">Consensus threshold: ${Math.round(threshold * 100)}% of informants</label>
       <input id="ob-css-th" class="ob-range" type="range" min="0.1" max="1" step="0.05" value=${threshold} onInput=${e => setThreshold(Number(e.currentTarget.value))} />
@@ -181,7 +209,7 @@ function Results({ css }) {
 
     <div class="ob-section">
       <h3>How each informant compares</h3>
-      <p class="ob-note">Counted over ${und ? 'pairs of people (the relation is mutual)' : 'one-way ties (each direction counts on its own)'}. Scored against the ${crit}${refTies ? '' : ', leaving each informant\'s own report out'}. <strong>Hits</strong>: ${pairWord}s the informant reported that are also in the ${crit}. <strong>False alarms</strong>: ${pairWord}s they reported that are not. <strong>Hit rate</strong>: hits divided by all the ${pairWord}s in the ${crit} (how much of it they saw). <strong>Jaccard</strong>: hits divided by the ${pairWord}s in either, so it punishes both misses and false alarms; use it to say who perceives best. ${refTies ? `The reference is the loaded network (${ref.matched} roster members matched by name).` : ref?.fromStudy ? 'The network now loaded was built from these reports, so it is not a reference. Load an observed network for this group to score against it.' : 'Load an observed network for this group to also score against it.'}</p>
+      <p class="ob-note">Counted over ${und ? 'pairs of people (the relation is mutual)' : 'one-way ties (each direction counts on its own)'}. Scored against the ${crit}${refTies ? '' : ', leaving each informant\'s own report out'}. <strong>Hits</strong>: ${pairWord}s the informant reported that are also in the ${crit}. <strong>False alarms</strong>: ${pairWord}s they reported that are not. <strong>Hit rate</strong>: hits divided by all the ${pairWord}s in the ${crit} (how much of it they saw). <strong>Jaccard</strong>: hits divided by the ${pairWord}s in either, so it punishes both misses and false alarms; use it to say who perceives best. ${refTies ? `The reference is the loaded network (${ref.matched} roster members matched by name${refFilterWords(ref)}).${relationMismatch(css, ref)}` : ref?.fromStudy ? 'The network now loaded was built from these reports, so it is not a reference. Load an observed network for this group to score against it.' : 'Load an observed network for this group to also score against it.'}</p>
       <div class="table-wrap"><table class="tbl">
         <thead><tr><th>Informant</th><th class="num">${und ? 'Pairs' : 'Ties'} reported</th><th class="num">Hits</th><th class="num">False alarms</th><th class="num">Hit rate</th><th>Jaccard vs ${refTies ? 'reference' : 'others'}</th>
           ${refTies ? html`<th class="num">Jaccard vs others</th>` : null}</tr></thead>

@@ -6,10 +6,10 @@
 //
 // Writes, for each dataset, an Org Signal Dataset (toJSON from
 // src/core/model.js; gzip when large) and the manifest data/classic/index.json.
-// Datasets whose redistribution terms are clear go to data/classic/ (shipped
-// by tools/stage.sh). The others go to data/classic-pending/ (never shipped):
-// they stay out of the deployed app until the owner decides; --bundle id moves
-// a decision into the build. docs/datasets.md has every source, licence and
+// Bundled datasets go to data/classic/ (shipped by tools/stage.sh); all are
+// bundled since 2026-10-03. One removed from BUNDLED goes to
+// data/classic-pending/ (never shipped) until it is decided; --bundle id
+// overrides that for one build. docs/datasets.md has every source, licence and
 // conversion choice.
 //
 // Every dataset is one or more sources of `declared` events: one event per tie
@@ -80,20 +80,7 @@ function karate() {
 
 // ---- 2. Padgett's Florentine families ---------------------------------------------
 
-// Bundled: the marriage network as networkx ships it (BSD-3), plus Pucci, the
-// 16th family of the Breiger and Pattison subset, who has no marriage ties.
-function florentineMarriage() {
-  const nx = json('nx_florentine.json');
-  const b = new DatasetBuilder({ name: CARDS.florentine.title });
-  begin(b, 'florentine', { directed: false, medium: 'archival', fileNames: ['networkx florentine_families_graph()'], title: CARDS.florentine.title,
-    tieFields: [RELATION_FIELD(['marriage'])] });
-  const ctx = b.context('florentine:marriage', { name: 'Marriage', kind: 'survey', visibility: 'private', medium: 'archival' });
-  const idx = new Map([...nx.nodes, 'Pucci'].sort().map(f => [f, b.node(`florentine:${f.toLowerCase()}`, { label: f })]));
-  for (const [u, v] of nx.edges) tie(b, idx.get(u), idx.get(v), { ctx, attrs: { relation: 'marriage' } });
-  return b.build();
-}
-
-// Pending: both relations and the family attributes from the UCINET IV files
+// Both relations and the family attributes from the UCINET IV files
 // PADGETT.DAT (PADGM, PADGB) and PADGW.DAT (rows in a different order).
 const FAMILY = { ACCIAIUOL: 'Acciaiuoli', ALBIZZI: 'Albizzi', BARBADORI: 'Barbadori', BISCHERI: 'Bischeri', CASTELLAN: 'Castellani', GINORI: 'Ginori', GUADAGNI: 'Guadagni', LAMBERTES: 'Lamberteschi', MEDICI: 'Medici', PAZZI: 'Pazzi', PERUZZI: 'Peruzzi', PUCCI: 'Pucci', RIDOLFI: 'Ridolfi', SALVIATI: 'Salviati', STROZZI: 'Strozzi', TORNABUON: 'Tornabuoni' };
 function florentineFull() {
@@ -379,13 +366,14 @@ function enron() {
 
 // ---- write ------------------------------------------------------------------------------------
 
-const BUILDERS = { karate, florentine: florentineMarriage, davis, lesmis, dolphins,
-  // pending: redistribution terms unclear (docs/datasets.md, "Licences")
-  'florentine@full': florentineFull, krackhardt, sampson, kapferer, newcomb, wiring, enron };
-const BUNDLED = new Set(['karate', 'florentine', 'davis', 'lesmis', 'dolphins']);
+// All bundled since 2026-10-03 (owner's decision; docs/datasets.md, "Licences").
+// Florentine ships the full UCINET build (default tie filter: marriage). A dataset can be held back
+// again by removing it from BUNDLED (it then builds into data/classic-pending/).
+const BUILDERS = { karate, florentine: florentineFull, davis, lesmis, dolphins, krackhardt, sampson, kapferer, newcomb, wiring, enron };
+const BUNDLED = new Set(Object.keys(BUILDERS));
 
 const outDir = { bundled: join(APP, 'data', 'classic'), pending: join(APP, 'data', 'classic-pending') };
-for (const d of Object.values(outDir)) mkdirSync(d, { recursive: true });
+mkdirSync(outDir.bundled, { recursive: true });
 
 function write(id, ds, where) {
   ds.meta.createdAt = Date.UTC(2026, 9, 3); // fixed, so rebuilding is reproducible
@@ -393,6 +381,7 @@ function write(id, ds, where) {
   const text = toJSON(ds);
   const gz = text.length > 512 * 1024;
   const name = `${id}${gz ? '.json.gz' : '.json'}`;
+  mkdirSync(outDir[where], { recursive: true });
   const file = join(outDir[where], name);
   writeFileSync(file, gz ? gzipSync(text, { level: 9, mtime: 0 }) : text);
   return { file: where === 'bundled' ? name : `../classic-pending/${name}`, bytes: statSync(file).size, rawBytes: text.length };

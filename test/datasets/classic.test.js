@@ -4,16 +4,14 @@
 // networkx 3.2.1 (tools/datasets/verify.py on the raw files). The numbers in
 // each card's lookFor are checked here too.
 //
-// Pending datasets (data/classic-pending/, not shipped) are tested when their
-// files are present and skipped otherwise.
+// All eleven are bundled (docs/datasets.md, "Licences").
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
 import { listClassic, loadClassic, loadClassicPerceived, classicExample, classicSize } from '../../src/core/classic.js';
 import { eventAttrs, twoModeOf, eventTargets } from '../../src/core/model.js';
 import { defaultSettings, normalizeSettings, buildNetwork, computeNodeMetrics, computeNetworkMetrics, detectCommunities, groupMetrics } from '../../src/analysis/index.js';
-import { consensus, las, toDataset, perInformantAccuracy, bestPerceiver } from '../../src/builders/perceived.js';
+import { consensus, las, toDataset, perInformantAccuracy, bestPerceiver, referenceFromDataset } from '../../src/builders/perceived.js';
 
 const near = (a, b, eps = 1e-3) => assert.ok(Math.abs(a - b) <= eps, `${a} != ${b}`);
 const net = (ds, patch = {}) => buildNetwork(ds, normalizeSettings(ds, { ...defaultSettings(ds), ...patch }));
@@ -23,32 +21,21 @@ const topOf = (ds, n, metric) => Object.entries(byLabel(ds, n, metric)).sort((a,
 const countBy = (ds, key) => { const c = {}; for (const a of ds.nodes.attrs) if (a[key] !== undefined) c[a[key]] = (c[a[key]] || 0) + 1; return c; };
 const tiesWhere = (ds, pred) => { let n = 0; for (let i = 0; i < ds.events.count; i++) if (pred(eventAttrs(ds, i))) n++; return n; };
 
-async function pending(id) {
-  const list = await listClassic({ pending: true });
-  const e = list.find(x => x.id === id);
-  return e && existsSync(new URL(e.file, new URL('../../data/classic/', import.meta.url))) ? e : null;
-}
-const skipUnlessPending = async (t, id) => { if (!(await pending(id))) { t.skip(`${id}: pending file not present`); return true; } return false; };
-
-test('manifest: every dataset has its card, and only clear-licence datasets are bundled', async () => {
+test('manifest: every dataset has its card and is bundled', async () => {
   const list = await listClassic();
   assert.deepEqual(list.map(e => e.id), ['karate', 'florentine', 'krackhardt', 'sampson', 'kapferer', 'newcomb', 'wiring', 'davis', 'lesmis', 'dolphins', 'enron']);
-  const bundled = list.filter(e => e.distribution === 'bundled').map(e => e.id).sort();
-  assert.deepEqual(bundled, ['davis', 'dolphins', 'florentine', 'karate', 'lesmis']);
+  assert.deepEqual(list.filter(e => e.distribution !== 'bundled').map(e => e.id), []);
   for (const e of list) {
     for (const k of ['title', 'description', 'year', 'findings', 'citation', 'license', 'mode', 'file']) assert.ok(e[k], `${e.id} ${k}`);
     assert.ok(e.sourceUrls.length && e.lookFor.length >= 3 && e.knownAnswers.length, e.id);
     assert.ok(e.assignment?.text, e.id);
-    assert.equal(e.loadable, e.distribution === 'bundled', e.id);
+    assert.equal(e.loadable, true, e.id);
+    assert.ok(!e.file.includes('pending'), e.id);
     assert.doesNotMatch(JSON.stringify(e), /[\u{1F300}-\u{1FAFF}☀-➿]/u, `${e.id}: no emoji`);
   }
   assert.ok(list.find(e => e.id === 'enron').ethics.includes('real people'));
   assert.equal(classicSize(8334), '8 KB');
   assert.equal(classicSize(617570), '0.6 MB');
-});
-
-test('pending datasets do not load without the pending flag', async () => {
-  await assert.rejects(loadClassic('sampson'), /not included in this build/);
 });
 
 test("Zachary's karate club: 34 members, 78 ties, faction, betweenness of the two leaders", async () => {
@@ -82,11 +69,12 @@ test("Zachary's karate club: 34 members, 78 ties, faction, betweenness of the tw
   assert.equal(minority, 1);
 });
 
-test("Padgett's Florentine families (bundled): marriage network, Medici highest betweenness", async () => {
+test("Padgett's Florentine families: marriage network by default, Medici highest betweenness", async () => {
   const ds = await loadClassic('florentine');
   assert.equal(ds.nodes.count, 16);
-  assert.equal(ds.events.count, 20);
+  assert.equal(ds.events.count, 35);
   const n = net(ds);
+  assert.equal(n.edges.count, 20);
   assert.equal(computeNetworkMetrics(n).components, 2); // Pucci is isolated
   const m = computeNodeMetrics(n, { which: ['degree', 'betweenness'], approx: false });
   const btw = topOf(ds, n, m.betweenness);
@@ -96,24 +84,27 @@ test("Padgett's Florentine families (bundled): marriage network, Medici highest 
   assert.deepEqual([deg.Medici, deg.Strozzi, deg.Guadagni, deg.Pucci], [6, 4, 4, 0]);
 });
 
-test('Florentine families (pending, full): 20 marriage and 15 business ties, wealth and priorates', async t => {
-  if (await skipUnlessPending(t, 'florentine')) return;
-  const ds = await loadClassic('florentine', { pending: true });
+test('Florentine families: 20 marriage and 15 business ties, wealth and priorates', async () => {
+  const ds = await loadClassic('florentine');
   assert.equal(tiesWhere(ds, a => a.relation === 'marriage'), 20);
   assert.equal(tiesWhere(ds, a => a.relation === 'business'), 15);
   const at = Object.fromEntries(ds.nodes.labels.map((l, i) => [l, ds.nodes.attrs[i]]));
   assert.deepEqual([at.Medici.wealth, at.Medici.priorates, at.Strozzi.wealth, at.Strozzi.priorates], [103, 53, 146, 74]);
   assert.deepEqual(['Barbadori', 'Lamberteschi', 'Pazzi', 'Tornabuoni', 'Ginori', 'Pucci'].map(f => at[f].priorates), [0, 0, 0, 0, 0, 0]);
-  // Default: marriage only, as the bundled network.
+  // Default: marriage only.
   const n = net(ds);
   assert.equal(n.edges.count, 20);
   const both = net(ds, filters());
-  assert.ok(both.edges.count > 20);
+  assert.equal(both.edges.count, 27);
+  const bus = net(ds, filters({ key: 'relation', values: ['business'] }));
+  assert.equal(computeNetworkMetrics(bus).components, 6);
+  const bb = topOf(ds, bus, computeNodeMetrics(bus, { which: ['betweenness'], approx: false }).betweenness);
+  assert.deepEqual(bb.slice(0, 2).map(([l, x]) => [l, +x.toFixed(3)]), [['Barbadori', 0.238], ['Medici', 0.229]]);
+  near(byLabel(ds, both, computeNodeMetrics(both, { which: ['betweenness'], approx: false }).betweenness).Medici, 0.413);
 });
 
-test("Krackhardt's managers: 190 advice, 102 friendship, 20 reports-to; perceptions load into the Perceived builder", async t => {
-  if (await skipUnlessPending(t, 'krackhardt')) return;
-  const ds = await loadClassic('krackhardt', { pending: true });
+test("Krackhardt's managers: 190 advice, 102 friendship, 20 reports-to; perceptions load into the Perceived builder", async () => {
+  const ds = await loadClassic('krackhardt');
   assert.equal(ds.nodes.count, 21);
   assert.equal(tiesWhere(ds, a => a.relation === 'advice'), 190);
   assert.equal(tiesWhere(ds, a => a.relation === 'friendship'), 102);
@@ -131,7 +122,7 @@ test("Krackhardt's managers: 190 advice, 102 friendship, 20 reports-to; percepti
   assert.equal(btw[0][0], 'Manager 18'); near(btw[0][1], 0.234, 1e-3);
   // Cognitive social structure: 21 informants; each one's own row is their
   // advice self-report; aggregates as computed with numpy on krackad.dat.
-  const css = await loadClassicPerceived('krackhardt', 'advice', { pending: true });
+  const css = await loadClassicPerceived('krackhardt', 'advice');
   assert.equal(css.people.length, 21);
   assert.equal(css.informants.length, 21);
   assert.equal(css.relation.undirected, false);
@@ -142,7 +133,7 @@ test("Krackhardt's managers: 190 advice, 102 friendship, 20 reports-to; percepti
   const count = ties => Object.entries(ties).filter(([k, v]) => v && k.includes('|')).length;
   assert.equal(count(las(css, 'union')), 276);
   assert.equal(count(las(css, 'intersection')), 129);
-  const fr = await loadClassicPerceived('krackhardt', 'friendship', { pending: true });
+  const fr = await loadClassicPerceived('krackhardt', 'friendship');
   assert.equal(fr.informants.length, 21);
   assert.equal(toDataset(css, { view: 'consensus' }).events.count, 95);
   const best = bestPerceiver(perInformantAccuracy(css, { threshold: 0.5 }), 'vsOthers');
@@ -150,9 +141,8 @@ test("Krackhardt's managers: 190 advice, 102 friendship, 20 reports-to; percepti
   near(best.jaccard, 0.58, 0.005);
 });
 
-test("Sampson's monastery: liking at five time points; T2-T4 equal UCINET's SAMPLK1-3; factions", async t => {
-  if (await skipUnlessPending(t, 'sampson')) return;
-  const ds = await loadClassic('sampson', { pending: true });
+test("Sampson's monastery: liking at five time points; T2-T4 equal UCINET's SAMPLK1-3; factions", async () => {
+  const ds = await loadClassic('sampson');
   assert.equal(ds.nodes.count, 25);
   assert.deepEqual(countBy(ds, 'faction'), { 'Young Turks': 7, 'Loyal Opposition': 5, Outcasts: 3, Interstitial: 3 });
   assert.deepEqual(countBy(ds, 'outcome'), { Expelled: 4, Left: 10, Stayed: 4 });
@@ -167,9 +157,8 @@ test("Sampson's monastery: liking at five time points; T2-T4 equal UCINET's SAMP
   assert.deepEqual([ind.Gregory, ind.Bonaventure, ind.Winfrid], [6, 6, 6]);
 });
 
-test("Kapferer's tailor shop: 158 and 223 sociational, 109 and 147 instrumental ties, two dated periods", async t => {
-  if (await skipUnlessPending(t, 'kapferer')) return;
-  const ds = await loadClassic('kapferer', { pending: true });
+test("Kapferer's tailor shop: 158 and 223 sociational, 109 and 147 instrumental ties, two dated periods", async () => {
+  const ds = await loadClassic('kapferer');
   assert.equal(ds.nodes.count, 39);
   const c = (rel, time) => tiesWhere(ds, a => a.relation === rel && a.time === time);
   assert.deepEqual([c('sociational', 'Time 1'), c('sociational', 'Time 2'), c('instrumental', 'Time 1'), c('instrumental', 'Time 2')], [158, 223, 109, 147]);
@@ -183,9 +172,8 @@ test("Kapferer's tailor shop: 158 and 223 sociational, 109 and 147 instrumental 
   assert.equal(net(ds).edges.count, 278);
 });
 
-test("Newcomb's fraternity: 15 weekly full rankings, valued ties, top-three default", async t => {
-  if (await skipUnlessPending(t, 'newcomb')) return;
-  const ds = await loadClassic('newcomb', { pending: true });
+test("Newcomb's fraternity: 15 weekly full rankings, valued ties, top-three default", async () => {
+  const ds = await loadClassic('newcomb');
   assert.equal(ds.nodes.count, 17);
   assert.equal(ds.events.count, 15 * 272);
   const weeks = [...new Set(Array.from({ length: ds.events.count }, (_, i) => eventAttrs(ds, i).week))].sort((a, b) => a - b);
@@ -199,9 +187,8 @@ test("Newcomb's fraternity: 15 weekly full rankings, valued ties, top-three defa
   near(computeNetworkMetrics(wk(15)).reciprocity, 0.352941, 1e-6);
 });
 
-test("Bank wiring room: six relations, Homans's cliques", async t => {
-  if (await skipUnlessPending(t, 'wiring')) return;
-  const ds = await loadClassic('wiring', { pending: true });
+test("Bank wiring room: six relations, Homans's cliques", async () => {
+  const ds = await loadClassic('wiring');
   assert.equal(ds.nodes.count, 14);
   const c = rel => tiesWhere(ds, a => a.relation === rel);
   assert.deepEqual(['games', 'window arguments', 'friendship', 'antagonism', 'helping', 'job trading'].map(c), [28, 19, 13, 19, 24, 7]);
@@ -270,9 +257,8 @@ test("Lusseau's dolphins: 62 dolphins, 159 ties, the 2004 split", async () => {
   near(groupMetrics(n, ds, 'split_2004').eiIndex?.observed ?? groupMetrics(n, ds, 'split_2004').eiIndex, -0.925);
 });
 
-test('Enron (core, headers only): 148 people, 21,052 messages, roles, no text', async t => {
-  if (await skipUnlessPending(t, 'enron')) return;
-  const ds = await loadClassic('enron', { pending: true });
+test('Enron (core, headers only): 148 people, 21,052 messages, roles, no text', async () => {
+  const ds = await loadClassic('enron');
   assert.equal(ds.nodes.count, 148);
   assert.equal(ds.events.count, 21052);
   assert.ok(ds.events.text.every(x => x == null), 'no message text');
@@ -307,4 +293,19 @@ test('classicExample gives Network the worked-example shape', async () => {
   assert.equal(x.title, e.title);
   assert.deepEqual(x.lookFor, e.lookFor);
   assert.equal(x.classic, e.id);
+});
+
+test('Krackhardt: the perceived builder scores against the relation chosen in Construction settings', async () => {
+  const ds = await loadClassic('krackhardt');
+  const css = await loadClassicPerceived('krackhardt', 'advice');
+  const tf = defaultSettings(ds).tieFields;
+  assert.deepEqual(tf.filters, [{ key: 'relation', values: ['advice'] }]);
+  const all = referenceFromDataset(ds, css.people);
+  const advice = referenceFromDataset(ds, css.people, { tieFields: tf });
+  const friends = referenceFromDataset(ds, css.people, { tieFields: { weight: null, filters: [{ key: 'relation', values: ['friendship'] }] } });
+  assert.equal(all.multiRelation, true);
+  assert.equal(Object.keys(advice.ties).length, 190);
+  assert.equal(Object.keys(friends.ties).length, 102);
+  assert.ok(Object.keys(all.ties).length > 190);
+  assert.deepEqual(advice.filters, tf.filters);
 });

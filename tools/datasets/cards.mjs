@@ -63,19 +63,20 @@ export const CARDS = {
     title: "Padgett's Florentine families",
     manifest: ds => base(ds, {
       title: "Padgett's Florentine families", year: 1993,
-      description: 'Marriage alliances among 16 leading families of early fifteenth-century Florence, from Padgett\'s archival research.',
-      relations: ['marriage'], directed: false, valued: false, timePoints: [],
+      description: 'Marriage alliances and business ties among 16 leading families of early fifteenth-century Florence, from Padgett\'s archival research, with each family\'s wealth and seats on the city council (priorates). The network opens on marriage; Construction settings switches to business or both.',
+      relations: ['marriage', 'business'], directed: false, valued: false, timePoints: [],
       knownAnswers: [{ key: null, meaning: 'A position, not a grouping: the Medici have the highest betweenness in the marriage network.' }],
       findings: 'Padgett and Ansell (1993) argued that the Medici rose to power in the 1430s through their network position: they married into old patrician families and did business with newer families that were not tied to each other, so the Medici stood between groups that could reach each other only through them ("robust action"). The opposing oligarchs were densely intermarried among themselves.',
       assignment: { a: ['A1', 'A2'], text: 'Who connects the most families? Compare the number of marriage ties (degree) with betweenness: the Medici have 6 ties, the Strozzi 4 and the Guadagni 4, but betweenness separates them far more.' },
       citation: 'Padgett, J. F., & Ansell, C. K. (1993). Robust action and the rise of the Medici, 1400-1434. American Journal of Sociology, 98(6), 1259-1319. https://doi.org/10.1086/230190. Data as subset by Breiger, R. L., & Pattison, P. E. (1986). Cumulated social roles. Social Networks, 8, 215-256.',
       sourceUrls: ['https://networkx.org/documentation/stable/reference/generated/networkx.generators.social.florentine_families_graph.html', 'http://vlado.fmf.uni-lj.si/pub/networks/data/ucinet/ucidata.htm#padgett'],
-      license: `Marriage ties: ${NX} (15 families; Pucci, the 16th, has no marriage ties and is added as an isolate). Bundled. Business ties and the wealth and priorates attributes come only from the UCINET IV collection, which states no license: built but pending (not shipped).`,
+      license: `UCINET IV collection (PADGETT.DAT, PADGW.DAT; no license stated). The marriage ties are identical to ${NX}. Bundled as facts from the published study, with the citation.`,
       ethics: null,
       lookFor: [
         "16 families and 20 marriage ties. Pucci married into none of the other families, so the network has 2 components.",
         "The Medici have betweenness 0.452, about twice the next family (Guadagni, 0.221), but only 6 marriage ties against 4 for the Guadagni and the Strozzi.",
-        "In People, sort by Betweenness, then by Contacts: having many ties and standing between families are different things."
+        "In People, sort by Betweenness, then by Contacts: having many ties and standing between families are different things.",
+        "Switch the tie filter in Construction settings to business: 15 ties in 6 pieces, and the Barbadori (0.238) edge out the Medici (0.229). With both relations (27 family pairs) the Medici lead again at 0.413: Padgett's argument rests on the two networks together."
       ],
     }),
   },
@@ -90,7 +91,7 @@ export const CARDS = {
       assignment: { a: ['A11'], text: 'Open the managers\' perceptions in Build > Perceived (advice). Who perceives the advice network best? Is the most accurate perceiver central in the advice network?' },
       citation: 'Krackhardt, D. (1987). Cognitive social structures. Social Networks, 9(2), 109-134. https://doi.org/10.1016/0378-8733(87)90009-8',
       sourceUrls: ['http://vlado.fmf.uni-lj.si/pub/networks/data/ucinet/ucidata.htm#krackhardt', 'https://cran.r-project.org/src/contrib/Archive/NetData/'],
-      license: 'UCINET IV dataset collection (no license stated); attributes and reports-to from the NetData R package (GPL-2, ported from UCINET). Pending: not shipped until the owner decides.',
+      license: 'UCINET IV dataset collection (no license stated); attributes and reports-to from the NetData R package (GPL-2, ported from UCINET). Bundled as facts from the published study, with the citation.',
       ethics: 'The managers are anonymous (numbers only).',
       lookFor: [
         "21 managers; by default only advice ties (190). Add friendship (102) or reports-to (20) in Settings, tie fields.",
@@ -112,7 +113,7 @@ export const CARDS = {
       assignment: { a: ['A4', 'A10'], text: 'At T4 (the default), do the communities match Sampson\'s factions? Then filter the wave to T2 and T3 (Settings, tie fields): when do the factions become visible?' },
       citation: 'Sampson, S. F. (1968). A novitiate in a period of change: An experimental and case study of social relationships. PhD dissertation, Cornell University. Coded by de Nooy, Mrvar and Batagelj (2005), Exploratory Social Network Analysis with Pajek, chapter 4.',
       sourceUrls: ['http://vlado.fmf.uni-lj.si/pub/networks/data/esna/sampson.htm', 'http://vlado.fmf.uni-lj.si/pub/networks/data/ucinet/ucidata.htm#sampson'],
-      license: 'Pajek ESNA collection ("Copyright: No living author traced") and UCINET IV collection (no license stated). Pending: not shipped until the owner decides.',
+      license: 'Pajek ESNA collection ("Copyright: No living author traced") and UCINET IV collection (no license stated). Bundled as facts from the published study, with the citation.',
       ethics: 'Real first names (religious names) of novices, as published.',
       lookFor: [
         "By default: liking at T4, 56 ties. 25 novices appear over the five time points; the 7 not present at T4 show as isolated.",
@@ -133,7 +134,7 @@ export const CARDS = {
       assignment: { a: ['A10'], text: 'In Time, compare Time 1 and Time 2: how much denser is the sociational network, and who gained the most ties? Then add the instrumental ties (Settings, tie fields).' },
       citation: 'Kapferer, B. (1972). Strategy and transaction in an African factory. Manchester University Press.',
       sourceUrls: ['http://vlado.fmf.uni-lj.si/pub/networks/data/ucinet/ucidata.htm#kaptail', 'https://search.r-project.org/CRAN/refmans/ergm/html/kapferer.html'],
-      license: 'UCINET IV collection (no license stated); the UCI Network Data Repository copy says CC BY-NC-ND 2.5 unless the source says otherwise. Pending: not shipped until the owner decides.',
+      license: 'UCINET IV collection (no license stated); the UCI Network Data Repository copy says CC BY-NC-ND 2.5 unless the source says otherwise. Bundled as facts from the published study, with the citation.',
       ethics: 'Workers\' names as Kapferer published them.',
       lookFor: [
         "39 workers. By default the sociational ties of both periods: 278 pairs.",
@@ -155,7 +156,7 @@ export const CARDS = {
       assignment: { a: ['A10'], text: 'In Time, follow the top-three choices week by week. Which mutual pairs form early and last? Does reciprocity rise as the men get to know each other?' },
       citation: 'Newcomb, T. M. (1961). The acquaintance process. Holt, Rinehart and Winston. Nordlie, P. G. (1958). A longitudinal study of interpersonal attraction in a natural group setting. PhD dissertation, University of Michigan.',
       sourceUrls: ['http://vlado.fmf.uni-lj.si/pub/networks/data/ucinet/ucidata.htm#newfrat'],
-      license: 'UCINET IV collection (no license stated). Pending: not shipped until the owner decides.',
+      license: 'UCINET IV collection (no license stated). Bundled as facts from the published study, with the citation.',
       ethics: 'The men are anonymous (numbers only).',
       lookFor: [
         "17 men ranked each other in 15 weeks (week 9 is missing): 272 ranked pairs a week, 4,080 in all.",
@@ -177,7 +178,7 @@ export const CARDS = {
       assignment: { a: ['A6'], text: 'In Groups, choose clique: are the cliques closed (E-I index)? Which relations tie the cliques together and which keep them apart (filter by relation)?' },
       citation: 'Roethlisberger, F. J., & Dickson, W. J. (1939). Management and the worker. Harvard University Press. Homans, G. C. (1950). The human group. Harcourt, Brace.',
       sourceUrls: ['http://vlado.fmf.uni-lj.si/pub/networks/data/ucinet/ucidata.htm#wiring', 'https://kuscholarworks.ku.edu/server/api/core/bitstreams/aaf32410-9e1c-49f5-a973-4154e3599ff2/content'],
-      license: 'UCINET IV collection (no license stated). Pending: not shipped until the owner decides.',
+      license: 'UCINET IV collection (no license stated). Bundled as facts from the published study, with the citation.',
       ethics: 'The men are known only by job codes.',
       lookFor: [
         "14 men. By default only friendship (13 ties); games 28, antagonism 19, window arguments 19, helping 24 one-way, job trading 7 (Settings, tie fields).",
@@ -259,7 +260,7 @@ export const CARDS = {
       assignment: { a: ['A8', 'A10'], text: 'Build the network from To only, then To + Cc (Settings, rules): how do the top five change? In Time, what happens around October-December 2001?' },
       citation: 'Klimt, B., & Yang, Y. (2004). The Enron corpus: A new dataset for email classification research. ECML 2004. Diesner, J., Frantz, T. L., & Carley, K. M. (2005). Communication networks from the Enron email corpus. Computational and Mathematical Organization Theory, 11(3), 201-228. Corpus: Cohen, W. W., Enron Email Dataset (May 7, 2015 version), Carnegie Mellon University. Custodian names and titles: EnronData.org (CC BY 3.0 US).',
       sourceUrls: ['https://www.cs.cmu.edu/~enron/', 'https://github.com/enrondata/enrondata/blob/master/data/misc/edo_enron-custodians-data.html'],
-      license: 'Made public by FERC; CMU distributes it "as a resource for researchers" with no license. Custodian names and titles: EnronData.org, CC BY 3.0 US. Pending: not shipped until the owner decides.',
+      license: 'Made public by FERC; CMU distributes it "as a resource for researchers" with no license. Custodian names and titles: EnronData.org, CC BY 3.0 US. Bundled as facts from the published study, with the citation.',
       ethics: 'These are real people\'s workplace communications, released during a public investigation without their consent; many were not involved in the wrongdoing. Some messages were removed at employees\' request, and in 2026 forensic analyses questioned whether some mailboxes contain forged messages. This subset keeps only who wrote to whom and when (no text, no subjects), but the pattern of a named person\'s contacts is still personal: use it to learn methods, not to make claims about individuals.',
       lookFor: [
         "148 people and 21,052 messages among them, Nov 1998 to Jun 2002: 2,440 directed ties.",

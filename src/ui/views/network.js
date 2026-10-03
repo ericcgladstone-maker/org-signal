@@ -36,6 +36,7 @@ import { nodeColoring, getColorBy, setColorBy as shareColorBy } from '../lib/col
 import { departures } from '../lib/departures.js';
 import { topShare, whatIf, concentrationWords, DEPENDS_SHARE } from '../lib/fragility.js';
 import { requestPeopleSort } from '../lib/viewprefs.js';
+import { ClassicFacts } from './learn/classic.js';
 import { communityScale } from '../lib/communities.js';
 import { orientLayout, labelBudget, overlaps, groupAnchors, hullEdgeSpots, namesFirst } from '../lib/labels.js';
 import { VISIBILITY } from '../../core/model.js';
@@ -964,6 +965,7 @@ ${' · '}<button type="button" class="tlink tlink--arrow" onClick=${() => { requ
     ${ds.meta?.example?.lookFor?.length && html`<div class="standout__example">
       <p class="small text2"><strong>${ds.meta.example.title}: what to look for</strong></p>
       <ul class="small text2">${ds.meta.example.lookFor.map(x => html`<li>${x}</li>`)}</ul>
+      <${ClassicFacts} example=${ds.meta.example} />
     </div>`}
   </section>`;
 }
@@ -996,6 +998,7 @@ ${' · '}<button type="button" class="tlink tlink--arrow" onClick=${() => { requ
     ${ds.meta?.example?.lookFor?.length && html`<div class="standout__example">
       <p class="small text2"><strong>${ds.meta.example.title}: what to look for</strong></p>
       <ul class="small text2">${ds.meta.example.lookFor.map(x => html`<li>${x}</li>`)}</ul>
+      <${ClassicFacts} example=${ds.meta.example} />
     </div>`}
   </section>`;
 }

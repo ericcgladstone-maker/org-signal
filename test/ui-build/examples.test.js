@@ -177,3 +177,12 @@ test('two-mode example: students and clubs, every number in its notes', () => {
   const notes = exampleById('clubs-two-mode').lookFor.join(' ');
   for (const num of ['0.417', '0.500', '0.667', '0.600', '0.333', '20 / 30']) assert.ok(notes.includes(num), num);
 });
+
+test('perceived-study links into Build', async () => {
+  const { perceivedFromHash } = await import('../../src/ui/build/hash.js');
+  assert.deepEqual(perceivedFromHash('#build?perceived=krackhardt:advice'), { id: 'krackhardt', relation: 'advice' });
+  assert.deepEqual(perceivedFromHash('#build?perceived=krackhardt:friendship'), { id: 'krackhardt', relation: 'friendship' });
+  assert.equal(perceivedFromHash('#build?perceived=krackhardt'), null);
+  assert.equal(perceivedFromHash('#build?example=ego-10'), null);
+  assert.equal(perceivedFromHash('#network?perceived=krackhardt:advice'), null);
+});

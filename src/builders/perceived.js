@@ -26,7 +26,8 @@
 // In an undirected relation the ties map holds both 'i|j' and 'j|i';
 // mirrored marks the cells ticked only as a mirror (see toggleInformantTie).
 
-import { DatasetBuilder, eventTargets } from '../core/model.js';
+import { DatasetBuilder, eventTargets, eventAttrs } from '../core/model.js';
+import { tieFieldPlan } from '../analysis/construct.js';
 import { uid, slug, normName } from './common.js';
 import { pairKey, splitKey, orderedPairs, nameIndex, setTie } from './matrix.js';
 
@@ -257,7 +258,7 @@ export function disagreement(css, { limit = 20 } = {}) {
 // A network built from perceived reports (format 'css', such as this study's
 // own consensus after "Analyze this network") is not a reference: scoring the
 // informants against it would be circular. It comes back as { fromStudy }.
-export function referenceFromDataset(ds, people) {
+export function referenceFromDataset(ds, people, { tieFields = null } = {}) {
   if (!ds) return null;
   const srcs = ds.meta?.sources || [];
   if (srcs.length && srcs.every(s => s.format === 'css')) return { ties: {}, matched: 0, fromStudy: true };
@@ -266,13 +267,22 @@ export function referenceFromDataset(ds, people) {
   for (let n = 0; n < ds.nodes.count; n++) byNode[n] = idx.get(normName(ds.nodes.labels[n])) ?? null;
   const matched = byNode.filter(Boolean).length;
   if (!matched) return { ties: {}, matched: 0 };
+  // The active tie-field filters (Construction settings) apply, so a dataset
+  // with several relations is a reference for the one being analyzed.
+  const plan = tieFieldPlan(ds, tieFields);
+  const filtered = !!plan?.filters.length;
   const ties = {};
   for (let e = 0; e < ds.events.count; e++) {
     const a = byNode[ds.events.actor[e]];
     if (!a) continue;
+    if (filtered && !plan.pass(e, eventAttrs(ds, e))) continue;
     for (const [t] of eventTargets(ds, e)) { const b = byNode[t]; if (b && b !== a) ties[pairKey(a, b)] = 1; }
   }
-  return { ties, matched };
+  // Whether the dataset holds more than one relation (a tie field 'relation'
+  // with several values), so the UI can say when none is chosen.
+  const rel = new Set();
+  for (let e = 0; e < ds.events.count && rel.size < 2; e++) { const r = eventAttrs(ds, e)?.relation; if (r !== undefined) rel.add(String(r)); }
+  return { ties, matched, filters: filtered ? tieFields.filters : [], multiRelation: rel.size > 1 };
 }
 
 // views: 'consensus' | 'las-union' | 'las-intersection' | informant id

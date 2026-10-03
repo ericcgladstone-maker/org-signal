@@ -15,6 +15,11 @@
 //   #build/example/<id>      the same, for a router that passes #build/... here
 // The Draw or Ego tab opens with the example loaded (asking first when it
 // would replace work), and the address goes back to #build.
+//
+// A classic dataset's perceived networks open the same way:
+//   #build?perceived=krackhardt:advice
+// The Perceived tab opens with that study (asking first when it would replace
+// one), and the address goes back to #build.
 
 import { html, useState, useEffect } from '../../../vendor/preact.js';
 import { ensureBuildCss, Tabs, storage, ViewHeader } from './shared.js';
@@ -24,9 +29,11 @@ import { RosterBuilder } from './roster/index.js';
 import { PerceivedBuilder } from './perceived/index.js';
 import { PasteTies } from './paste/index.js';
 import { exampleById } from '../../builders/examples.js';
-import { exampleFromHash } from './hash.js';
+import { exampleFromHash, perceivedFromHash } from './hash.js';
+import { loadClassicPerceived } from '../../core/classic.js';
+import { store } from '../store.js';
 
-export { exampleFromHash };
+export { exampleFromHash, perceivedFromHash };
 
 const TABS = [
   { id: 'draw', label: 'Draw', title: 'Draw a network', lede: 'Place people and ties on a canvas. Snap to a grid or to each other, apply a layout to all or part of the drawing, then analyze it like any other network.', C: DrawEditor },
@@ -41,16 +48,28 @@ const TAB_KEY = 'orgsignal.build.tab';
 export function BuildView({ tab: initialTab } = {}) {
   ensureBuildCss();
   const linked = () => (typeof location === 'undefined' ? null : exampleFromHash(location.hash));
-  const [tab, setTab] = useState(() => { const id = linked(); return id ? (exampleById(id).kind === 'ego' ? 'ego' : 'draw') : initialTab || storage.get(TAB_KEY, 'draw'); });
+  const linkedStudy = () => (typeof location === 'undefined' ? null : perceivedFromHash(location.hash));
+  const [tab, setTab] = useState(() => { const id = linked(); return id ? (exampleById(id).kind === 'ego' ? 'ego' : 'draw') : linkedStudy() ? 'perceived' : initialTab || storage.get(TAB_KEY, 'draw'); });
   const [example, setExample] = useState(null); // { id, nonce } for the Draw or Ego tab
+  const [study, setStudy] = useState(null); // { css, nonce } for the Perceived tab
   useEffect(() => { storage.set(TAB_KEY, tab); }, [tab]);
   useEffect(() => {
+    const back = () => { try { history.replaceState(null, '', `${location.pathname}${location.search}#build`); } catch { /* address bar left as is */ } };
     const take = () => {
+      const p = linkedStudy();
+      if (p) {
+        back();
+        setTab('perceived');
+        loadClassicPerceived(p.id, p.relation)
+          .then(css => setStudy({ css, nonce: Date.now() + Math.random() }))
+          .catch(e => store.actions.notify?.('error', `Could not open the perceived networks: ${e.message}`));
+        return;
+      }
       const id = linked();
       if (!id) return;
       setTab(exampleById(id).kind === 'ego' ? 'ego' : 'draw');
       setExample({ id, nonce: Date.now() + Math.random() });
-      try { history.replaceState(null, '', `${location.pathname}${location.search}#build`); } catch { /* address bar left as is */ }
+      back();
     };
     take();
     window.addEventListener('hashchange', take);
@@ -66,7 +85,7 @@ export function BuildView({ tab: initialTab } = {}) {
         <h2 class="ob-h">${cur.title}</h2>
         <p class="ob-text">${cur.lede}</p>
       </div>
-      <${C} example=${example && (exampleById(example.id).kind === 'ego') === (cur.id === 'ego') ? example : null} />
+      <${C} example=${example && (exampleById(example.id).kind === 'ego') === (cur.id === 'ego') ? example : null} study=${cur.id === 'perceived' ? study : null} />
     </div>
   </section>`;
 }
