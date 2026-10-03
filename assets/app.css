@@ -657,3 +657,8 @@ pre.code{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);fon
   .concept__dl dd + dt{margin-top:.5rem}
   .learn__explain{text-align:left;flex-basis:100%}
 }
+/* A caller's extra paragraph in a measure tooltip (formula in plain words). */
+.tip__note{margin-top:.45rem;padding-top:.45rem;border-top:1px solid var(--rule);color:var(--text-2)}
+/* With a sticky first column, the left fade would dim it; the sticky column
+   already shows that the table has scrolled. */
+.people-table .vt--more-left::before,.people-table.vt--more-left::before{display:none}

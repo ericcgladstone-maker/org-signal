@@ -307,55 +307,10 @@ export function orderCommunities(c, prev = null, nodeIds = null) {
 }
 
 // What a rebuild changed, for the notice after "Apply and rebuild" (D9).
-export const RULE_LABEL = { reply: 'replies', mention: 'mentions', dm: 'direct messages', to: 'To recipients', cc: 'Cc recipients', bcc: 'Bcc recipients', adjacency: 'turn-taking', copresence: 'meetings and co-presence', declared: 'declared ties', repost: 'reposts', like: 'likes', follow: 'follows', reaction: 'reactions' };
-const WEIGHTING = { count: 'count of evidence', log: 'log of count', binary: 'present or absent' };
-const day = t => (Number.isFinite(t) && t != null ? new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'open');
-
-export function settingsChanges(a = {}, b = {}) {
-  const out = [];
-  for (const r of new Set([...Object.keys(a.rules || {}), ...Object.keys(b.rules || {})])) {
-    const x = a.rules?.[r] || {}, y = b.rules?.[r] || {};
-    const name = RULE_LABEL[r] || r;
-    if (!!x.on !== !!y.on) out.push(`${y.on ? 'Added' : 'Removed'} ties from ${name}`);
-    else if (y.on && (x.weight ?? 1) !== (y.weight ?? 1)) out.push(`Weight for ${name}: ${x.weight ?? 1} to ${y.weight ?? 1}`);
-  }
-  if (!!a.directed !== !!b.directed) out.push(`Direction: ${b.directed ? 'directed' : 'undirected'}`);
-  if ((a.weighting || 'count') !== (b.weighting || 'count')) out.push(`Tie weight: ${WEIGHTING[a.weighting || 'count']} to ${WEIGHTING[b.weighting || 'count']}`);
-  if ((a.minWeight ?? 0) !== (b.minWeight ?? 0)) out.push(`Minimum tie weight: ${a.minWeight ?? 0} to ${b.minWeight ?? 0}`);
-  if ((a.maxRecipients ?? 0) !== (b.maxRecipients ?? 0)) out.push(`Broadcast cutoff: ${a.maxRecipients || 'none'} to ${b.maxRecipients || 'none'}`);
-  if ((a.time?.start ?? null) !== (b.time?.start ?? null) || (a.time?.end ?? null) !== (b.time?.end ?? null)) out.push(`Time range: ${day(b.time?.start)} to ${day(b.time?.end)}`);
-  if (JSON.stringify(a.visibility || null) !== JSON.stringify(b.visibility || null)) out.push('Visibility layers changed');
-  if (JSON.stringify(a.media || null) !== JSON.stringify(b.media || null)) out.push('Media changed');
-  if (!!a.excludeBots !== !!b.excludeBots) out.push(b.excludeBots ? 'Bots left out' : 'Bots included');
-  if ((a.includeIsolates !== false) !== (b.includeIsolates !== false)) out.push(b.includeIsolates !== false ? 'People with no ties kept' : 'People with no ties left out');
-  return out;
-}
-
-// Before/after summary of a rebuild. Counts people whose community number
-// changed (after overlap matching), by dataset node.
-export function rebuildSummary(before, after) {
-  const n = x => Number(x || 0).toLocaleString('en-US');
-  const lines = [];
-  const was = (a, b) => (a === b ? '' : ` (was ${n(a)})`);
-  lines.push(`${n(after.n)} people${was(before.n, after.n)}, ${n(after.edgeCount)} ties${was(before.edgeCount, after.edgeCount)}`);
-  if (after.communities) {
-    let moved = 0;
-    if (before.communities?.membership && before.nodeIds) {
-      const prev = new Map();
-      for (let v = 0; v < before.communities.membership.length; v++) prev.set(before.nodeIds[v], before.communities.membership[v]);
-      for (let v = 0; v < after.communities.membership.length; v++) {
-        const p = prev.get(after.nodeIds[v]);
-        if (p != null && p !== after.communities.membership[v]) moved++;
-      }
-    }
-    lines.push(`${n(after.communities.count)} communities${was(before.communities?.count, after.communities.count)}; ${moved ? `${n(moved)} ${moved === 1 ? 'person' : 'people'} changed community` : 'nobody changed community'}`);
-  }
-  const changes = settingsChanges(before.settings, after.settings);
-  if ((before.settings?.weighting || 'count') !== (after.settings?.weighting || 'count')) {
-    changes.push('Betweenness and closeness ignore tie weights, so the weight setting does not change them; their weighted versions and strength do.');
-  }
-  return { lines, changes };
-}
+// What a rebuild changed (D9). The wording lives in lib/rebuild.js so it can be
+// tested (N16, N17); RULE_LABEL is re-exported for the views that import it here.
+export { RULE_LABEL, rebuildSummary, settingsChanges } from './lib/rebuild.js';
+import { rebuildSummary } from './lib/rebuild.js';
 
 async function computeAll(signal, progress, prevCommunities = null, nodeIds = null) {
   progress(0.35, 'Centrality and local structure');

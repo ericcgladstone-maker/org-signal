@@ -218,13 +218,19 @@ function metricTip(g, label, ap, ctx) {
   return html`<strong>${label}</strong><p>${g.meaning}</p>${v.level !== 'ok' && html`<p><${Flag} level=${v.level} /> ${v.reason}</p>`}${v.small && html`<p class="tip__rel">${SMALL_NETWORK_NOTE}</p>`}${rel && html`<p class="tip__rel">Reliability: ${rel}</p>`}`;
 }
 
-export function MetricName({ metric, short = false, showFlag = true, iconOnly = false, label = null, gloss: showGloss = false }) {
+// A caller-supplied extra paragraph for a measure's tooltip, such as the
+// formula in plain words for this network's size and direction.
+function withNote(content, note) {
+  return note ? html`${content}<p class="tip__note">${note}</p>` : content;
+}
+
+export function MetricName({ metric, short = false, showFlag = true, iconOnly = false, label = null, gloss: showGloss = false, note = null }) {
   const ap = useStore(s => s.applicability?.[metric]);
   const ctx = useDataContext();
   const g = gloss(metric);
   const name = label || g.label;
   const v = applicabilityView(ap);
-  const content = metricTip(g, name, ap, ctx);
+  const content = withNote(metricTip(g, name, ap, ctx), note);
   const flag = showFlag && v.level !== 'ok' && html` <${Flag} level=${v.level} reason=${v.reason || applicabilityReason(ap)} iconOnly=${iconOnly}>${v.level === 'na' ? 'n/a' : 'caution'}</${Flag}>`;
   const main = html`<span class=${iconOnly ? '' : 'nowrap'}><${Tip} content=${content} label=${`${name}: what it means`}>${short ? name.split(' (')[0] : name}</${Tip}>${flag}</span>`;
   // The always-shown gloss rows stay on regardless of the Explanations switch (decision 3).
@@ -236,13 +242,13 @@ export function MetricName({ metric, short = false, showFlag = true, iconOnly = 
 // the name itself is another control (a sortable column header). Keeps the
 // two buttons siblings rather than one inside the other. Opens on hover,
 // focus, click or tap.
-export function MetricInfo({ metric, label = null }) {
+export function MetricInfo({ metric, label = null, note = null }) {
   const ap = useStore(s => s.applicability?.[metric]);
   const ctx = useDataContext();
   const g = gloss(metric);
   const name = label || g.label;
   const v = applicabilityView(ap);
-  return html`<${Tip} className="tip-wrap--icon" content=${metricTip(g, name, ap, ctx)} label=${`${name}: what it means`}>${v.level !== 'ok' ? html`<span class=${`flag flag--${v.level}`}>${Icon[v.level] || Icon.info}</span>` : Icon.info}</${Tip}>`;
+  return html`<${Tip} className="tip-wrap--icon" content=${withNote(metricTip(g, name, ap, ctx), note)} label=${`${name}: what it means`}>${v.level !== 'ok' ? html`<span class=${`flag flag--${v.level}`}>${Icon[v.level] || Icon.info}</span>` : Icon.info}</${Tip}>`;
 }
 
 // ---- beginner support (decision 1) -----------------------------------------
