@@ -5,7 +5,7 @@
 // week 3 means exactly what a tie in the full network means. Turn-taking
 // across a window boundary is not counted.
 
-import { buildNetwork, normalizeSettings } from './construct.js';
+import { buildNetwork, normalizeSettings, forEachEvidence, RULES } from './construct.js';
 import { computeNodeMetrics } from './metrics.js';
 import { computeNetworkMetrics } from './network.js';
 import { createRng } from './rng.js';
@@ -243,6 +243,7 @@ export function timeSeries(ds, settings, opts = {}) {
   const wSettings = { ...s, time: { start: null, end: null }, includeIsolates: false };
   const nodeOk = (i) => !(s.excludeBots && ds.nodes.isBot[i]);
   let prevKeys = null;
+  const approxWindows = [], pathSampledWindows = [];
   windows.forEach((win, wi) => {
     const evs = eventsBetween(sorted, win.start, win.end);
     const net = buildNetwork(ds, wSettings, { events: evs });
@@ -251,6 +252,10 @@ export function timeSeries(ds, settings, opts = {}) {
     // windows are usually partial, and their low counts are not shifts.
     win.coverage = Math.max(0, Math.min(win.end, tMax + 1) - Math.max(win.start, tMin)) / (win.end - win.start);
     const nm = metrics.length && net.n ? computeNodeMetrics(net, { which: metrics, approx: opts.approx ?? 'auto', seed: opts.seed ?? 1 }) : {};
+    // Sampled values are fine for a trend but must be said: windows above the
+    // approximation threshold use pivots, and path lengths come from 200
+    // sources per window.
+    if (metrics.some(m => nm.meta?.[m]?.approximate)) approxWindows.push(wi);
     for (const m of metrics) {
       const arr = new Float64Array(N).fill(COUNT_METRICS.has(m) ? 0 : NaN);
       if (nm[m]) for (let v = 0; v < net.n; v++) arr[net.nodeIds[v]] = nm[m][v];
@@ -258,6 +263,7 @@ export function timeSeries(ds, settings, opts = {}) {
     }
     if (opts.network !== false) {
       const r = net.n ? computeNetworkMetrics(net, { pathSources: Math.min(net.n, 200) }) : {};
+      if (r.pathLengthSampled) pathSampledWindows.push(wi);
       for (const [k, v] of Object.entries(r)) if (typeof v === 'number') (network[k] ||= new Array(windows.length).fill(NaN))[wi] = v;
     }
     // Share of ties that cross groups of opts.attr. A reorg or a silo changes
@@ -304,7 +310,8 @@ export function timeSeries(ds, settings, opts = {}) {
   for (let i = 0; i < N; i++) if (ns[i].length) nodeSrc[i] = ns[i];
   return {
     windows, node, network, ties, activity, sources, nodeSources: nodeSrc,
-    meta: { window: choice.window, windowRequested: choice.requested, windowReason: choice.reason, start: tMin, end: tMax + 1, metrics, eventsInRange: sorted.order.length, undatedExcluded: countUndated(ds) },
+    meta: { window: choice.window, windowRequested: choice.requested, windowReason: choice.reason, start: tMin, end: tMax + 1, metrics, eventsInRange: sorted.order.length, undatedExcluded: countUndated(ds),
+      approximateWindows: approxWindows, pathLengthSampledWindows: pathSampledWindows },
   };
 }
 
@@ -503,23 +510,36 @@ export function compareBeforeAfter(ds, settings, date, opts = {}) {
   const before = buildNetwork(ds, wSettings, { events: eventsBetween(sorted, date - span, date) });
   const after = buildNetwork(ds, wSettings, { events: eventsBetween(sorted, date, date + span) });
   const metrics = opts.metrics ?? ['degree', 'strength', 'betweenness', 'constraint'];
-  const mb = before.n ? computeNodeMetrics(before, { which: metrics, approx: opts.approx ?? 'auto' }) : {};
-  const ma = after.n ? computeNodeMetrics(after, { which: metrics, approx: opts.approx ?? 'auto' }) : {};
+  const approx = opts.approx ?? 'auto';
+  const mb = before.n ? computeNodeMetrics(before, { which: metrics, approx }) : {};
+  const ma = after.n ? computeNodeMetrics(after, { which: metrics, approx }) : {};
+  const approximate = metrics.filter(m => mb.meta?.[m]?.approximate || ma.meta?.[m]?.approximate);
   const N = ds.nodes.count;
-  const people = new Set([...before.nodeIds, ...after.nodeIds]);
   const rng = createRng(opts.seed ?? 1);
   const reps = opts.reps ?? 2000;
   const node = {};
-  for (const m of metrics) {
+  const pairsOf = (nb, na, xb, xa, m) => {
+    const people = new Set([...nb.nodeIds, ...na.nodeIds]);
     const pairs = [];
     for (const i of people) {
-      const jb = before.index[i], ja = after.index[i];
-      let xb = jb >= 0 && mb[m] ? mb[m][jb] : COUNT_METRICS.has(m) ? 0 : NaN;
-      let xa = ja >= 0 && ma[m] ? ma[m][ja] : COUNT_METRICS.has(m) ? 0 : NaN;
-      if (Number.isFinite(xb) && Number.isFinite(xa)) pairs.push({ node: i, before: xb, after: xa, diff: xa - xb });
+      const jb = nb.index[i], ja = na.index[i];
+      const b = jb >= 0 && xb[m] ? xb[m][jb] : COUNT_METRICS.has(m) ? 0 : NaN;
+      const a = ja >= 0 && xa[m] ? xa[m][ja] : COUNT_METRICS.has(m) ? 0 : NaN;
+      if (Number.isFinite(b) && Number.isFinite(a)) pairs.push({ node: i, before: b, after: a, diff: a - b });
     }
-    node[m] = pairedSummary(pairs, rng, reps, ds);
-  }
+    return pairs;
+  };
+  for (const m of metrics) node[m] = pairedSummary(pairsOf(before, after, mb, ma, m), ds);
+  // p: randomisation test on the events. Under "nothing changed at the date"
+  // each event of the two equal periods was as likely to fall in either, so
+  // the period labels are redrawn and the mean per-person difference
+  // recomputed. (Flipping the sign of each person's difference instead treats
+  // people as independent; every tie moves two people at once, and on
+  // stationary data that test gave p <= 0.05 in 14% of datasets instead of 5%:
+  // tools/accuracy campaign, 2026-10-03.)
+  const evB = eventsBetween(sorted, date - span, date), evA = eventsBetween(sorted, date, date + span);
+  const perm = permutationP(ds, wSettings, evB, evA, metrics, node, { reps, metricReps: opts.metricReps ?? 199, rng, approx, pairsOf });
+  for (const m of metrics) if (node[m].n) Object.assign(node[m], perm[m]);
   // Sources whose first or last event falls strictly inside the compared
   // span (more than a day from its outer edges).
   const lo = date - span, hi = date + span;
@@ -550,7 +570,7 @@ export function compareBeforeAfter(ds, settings, date, opts = {}) {
     date, span, before: { start: date - span, end: date, nodes: before.n, ties: before.edges.count }, after: { start: date, end: date + span, nodes: after.n, ties: after.edges.count },
     node, network, cautions: cautions.filter(c => c.material),
     ties: { formed: ka.size - kept, dissolved: kb.size - kept, persisted: kept, jaccard: ka.size + kb.size - kept ? kept / (ka.size + kb.size - kept) : NaN },
-    meta: { test: 'paired sign-flip permutation test on per-person differences', reps, effectSize: "Cohen's d_z = mean difference / sd of differences" },
+    meta: { test: 'randomisation test: each event of the two periods relabelled before or after at random, mean per-person difference recomputed', reps, metricReps: opts.metricReps ?? 199, effectSize: "Cohen's d_z = mean difference / sd of differences", approximate },
   };
   if (opts.attr) {
     const groups = new Map();
@@ -562,7 +582,7 @@ export function compareBeforeAfter(ds, settings, date, opts = {}) {
   return res;
 }
 
-function pairedSummary(pairs, rng, reps, ds) {
+function pairedSummary(pairs, ds) {
   const k = pairs.length;
   if (!k) return { n: 0 };
   let mb = 0, ma = 0, md = 0;
@@ -571,20 +591,142 @@ function pairedSummary(pairs, rng, reps, ds) {
   let v = 0;
   for (const p of pairs) v += (p.diff - md) ** 2;
   const sd = k > 1 ? Math.sqrt(v / (k - 1)) : 0;
-  // Sign-flip permutation test of mean difference = 0.
-  let extreme = 0;
-  for (let r = 0; r < reps; r++) {
-    let s = 0;
-    for (const p of pairs) s += rng() < 0.5 ? p.diff : -p.diff;
-    if (Math.abs(s / k) >= Math.abs(md) - 1e-12) extreme++;
-  }
   const sortedP = [...pairs].sort((a, b) => b.diff - a.diff);
   const lab = (p) => ({ ...p, label: ds.nodes.labels[p.node] });
   return {
     n: k, meanBefore: mb, meanAfter: ma, meanDiff: md, sdDiff: sd,
     dz: sd > 0 ? md / sd : NaN,
-    p: (extreme + 1) / (reps + 1),
+    p: NaN,
     topIncreases: sortedP.slice(0, 10).filter(p => p.diff > 0).map(lab),
     topDecreases: sortedP.slice(-10).reverse().filter(p => p.diff < 0).map(lab),
+  };
+}
+
+// Randomisation p-values for compareBeforeAfter: every event in the two
+// periods gets a fresh fair-coin period label and each metric's mean
+// per-person difference is recomputed. Valid when events are independent of
+// the date; bursty activity (a busy week) makes it somewhat liberal.
+//
+// Count metrics (degree, strength and their in/out parts) need no rebuild:
+// summed over people, a degree difference is 2 x (ties after - ties before)
+// (in/out: 1 x), a strength difference the same with tie weights, and the
+// people compared (everyone with a tie in either period) do not change with
+// the labels. So the evidence of the
+// combined events is emitted once (forEachEvidence, the construction rules
+// themselves) and each shuffle only re-adds it per period, then applies
+// minWeight and the weighting as buildNetwork does. The observed split is
+// recomputed the same way and must reproduce the real networks; when it
+// does not (turn-taking, which depends on the order of the period's own
+// messages), the metric falls back to rebuilding.
+// Other metrics rebuild both networks per shuffle, `metricReps` times.
+// -> { [metric]: { p, test, reps } }
+function permutationP(ds, s, evB, evA, metrics, node, { reps, metricReps, rng, approx, pairsOf }) {
+  const out = {};
+  const union = new Int32Array(evB.length + evA.length);
+  union.set(evB, 0); union.set(evA, evB.length);
+  const nb = evB.length, U = union.length; // nb: the observed split
+  const labels = new Uint8Array(U);              // 1 = before
+  // Each event lands in either period with probability 1/2 (the periods are
+  // equally long): a change in volume is part of what is tested, so the
+  // number of events per period is not held fixed.
+  const shuffle = () => { for (let k = 0; k < U; k++) labels[k] = rng() < 0.5 ? 1 : 0; };
+  const statOf = (m, xs) => { let sum = 0; for (const p of xs) sum += p.diff; return sum; };
+  const observed = {};
+  for (const m of metrics) observed[m] = node[m].n ? node[m].meanDiff * node[m].n : NaN;
+
+  // Turn-taking ties depend on the order of each period's own messages, so
+  // with adjacency on every metric is rebuilt.
+  const canSum = !s.rules.adjacency?.on;
+  const fast = metrics.filter(m => canSum && COUNT_METRICS.has(m) && node[m].n);
+  const slow = metrics.filter(m => !fast.includes(m) && node[m].n);
+  if (fast.length) {
+    const T = tieAggregator(ds, s, union);
+    labels.fill(0);
+    for (let k = 0; k < nb; k++) labels[k] = 1;
+    const obs = T.sums(labels);
+    const ok = (m) => Math.abs(countStat(m, obs, s.directed) - observed[m]) <= 1e-9 * Math.max(1, Math.abs(observed[m]));
+    const exact = fast.filter(ok);
+    for (const m of fast) if (!exact.includes(m)) slow.push(m);
+    if (exact.length) {
+      const ext = Object.fromEntries(exact.map(m => [m, 0]));
+      for (let r = 0; r < reps; r++) {
+        shuffle();
+        const x = T.sums(labels);
+        for (const m of exact) if (Math.abs(countStat(m, x, s.directed)) >= Math.abs(observed[m]) - 1e-9 * Math.max(1, Math.abs(observed[m]))) ext[m]++;
+      }
+      for (const m of exact) out[m] = { p: (ext[m] + 1) / (reps + 1), test: 'event relabelling', reps };
+    }
+  }
+  if (slow.length) {
+    const ext = Object.fromEntries(slow.map(m => [m, 0]));
+    const R = Math.min(reps, metricReps);
+    for (let r = 0; r < R; r++) {
+      shuffle();
+      const b = [], a = [];
+      for (let k = 0; k < U; k++) (labels[k] ? b : a).push(union[k]);
+      const sortIdx = (arr) => Int32Array.from(arr).sort();
+      const nB = buildNetwork(ds, s, { events: sortIdx(b) }), nA = buildNetwork(ds, s, { events: sortIdx(a) });
+      const xb = nB.n ? computeNodeMetrics(nB, { which: slow, approx, seed: r + 1 }) : {};
+      const xa = nA.n ? computeNodeMetrics(nA, { which: slow, approx, seed: r + 1 }) : {};
+      for (const m of slow) {
+        const pr = pairsOf(nB, nA, xb, xa, m);
+        // Mean per-person difference (people with a value in both periods).
+        const md = pr.length ? statOf(m, pr) / pr.length : 0;
+        if (Math.abs(md) >= Math.abs(node[m].meanDiff) - 1e-12) ext[m]++;
+      }
+    }
+    for (const m of slow) out[m] = { p: (ext[m] + 1) / (R + 1), test: 'event relabelling (networks rebuilt)', reps: R };
+  }
+  return out;
+}
+
+// Sum over people of a count metric's difference (after - before), from the
+// per-period tie totals.
+function countStat(m, x, directed) {
+  switch (m) {
+    case 'degree': return 2 * (x.mA - x.mB);
+    case 'strength': return 2 * (x.wA - x.wB);
+    case 'inDegree': case 'outDegree': return directed ? x.mA - x.mB : 2 * (x.mA - x.mB);
+    case 'inStrength': case 'outStrength': return directed ? x.wA - x.wB : 2 * (x.wA - x.wB);
+    default: return NaN;
+  }
+}
+
+// Evidence of `events` emitted once, keyed to ties as buildNetwork keys them;
+// sums(labels) -> { mB, mA, wB, wA }: ties kept and their total weight per
+// period after minWeight and the weighting transform.
+function tieAggregator(ds, s, events) {
+  const pos = new Map();
+  events.forEach((e, k) => pos.set(e, k));
+  const N = ds.nodes.count, directed = !!s.directed;
+  const ruleW = RULES.map(r => (s.rules[r]?.on ? Number(s.rules[r].weight ?? 1) : 0));
+  const tieOf = new Map();
+  const eTie = [], eEv = [], eAmt = [];
+  const add = (a, b, x, k) => {
+    const key = a * N + b;
+    let t = tieOf.get(key);
+    if (t === undefined) { t = tieOf.size; tieOf.set(key, t); }
+    eTie.push(t); eEv.push(k); eAmt.push(x);
+  };
+  forEachEvidence(ds, s, (a, b, rule, amt, i, vis, sym) => {
+    const k = pos.get(i), x = amt * ruleW[rule];
+    if (!directed) add(Math.min(a, b), Math.max(a, b), x, k);
+    else { add(a, b, x, k); if (sym) add(b, a, x, k); }
+  }, { events });
+  const M = tieOf.size;
+  const rawB = new Float64Array(M), rawA = new Float64Array(M);
+  const minW = Number(s.minWeight) || 0;
+  const tf = s.weighting === 'log' ? (x) => Math.log1p(x) : s.weighting === 'binary' ? () => 1 : (x) => x;
+  return {
+    sums(labels) {
+      rawB.fill(0); rawA.fill(0);
+      for (let q = 0; q < eTie.length; q++) (labels[eEv[q]] ? rawB : rawA)[eTie[q]] += eAmt[q];
+      let mB = 0, mA = 0, wB = 0, wA = 0;
+      for (let t = 0; t < M; t++) {
+        if (rawB[t] > 0 && rawB[t] >= minW) { mB++; wB += tf(rawB[t]); }
+        if (rawA[t] > 0 && rawA[t] >= minW) { mA++; wA += tf(rawA[t]); }
+      }
+      return { mB, mA, wB, wA };
+    },
   };
 }

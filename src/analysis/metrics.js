@@ -53,7 +53,7 @@ export function computeNodeMetrics(net, opts = {}) {
     for (const k of ['betweenness', 'betweennessWeighted', 'closeness', 'closenessWeighted']) if (out[k]) meta[k] = m;
   }
   progress(0.86, 'eigenvector and pagerank');
-  if (which.has('eigenvector')) { const r = eigenvector(g); out.eigenvector = r.x; meta.eigenvector = { converged: r.converged, iterations: r.iterations, variant: 'symmetrised weighted graph, unit norm' }; }
+  if (which.has('eigenvector')) { const r = eigenvector(g); out.eigenvector = r.x; meta.eigenvector = { converged: r.converged, iterations: r.iterations, method: r.method, variant: 'symmetrised weighted graph, unit norm' }; }
   if (which.has('pagerank')) { const r = pagerank(g); out.pagerank = r.x; meta.pagerank = { converged: r.converged, iterations: r.iterations, alpha: 0.85 }; }
   progress(0.92, 'local structure');
   if (which.has('clustering') || which.has('egoDensity')) {
@@ -154,7 +154,11 @@ export function brandes(g, { weighted = false, pivots = 0, seed = 1, onProgress 
     const dist = new Float64Array(n).fill(Infinity);
     const heap = new IndexedHeap(n, dist);
     const done = new Uint8Array(n);
-    const tol = (x) => 1e-10 * Math.max(1, Math.abs(x));
+    // Purely relative, so multiplying every weight by a constant cannot change
+    // which paths tie: with max(1, |x|) here the tolerance was absolute below
+    // distance 1, and with heavy ties (distance ~1e-6) genuinely different
+    // paths counted as equal (tools/accuracy campaign, 2026-10-03).
+    const tol = (x) => 1e-10 * Math.abs(x);
     for (let si = 0; si < K; si++) {
       const s = sources[si];
       let top = 0;
@@ -234,10 +238,18 @@ class IndexedHeap {
 
 // ---- eigenvector and pagerank ----------------------------------------------------------
 
-export function eigenvector(g, { tol = 1e-12, maxIter = 5000 } = {}) {
+// Power iteration on A + I converges like ((lambda2 + 1) / (lambda1 + 1))^k.
+// When two separate heavy ties (or two similar components) give nearly equal
+// leading eigenvalues that ratio is 0.997-0.9999 and 1,000 iterations leave
+// errors up to 1e-2 (tools/accuracy campaign, 2026-10-03). Then a restarted
+// Lanczos run from the power iterate finishes the job: the iterate's direction
+// inside the leading eigenspace is that of the uniform start (every component
+// there grows at the same rate), so the limit is the same vector networkx's
+// power iteration would reach, only reached in far fewer steps.
+export function eigenvector(g, { tol = 1e-12, maxIter = 1000 } = {}) {
   const { n } = g, { off, adj, w } = g.und;
   let x = new Float64Array(n).fill(n ? 1 / n : 0);
-  if (!g.m) return { x: new Float64Array(n), converged: true, iterations: 0 };
+  if (!g.m) return { x: new Float64Array(n), converged: true, iterations: 0, method: 'power' };
   let y = new Float64Array(n);
   for (let it = 1; it <= maxIter; it++) {
     for (let v = 0; v < n; v++) {
@@ -251,9 +263,100 @@ export function eigenvector(g, { tol = 1e-12, maxIter = 5000 } = {}) {
     let err = 0;
     for (let v = 0; v < n; v++) { y[v] /= norm; err += Math.abs(y[v] - x[v]); }
     const t = x; x = y; y = t;
-    if (err < n * tol) return { x, converged: true, iterations: it };
+    if (err < n * tol) return { x: zeroIsolates(x, off, n), converged: true, iterations: it, method: 'power' };
   }
-  return { x, converged: false, iterations: maxIter };
+  const L = lanczosTop(g.und, n, x);
+  return { x: zeroIsolates(L.x, off, n), converged: L.converged, iterations: maxIter + L.iterations, method: 'power, then Lanczos' };
+}
+
+// A person without ties has eigenvector centrality 0 exactly; the iteration
+// only shrinks them geometrically (1e-13 after convergence on a small graph),
+// which would rank them above people in other small components.
+function zeroIsolates(x, off, n) {
+  for (let v = 0; v < n; v++) if (off[v + 1] === off[v]) x[v] = 0;
+  return x;
+}
+
+// Leading eigenvector of the symmetric matrix in CSR `C` by Lanczos with full
+// reorthogonalisation, restarted from the best Ritz vector. Converged when
+// the residual ||A y - theta y|| is below 1e-13 theta (the vector error is
+// residual / gap, so this is as good as float64 allows for any gap the power
+// iteration could not close).
+function lanczosTop(C, n, start, { maxBasis = 120, restarts = 40 } = {}) {
+  const { off, adj, w } = C;
+  const mul = (v, out) => {
+    for (let i = 0; i < n; i++) { let s = 0; for (let p = off[i]; p < off[i + 1]; p++) s += v[adj[p]] * w[p]; out[i] = s; }
+    return out;
+  };
+  const dot = (a, b) => { let s = 0; for (let i = 0; i < n; i++) s += a[i] * b[i]; return s; };
+  let y = Float64Array.from(start);
+  let iterations = 0, converged = false;
+  const k = Math.min(maxBasis, n);
+  const Av = new Float64Array(n);
+  for (let r = 0; r < restarts && !converged; r++) {
+    const Q = [];
+    const alpha = [], beta = [];
+    let q = Float64Array.from(y);
+    let nq = Math.sqrt(dot(q, q)) || 1;
+    for (let i = 0; i < n; i++) q[i] /= nq;
+    for (let j = 0; j < k; j++) {
+      Q.push(q);
+      const wv = mul(q, new Float64Array(n));
+      iterations++;
+      const a = dot(q, wv);
+      alpha.push(a);
+      // Full reorthogonalisation, twice ("twice is enough"), keeps the basis
+      // orthogonal so no spurious copies of the top eigenvalue appear.
+      for (let pass = 0; pass < 2; pass++) for (const qi of Q) { const c = dot(qi, wv); for (let i = 0; i < n; i++) wv[i] -= c * qi[i]; }
+      const b = Math.sqrt(dot(wv, wv));
+      if (j === k - 1 || b < 1e-14 * Math.max(1, Math.abs(a))) break;
+      beta.push(b);
+      for (let i = 0; i < n; i++) wv[i] /= b;
+      q = wv;
+    }
+    const m = alpha.length;
+    const T = Array.from({ length: m }, (_, i) => { const row = new Float64Array(m); row[i] = alpha[i]; if (i > 0) row[i - 1] = beta[i - 1]; if (i < m - 1) row[i + 1] = beta[i]; return row; });
+    const { value, vector } = jacobiTop(T);
+    y = new Float64Array(n);
+    for (let j = 0; j < m; j++) { const s = vector[j], qj = Q[j]; for (let i = 0; i < n; i++) y[i] += s * qj[i]; }
+    const ny = Math.sqrt(dot(y, y)) || 1;
+    for (let i = 0; i < n; i++) y[i] /= ny;
+    mul(y, Av);
+    let res = 0;
+    for (let i = 0; i < n; i++) res += (Av[i] - value * y[i]) ** 2;
+    converged = Math.sqrt(res) <= 1e-13 * Math.max(1, Math.abs(value));
+  }
+  // The Perron vector is non-negative; fix the arbitrary sign and clear
+  // rounding noise on nodes outside the leading components.
+  let s = 0;
+  for (let i = 0; i < n; i++) s += y[i];
+  for (let i = 0; i < n; i++) y[i] = s < 0 ? -y[i] : y[i];
+  for (let i = 0; i < n; i++) if (y[i] < 0) y[i] = Math.abs(y[i]);
+  return { x: y, converged, iterations };
+}
+
+// Largest eigenpair of a small dense symmetric matrix (cyclic Jacobi).
+function jacobiTop(A0) {
+  const m = A0.length;
+  const A = A0.map(r => Float64Array.from(r));
+  const V = Array.from({ length: m }, (_, i) => { const r = new Float64Array(m); r[i] = 1; return r; });
+  for (let sweep = 0; sweep < 100; sweep++) {
+    let off = 0;
+    for (let p = 0; p < m; p++) for (let q = p + 1; q < m; q++) off += A[p][q] * A[p][q];
+    if (off < 1e-30) break;
+    for (let p = 0; p < m; p++) for (let q = p + 1; q < m; q++) {
+      if (Math.abs(A[p][q]) < 1e-300) continue;
+      const theta = (A[q][q] - A[p][p]) / (2 * A[p][q]);
+      const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+      const c = 1 / Math.sqrt(t * t + 1), s = t * c;
+      for (let k = 0; k < m; k++) { const akp = A[k][p], akq = A[k][q]; A[k][p] = c * akp - s * akq; A[k][q] = s * akp + c * akq; }
+      for (let k = 0; k < m; k++) { const apk = A[p][k], aqk = A[q][k]; A[p][k] = c * apk - s * aqk; A[q][k] = s * apk + c * aqk; }
+      for (let k = 0; k < m; k++) { const vkp = V[k][p], vkq = V[k][q]; V[k][p] = c * vkp - s * vkq; V[k][q] = s * vkp + c * vkq; }
+    }
+  }
+  let best = 0;
+  for (let i = 1; i < m; i++) if (A[i][i] > A[best][best]) best = i;
+  return { value: A[best][best], vector: Float64Array.from(V, r => r[best]) };
 }
 
 // PageRank with uniform teleport and uniform redistribution of dangling mass

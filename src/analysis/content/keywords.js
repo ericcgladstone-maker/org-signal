@@ -15,6 +15,10 @@ export function keywords(ds, opts = {}) {
   const units = new Map();          // key -> Map(term -> count)
   const totals = new Map();
   const overall = new Float64Array(C.terms.length);
+  // Messages using each term, over the same messages as `overall` (C.df
+  // counts every message, bots included).
+  const overallDocs = new Float64Array(C.terms.length);
+  const lastDoc = new Int32Array(C.terms.length).fill(-1);
   for (let d = 0; d < C.docs.length; d++) {
     const i = C.docs[d];
     if (opts.excludeBots !== false && ds.nodes.isBot[ds.events.actor[i]]) continue;
@@ -22,7 +26,11 @@ export function keywords(ds, opts = {}) {
     if (key === null || key === undefined) continue;
     let m = units.get(key);
     if (!m) { m = new Map(); units.set(key, m); totals.set(key, 0); }
-    for (let p = C.off[d]; p < C.off[d + 1]; p++) { const t = C.tok[p]; m.set(t, (m.get(t) || 0) + 1); overall[t]++; }
+    for (let p = C.off[d]; p < C.off[d + 1]; p++) {
+      const t = C.tok[p];
+      m.set(t, (m.get(t) || 0) + 1); overall[t]++;
+      if (lastDoc[t] !== d) { lastDoc[t] = d; overallDocs[t]++; }
+    }
     totals.set(key, totals.get(key) + (C.off[d + 1] - C.off[d]));
   }
   let keys = [...units.keys()].filter(x => totals.get(x) >= minTokens);
@@ -45,6 +53,6 @@ export function keywords(ds, opts = {}) {
     return { key, label: U.label(key), tokens: tot, terms: scored.slice(0, k) };
   });
   const top = Array.from(overall.keys()).filter(t => overall[t] > 0).sort((a, b) => overall[b] - overall[a]).slice(0, opts.overallK ?? 30)
-    .map(t => ({ term: C.terms[t], count: overall[t], messages: C.df[t] }));
+    .map(t => ({ term: C.terms[t], count: overall[t], messages: overallDocs[t] }));
   return { by, units: rows, overall: top, meta: { cleaning: C.cleaning, documents: C.docs.length, vocabulary: C.terms.length, units: N, truncated, method: 'TF-IDF over pooled unit documents, smooth idf' } };
 }
