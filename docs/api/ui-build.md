@@ -22,6 +22,7 @@ import { GenerateView } from './generate/index.js'; // <GenerateView />
   - `orgsignal.build.draw.draft`, `orgsignal.build.draw.settings`
   - `orgsignal.build.ego.session`
   - `orgsignal.build.roster`, `orgsignal.build.perceived`, `orgsignal.build.paste.text`
+  - `orgsignal.build.ego.share`, `orgsignal.respond.<surveyId>` (respondent drafts)
   - `orgsignal.generate.form`
 
 ## Dataset conventions (all builders)
@@ -31,6 +32,9 @@ import { GenerateView } from './generate/index.js'; // <GenerateView />
 | Draw | `draw` | full | custom | `draw:<id>` | one per tie type, `draw:type:<slug>` (canvas) |
 | Ego | `ego-interview` | ego (`egoKey` = `ego:<egoId>`) | survey | `ego:<egoId>`, `alter:<egoId>:<uuid>` | one per name generator `ego:<egoId>:gen:<slug>` (survey), plus a "perceived ties" context |
 | Roster | `roster` | full | survey | `roster:<slug>` | one per relation `roster:rel:<slug>` (survey) |
+| Shared survey (roster) | `shared-survey` | full | survey | `roster:<slug>` | one per relation (as Roster) |
+| Shared survey (ego, against a roster) | `shared-survey` (two sources: own ties directed, perceived ties undirected) | full | survey | `roster:<slug>`; off-list names `alter:<surveyId>:<respondent>:<name>` | one per name generator `survey:<id>:gen:<slug>`; one per respondent `survey:<id>:perceived:<slug>` |
+| Shared survey (ego, no roster) | `shared-survey`, one source per respondent | ego | survey | as Ego, with a stable `egoId` per respondent | as Ego |
 | Perceived | `css` | full | survey | `cs:<slug>` | one for the relation (survey) |
 | Paste | `paste` | full | custom | `paste:<slug>` | `paste:ties` (canvas) |
 
@@ -231,3 +235,56 @@ Also `defaultObservation(ctx, medium)` (Everyone whenever the medium allows it),
   - It serves the app, mounts `test/ui-build/harness.html` (BuildView and GenerateView standalone inside the shell's `.view.view--bare` frame with theme.css and app.css, and stubbed `store.actions`) in the cached Chromium through puppeteer-core, and runs `test/ui-build/qa/*.mjs` at 1440px and 390px.
   - A run fails on console errors, page errors, failed requests or horizontal overflow.
   - Screenshots are saved to the session scratchpad (`QA_OUT` overrides the location).
+
+
+## Tie fields: src/builders/tiefields.js; UI src/ui/build/tiefields.js
+
+Optional qualities recorded on a tie, beyond present and its value. A definition is `{ id, key, label, type: 'choice'|'scale'|'number'|'text', options?, ordered?, multiple?, max? }`.
+
+- `TIE_FIELD_PRESETS`: tie type (choice, several allowed), strength (scale 1..5), how often (ordered choice, lowest first), years known (number), notes (text). `TIE_FIELD_TYPES`.
+- `makeTieField(def, takenKeys)`, `updateTieField`, `coerceTieValue(f, raw)`, `cleanTieValues(fields, values)` (typed, blanks dropped, null when empty), `declareTieFields(fields)` (for `source.tieFields`), `unionTieFields`, `describeTieValues`, `combineTieValues(fields, a, b, rule)` (two reports of one undirected tie: numbers by the merge rule, choices unioned, text kept both).
+- Datasets: values go on the tie's event as `attrs`; each source declares its definitions in `source.tieFields`. The construction settings take a weight from a numeric or ordered field and filter by any field (docs/api/analysis.md, Tie fields).
+- UI: `TieFieldsEditor({ fields, onChange })` (presets, custom fields, type, options, scale top) and `TieFieldInputs({ fields, values, onChange, idPrefix, compact })`.
+
+**Roster.** `relation.fields`; single-informant values in `model.tieAttrs[relationId]['from|to']`; `setTieAttrs(model, relId, from, to, values)` (a detail on a pair with no tie records the tie), `pruneTieAttrs(model)` (cleared ties lose their details). Multi-respondent values are `respondent.attrs[relId]['from|to']`; `mergeResponses(..., fields)` returns `attrs` beside `ties`. With more than one relation every roster event also carries `relation: <name>` (declared as a choice field), so construction can keep some relations. The grid edits details for the focused cell in one panel under the grid (F2 or Shift+Enter moves into it, Escape returns to the cell; cells with details carry a corner mark), so the grid itself stays one character per cell at 100 people. Pair entry picks people with type-ahead and lists each tie's details.
+
+**Typed attribute columns.** `renameAttrColumn(model, key, next)`, `removeAttrColumn(model, key)`, `badAttrValues(model, key)`. The people table edits each column's name and type (text, number, choice, ordered, yes/no, date) in its header, cells take input of their type (choice columns suggest the values already used), and values that do not fit the type are counted in the header. The add-column form takes a type.
+
+**Ego.** `session.tieFields` and per-alter values `alter.tie`; `addTieField`, `updateTieField`, `removeTieField`, `setTieValue`. They are asked in the Describe step beside the interpreters ("your tie") and written as event attrs on ego's ties. `writeEgoSession(builder, session, { source })` writes one interview into a builder (used by `toDataset` and the response importer). Alter-alter ties have no tie fields.
+
+## Names carry over: src/builders/names.js; UI src/ui/build/pick.js
+
+- `matchNames(query, list, { limit })`: type-ahead order (whole name, start of name, start of a word, inside, near spelling).
+- `duplicateReason(a, b)`: `same`, `spelling` (edit distance up to 2), `initial` ("J. Reyes"), `short` ("Jon" for "Jonathan Reyes"), `first-name` (same first name, other surname), or null. `likelyDuplicates(name, list)`, `REASON_TEXT`, `editDistance`.
+- `Combobox` (ARIA 1.2 combobox with a listbox: arrows, Enter, Escape; optional free text) and `PersonSelect` (a select replacement).
+- Ego names step: every question offers the people already named as one-click toggles ("Also name someone you already mentioned"), typing suggests them, and a typed name that looks like someone already named (or on the roster) waits for "Same person: X" or "No, add X as someone new" instead of creating a second person. Pairs among everyone named that look like one person are listed with a merge (`mergeAlters(s, keepId, dropId)`) or "Different people" (remembered in `s.distinct`). `addAlter(s, name, genId, { personId, alterId })`: by roster id or existing alter id.
+- Against a roster (respondent mode), names are only picked from the roster with type-ahead; "Someone not on the list" opens free typing when the survey allows it.
+
+## Shared surveys: src/builders/share.js; UI src/ui/build/sharing.js, src/ui/build/respond/
+
+No server: nothing a respondent enters is uploaded. The organizer makes a link that carries the survey in its fragment; the respondent's answers leave their device only as a file they send.
+
+**Link.** `<app>/#survey=1.<base64url(deflate-raw(JSON definition))>` (fflate, level 9). The fragment is never sent to a server. `surveyLink(def, base) -> { url, length, tooLong }`; `LINK_LIMIT = 8000` characters, beyond which the survey file is offered instead (`<name>.survey.json`, opened at `<app>/#respond`). `encodeSurvey`, `decodeSurvey`, `surveyFromHash`, `surveyFileText`, `parseSurveyFile`, `validateSurvey`. A 12-person roster with two tie fields is about 850 characters; 100 people fit.
+
+**Definition** (`format: 'orgsignal-survey'`, `version: 1`): `{ id, kind: 'roster'|'ego', title, intro, createdAt, people: [{ id, label }], relations: [{ id, name, question, scale, max, fields }], combine, ego: { generators, interpreters, tieFields, askTies, allowOthers } }`. People carry names only: the organizer's attribute columns are never in a link, survey file or response. `surveyFromRoster(model, { title, intro })`, `surveyFromEgo(session, { roster, askTies, allowOthers })`, `surveyHash(def)` (crc32 of the canonical JSON).
+
+**Response file** (`format: 'orgsignal-response'`, `version: 1`), named `<survey>-response-<respondent>-<yyyymmdd-hhmmss>.json`:
+```
+{ format, version, survey: { id, kind, title, hash }, respondent: { personId|null, label }, created,
+  answers: roster -> { [relationId]: { [personId]: { value, fields? } } }
+           ego    -> { alters: [{ id, label, personId?, generators[], attrs{}, tie{} }], contexts: [{ name, members[] }], ties: { 'a|b': bool } },
+  definition, checksum: 'crc32:<8 hex>' }
+```
+The checksum is CRC-32 over the canonical JSON of everything else: it catches corruption and hand edits, it is not a signature. `makeResponse(def, respondent, answers)` (answers cleaned: self, unknown people, values off the scale and invalid fields dropped), `verifyResponse`, `responseFileText`, `responseFileName`. The same response as text for email: `responseToText(r)` gives a block between `-----BEGIN ORG SIGNAL RESPONSE-----` and `-----END ORG SIGNAL RESPONSE-----` (Survey and Respondent header lines, then the packed response wrapped at 64); `parseResponses(text, { file })` reads JSON files, survey files and any number of blocks, tolerating email quoting (`> `) and wrapping.
+
+**Recombining.** `recombine(items, { survey, surveys })` with the organizer's definition (or a survey file, or else the survey most responses answered) as the reference: `{ survey, accepted, duplicates, rejected, invalid, earlier, responded, missing }`. Respondents are matched by roster id, else name; the latest response per person wins and the rest are reported; responses to another survey (different id) are rejected by name; responses to an earlier version of the same survey still count (matched by person and question). `recombineNotes(result)` gives the lines shown in the builder and the import report. `writeRecombined(builder, result, { mergeRule, people })` / `recombinedDataset(result, opts)`:
+- roster surveys go through `writeRoster` with the merge rules (union, reciprocated only, as reported), tie fields combined by `combineTieValues`; `people` adds the organizer's attributes back.
+- ego interviews against a roster are stitched into one bounded network: roster people are the nodes (the roster builder's keys, so it merges with a roster survey); each respondent's ties run from them to the people named, one event per question, with tie fields, interpreter answers and `report: 'own'`; the pairs a respondent says know each other are perceived ties in a context of their own ("Perceived by X"), undirected, with `report: 'perceived'` and `perceived_by`. They are included by default; the construction drawer's tie-field filter ("Reported as") leaves them out.
+- plain ego interviews (no roster) become one ego network per respondent.
+- `rosterRespondents(result)`, `sessionFromResponse(def, r)`, `respondentSession(def, who)`, `egoAnswers(session)`.
+
+**Builder UI.** Roster, Collect ties, "Each member answers a survey": "Make a share link" (title, message, link with its length, Copy link, Open it as a respondent, Survey file), then "Import response files" (several at once, more later; `model.shared.items` keeps every usable response so each import recombines the whole set) or paste response text; the notes say who responded, who did not, duplicates and rejected files. The Google Forms and Qualtrics templates remain under "Or use Google Forms or Qualtrics". `model.share = { id, createdAt, title, intro }` keeps the survey id stable while the roster is edited. Ego: "Send as a survey to many" switches the steps to the questions plus "Share and collect" (`orgsignal.build.ego.share`: options to pick people from the Roster tab's list, allow names not on the list, ask who knows whom), and "Analyze the responses" hands the recombined dataset over.
+
+**Respondent mode** (`src/ui/build/respond/index.js`, mounted by `src/ui/app.js` when the address is `#survey=...` or `#respond`): no analysis navigation, the survey title and message, a privacy statement, then: who are you (type-ahead over the roster, or a name), one page per roster question (find-a-name filter, tick or rate each person, optional tie details inline under each person chosen), or for ego surveys the interview's names, describe and who-knows-whom steps; finally "Download my response" and "Copy it as text instead". A draft is kept in this browser (`orgsignal.respond.<surveyId>`, best effort); Start over deletes it. Works at phone width (the describe table becomes one block per person).
+
+Data, Import also reads response files (importer `shared-survey`, docs/api/importers-a.md); loose response files dropped together become one input.

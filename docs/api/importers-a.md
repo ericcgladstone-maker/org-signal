@@ -74,6 +74,7 @@ toFileSet(input) / subsetFileSet(fs, rels) / rootedFileSet(fs, root)
 | `network-files` | GraphML, GEXF 1.2/1.3, GML, Pajek, UCINET DL, Gephi CSV, adjacency CSV, edge lists | full | 0.9 formats; 0.8 Gephi edges; 0.6 matrix; 0.55 edge-list CSV; 0.5 text edge list. Weak shapes drop to 0.3 when the folder holds other data files (platform exports). Network Canvas GraphML: 0.3 |
 | `network-canvas` | Network Canvas CSV sets and GraphML (single and merged) | ego | 0.95 |
 | `survey` | egor long (EgoWeb, openeddi), egor wide, Qualtrics, Google Forms | ego (name generators) or full (roster) | 0.85 / 0.7 / 0.85 / 0.75 |
+| `shared-survey` | Org Signal shared-survey response files (`.json`) and pasted response text blocks (`.txt`), plus the optional survey file; see `src/builders/share.js` and docs/api/ui-build.md | full (roster survey, ego interviews against a roster) or ego (plain ego interviews) | 0.97 |
 | `tabular` | Any CSV/TSV with a column mapping; XLSX detected and explained | full (option) | 0.2 (0.5 workbook) |
 
 ### Options
@@ -243,6 +244,10 @@ Each entry in `sources` has these fields:
 
 Severity comes from `w.severity` if the importer set it. Otherwise it comes from a table of the codes these importers emit, then from patterns; unknown codes are `warn`.
 
+### Shared-survey responses (`src/importers/survey-response.js`)
+
+All response files in one input are recombined together (merge rules need both people's answers; non-respondents need the whole set), so the Data view groups loose response files dropped or picked together into one input (`groupSharedResponses` in `src/ui/views/data/io.js`). The reference survey is a survey file in the drop if there is one, else the survey most responses answered. One `shared-survey` source (two for stitched ego interviews: own ties directed, perceived ties undirected; one per respondent for plain ego interviews) with `source.survey = { id, title, kind, responded[], missing[], duplicates[], rejected, invalid }` and warnings `survey-responded`, `survey-nonrespondents`, `survey-earlier-version`, `survey-perceived` (info), `survey-duplicates`, `survey-other-survey`, `survey-off-roster` (warn), `survey-invalid` (error), `combine-rule` (info). Option `mergeRule` overrides the survey's own combine rule for roster surveys.
+
 ## Exporters (`src/exporters/*.js`)
 
 ```js
@@ -259,6 +264,7 @@ exportCSV(ds, net, opts) -> { nodes, edges, metrics }; also exportNodesCSV, expo
 - **`attrs`:** node attribute keys to include. Default: all keys in `ds.attributeSchema`.
 - **Node ids and labels:** node ids are the dataset keys. GML and Pajek de-duplicate labels with a suffix.
 - **Encoding:** XML-illegal control characters are stripped, and `\n`, `\r` and `\t` in attributes are written as character references. Non-ASCII text survives: UTF-8 in GraphML, GEXF and Pajek; `&#N;` entities in GML.
+- **Tie fields:** when the dataset has tie fields (`events.attrs`), GraphML and GEXF get one edge attribute per field and the edges CSV one column per field, after the rule columns. Values come from `edgeTieAttributes(ds, net)` (src/analysis/construct.js): the events behind each tie under the network's own settings, numbers averaged, choices and text as distinct values joined by `; `. Numeric fields are `double`, the rest `string`; names avoid the fixed edge columns by a `_2` suffix. GML, Pajek and UCINET are unchanged.
 - **Validation:** every format is read back by our importer and by networkx 3.2.1 (`read_graphml`, `read_gexf`, `read_gml`, `read_pajek`). UCINET has no networkx reader, so it is checked by round trip only.
 
 ## Native round trips (generator exports)

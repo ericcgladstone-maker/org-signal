@@ -11,17 +11,25 @@
 //   { version, name,
 //     people:      [{ id, label, attrs{} }],
 //     attrColumns: [{ key, type }],
-//     relations:   [{ id, name, question, scale: 'binary'|'valued', max }],
+//     attrColumns: [{ key, type }],            type one of ATTR_TYPES (common.js)
+//     relations:   [{ id, name, question, scale: 'binary'|'valued', max, fields: [TieField] }],
 //     mode:        'single' | 'multi',
 //     ties:        { [relationId]: { 'from|to': value } }       single informant
-//     responses:   { respondents: [{ personId, label, ties: { [relationId]: {'from|to': v} } }],
+//     tieAttrs:    { [relationId]: { 'from|to': { [fieldKey]: value } } }   tie fields
+//     responses:   { respondents: [{ personId, label, ties: { [relationId]: {'from|to': v} },
+//                                    attrs?: { [relationId]: {'from|to': {...}} } }],
 //                    file, unmatchedNames[], unmatchedQuestions[], warnings[] } | null
-//     mergeRule:   'union' | 'intersection' | 'respondent' }
+//     mergeRule:   'union' | 'intersection' | 'respondent',
+//     share:       { id, createdAt } once a survey link was made (src/builders/share.js) }
+//
+// Tie fields (src/builders/tiefields.js) are optional per relation; their
+// values ride on the tie's event as event attributes.
 
 import { DatasetBuilder } from '../core/model.js';
 import { parseCSV, rowsToObjects } from '../importers/tabular.js';
 import { uid, slug, normName, toCSV, coerce } from './common.js';
 import { pairKey, splitKey, cellValue, nameIndex } from './matrix.js';
+import { declareTieFields, unionTieFields, combineTieValues, cleanTieValues } from './tiefields.js';
 
 export const RELATION_PRESETS = [
   { key: 'knows', name: 'Knows', question: 'Which of these people do you know?', scale: 'binary' },
@@ -38,11 +46,74 @@ export const MERGE_RULES = [
 ];
 
 export function newRoster() {
-  return { version: 1, name: 'Roster network', people: [], attrColumns: [], relations: [], mode: 'single', ties: {}, responses: null, mergeRule: 'union' };
+  return { version: 1, name: 'Roster network', people: [], attrColumns: [], relations: [], mode: 'single', ties: {}, tieAttrs: {}, responses: null, mergeRule: 'union' };
 }
 
 export function makeRelation(preset = {}) {
-  return { id: uid('r'), name: preset.name || 'Relation', question: preset.question || '', scale: preset.scale || 'binary', max: preset.max || 5 };
+  return { id: uid('r'), name: preset.name || 'Relation', question: preset.question || '', scale: preset.scale || 'binary', max: preset.max || 5, fields: preset.fields ? [...preset.fields] : [] };
+}
+
+// Tie fields of one tie in single-informant mode. Setting fields on a pair
+// with no tie yet records the tie as well (value 1), since describing a tie
+// says it exists.
+export function setTieAttrs(model, relationId, from, to, values) {
+  const rel = model.relations.find(r => r.id === relationId);
+  const k = pairKey(from, to);
+  const clean = cleanTieValues(rel?.fields || [], values);
+  const map = { ...(model.tieAttrs?.[relationId] || {}) };
+  if (clean) map[k] = clean; else delete map[k];
+  const ties = { ...model.ties };
+  if (clean && !(ties[relationId] || {})[k]) ties[relationId] = { ...(ties[relationId] || {}), [k]: 1 };
+  return { ...model, ties, tieAttrs: { ...(model.tieAttrs || {}), [relationId]: map } };
+}
+
+// Removing a tie removes its fields; used by the grid when a cell is cleared.
+export function pruneTieAttrs(model) {
+  const tieAttrs = {};
+  for (const [rid, map] of Object.entries(model.tieAttrs || {})) {
+    const ties = model.ties[rid] || {};
+    tieAttrs[rid] = Object.fromEntries(Object.entries(map).filter(([k]) => ties[k]));
+  }
+  return { ...model, tieAttrs };
+}
+
+// Typed attribute columns: rename (moving every value), retype, remove.
+export function renameAttrColumn(model, key, next) {
+  const k2 = String(next || '').trim();
+  if (!k2 || k2 === key || model.attrColumns.some(c => c.key === k2)) return model;
+  return {
+    ...model,
+    attrColumns: model.attrColumns.map(c => (c.key === key ? { ...c, key: k2 } : c)),
+    people: model.people.map(p => {
+      if (!(key in (p.attrs || {}))) return p;
+      const attrs = { ...p.attrs, [k2]: p.attrs[key] };
+      delete attrs[key];
+      return { ...p, attrs };
+    }),
+  };
+}
+
+export function removeAttrColumn(model, key) {
+  return {
+    ...model,
+    attrColumns: model.attrColumns.filter(c => c.key !== key),
+    people: model.people.map(p => { if (!(key in (p.attrs || {}))) return p; const attrs = { ...p.attrs }; delete attrs[key]; return { ...p, attrs }; }),
+  };
+}
+
+// Values of a column that do not fit its type, so the editor can flag them
+// rather than silently dropping them on export.
+export function badAttrValues(model, key) {
+  const col = model.attrColumns.find(c => c.key === key);
+  if (!col) return [];
+  return model.people.filter(p => {
+    const v = p.attrs?.[key];
+    if (v === undefined || v === '') return false;
+    if (col.type === 'number' || col.type === 'ordinal') return !Number.isFinite(Number(v));
+    if (col.type === 'boolean') return !/^(true|false|yes|no|1|0|y|n)$/i.test(String(v).trim());
+    if (col.type === 'date') return Number.isNaN(Date.parse(String(v)));
+    return false;
+  }).map(p => p.label);
 }
 
 // Roster text -> people. Either one name per line, or a CSV/TSV whose header
@@ -327,26 +398,41 @@ export function responsesFromDataset(ds, model) {
 //   intersection  {i,j} if i->j and j->i reported; value min; undirected
 //   respondent    i->j as reported; directed
 // Undirected results are stored once per pair with from < to in roster order.
-export function mergeResponses(respondents, relationId, rule, people) {
-  const reported = {};
-  for (const r of respondents) Object.assign(reported, r.ties[relationId] || {});
-  if (rule === 'respondent') return { ties: { ...reported }, directed: true, stats: { reported: Object.keys(reported).length, ties: Object.keys(reported).length } };
+//
+// Tie fields (respondent.attrs) travel with the ties: as reported they stay
+// with each directed report; for the undirected rules the two reports of a
+// pair are combined by combineTieValues (fields: the relation's definitions).
+export function mergeResponses(respondents, relationId, rule, people, fields = []) {
+  const reported = {}, reportedAttrs = {};
+  for (const r of respondents) {
+    Object.assign(reported, r.ties[relationId] || {});
+    Object.assign(reportedAttrs, r.attrs?.[relationId] || {});
+  }
+  if (rule === 'respondent') {
+    const attrs = Object.fromEntries(Object.entries(reportedAttrs).filter(([k]) => reported[k]));
+    return { ties: { ...reported }, attrs, directed: true, stats: { reported: Object.keys(reported).length, ties: Object.keys(reported).length } };
+  }
   const order = new Map(people.map((p, i) => [p.id, i]));
   const canon = new Set();
   for (const k of Object.keys(reported)) {
     const [a, b] = splitKey(k);
     canon.add((order.get(a) ?? 0) <= (order.get(b) ?? 0) ? pairKey(a, b) : pairKey(b, a));
   }
-  const ties = {};
+  const ties = {}, attrs = {};
   let reciprocated = 0, oneSided = 0;
   for (const k of canon) {
     const [a, b] = splitKey(k);
-    const f = reported[k] || 0, g = reported[pairKey(b, a)] || 0;
+    const rk = pairKey(b, a);
+    const f = reported[k] || 0, g = reported[rk] || 0;
     if (f && g) reciprocated++; else oneSided++;
     if (rule === 'union') ties[k] = Math.max(f, g);
     else if (f && g) ties[k] = Math.min(f, g);
+    if (k in ties) {
+      const merged = combineTieValues(fields, f ? reportedAttrs[k] : null, g ? reportedAttrs[rk] : null, rule);
+      if (merged && Object.keys(merged).length) attrs[k] = merged;
+    }
   }
-  return { ties, directed: false, stats: { reported: Object.keys(reported).length, reciprocated, oneSided, ties: Object.keys(ties).length } };
+  return { ties, attrs, directed: false, stats: { reported: Object.keys(reported).length, reciprocated, oneSided, ties: Object.keys(ties).length } };
 }
 
 export function coverage(model) {
@@ -358,23 +444,40 @@ export function coverage(model) {
 
 export function tiesFor(model, relationId) {
   if (model.mode === 'multi') {
-    const m = mergeResponses(model.responses?.respondents || [], relationId, model.mergeRule, model.people);
-    return m;
+    const rel = model.relations.find(r => r.id === relationId);
+    return mergeResponses(model.responses?.respondents || [], relationId, model.mergeRule, model.people, rel?.fields || []);
   }
   const t = model.ties[relationId] || {};
-  return { ties: t, directed: true, stats: { ties: Object.keys(t).length } };
+  const a = model.tieAttrs?.[relationId] || {};
+  return { ties: t, attrs: Object.fromEntries(Object.entries(a).filter(([k]) => t[k])), directed: true, stats: { ties: Object.keys(t).length } };
 }
 
 export function toDataset(model, { relationIds = null } = {}) {
+  const b = new DatasetBuilder({ name: model.name || 'Roster network' });
+  writeRoster(b, model, { relationIds });
+  return b.build();
+}
+
+// Write a roster model into a DatasetBuilder (one source). Shared with the
+// survey-response importer, which recombines shared-survey responses into a
+// roster model and writes it here. source: extra source fields.
+export function writeRoster(b, model, { relationIds = null, source = {} } = {}) {
   if (!model.people.length) throw new Error('The roster is empty.');
   const rels = model.relations.filter(r => !relationIds || relationIds.includes(r.id));
   if (!rels.length) throw new Error('Choose at least one relation.');
   const merged = rels.map(r => ({ r, ...tiesFor(model, r.id) }));
-  const b = new DatasetBuilder({ name: model.name || 'Roster network' });
+  // With more than one relation each tie also records which one it is, so
+  // the construction settings can keep only some relations (a tie field).
+  const multiRel = rels.length > 1;
+  const fields = unionTieFields(...rels.map(r => r.fields || []));
+  const tieFields = declareTieFields(fields);
+  if (multiRel) tieFields.unshift({ key: 'relation', label: 'Relation', type: 'choice', options: rels.map(r => r.name) });
   b.beginSource({
     format: 'roster', family: 'survey', medium: 'survey', view: 'full', context: 'survey',
     directed: merged.some(m => m.directed), fileNames: model.responses?.file ? [model.responses.file] : [],
     mode: model.mode, mergeRule: model.mode === 'multi' ? model.mergeRule : null,
+    ...(tieFields.length ? { tieFields } : {}),
+    ...source,
   });
   const types = Object.fromEntries((model.attrColumns || []).map(c => [c.key, c.type]));
   const keyOf = new Map();
@@ -389,20 +492,27 @@ export function toDataset(model, { relationIds = null } = {}) {
     b.node(k, { label: p.label, attrs });
   }
   const members = model.people.map(p => b.nodeIndex(keyOf.get(p.id)));
-  for (const { r, ties } of merged) {
+  for (const { r, ties, attrs } of merged) {
     const ctx = b.context('roster:rel:' + slug(r.name), { name: r.name, kind: 'survey', visibility: 'private', medium: 'survey', members });
     for (const [k, v] of Object.entries(ties)) {
       const [from, to] = splitKey(k);
       if (!keyOf.has(from) || !keyOf.has(to)) continue;
+      // Field values were typed when entered or read from a response.
+      const a = attrs?.[k] || null;
+      const ea = multiRel ? { relation: r.name, ...(a || {}) } : a;
       // Undirected merged ties are one event each; the analysis symmetrises
       // them when the network is built undirected (source.directed = false).
-      b.event({ type: 'declared', actor: b.nodeIndex(keyOf.get(from)), targets: [[b.nodeIndex(keyOf.get(to)), 'declared']], context: ctx, weight: Number(v) || 1 });
+      b.event({ type: 'declared', actor: b.nodeIndex(keyOf.get(from)), targets: [[b.nodeIndex(keyOf.get(to)), 'declared']], context: ctx, weight: Number(v) || 1, attrs: ea });
       b.stat('ties');
     }
   }
   if (model.mode === 'multi') {
     const c = coverage(model);
-    if (c.missing.length) b.warn('roster-nonrespondents', 'Roster members who did not respond (they can still receive ties)', c.missing.length);
+    if (c.missing.length) b.warn('roster-nonrespondents', `Roster members who did not respond (they can still receive ties): ${listNames(c.missing)}`, c.missing.length);
   }
-  return b.build();
+  return keyOf;
+}
+
+export function listNames(names, max = 12) {
+  return names.length > max ? `${names.slice(0, max).join(', ')} and ${names.length - max} more` : names.join(', ');
 }

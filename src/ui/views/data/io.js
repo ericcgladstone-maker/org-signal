@@ -8,6 +8,7 @@
 // the services layer's fakes are used, as everywhere else.
 
 import { detectInput as mockableDetect, importInput as mockableImport, pipelineMode, peekCSV, suggestMapping } from '../../services/pipeline.js';
+import { sniffShared } from '../../../builders/share.js';
 
 // ---- reading what the user dropped -----------------------------------------
 
@@ -58,6 +59,25 @@ export function inputsFromPicker(fileList, folder) {
     return [makeInput(top, files, 'folder')];
   }
   return files.map(f => makeInput(f.name, [f], /\.zip$/i.test(f.name) ? 'zip' : 'file'));
+}
+
+// Shared-survey response files are recombined as one set (the merge rule
+// needs both people's answers; who did not respond needs all of them), so
+// loose response files dropped or picked together become one input.
+export async function groupSharedResponses(list) {
+  const loose = [];
+  for (const inp of list) {
+    if (inp.kind !== 'file' || inp.files.length !== 1) continue;
+    const f = inp.files[0], b = f.blob || f;
+    if (!/\.(json|txt)$/i.test(pathOf(f)) || !(b.size < 5e6)) continue;
+    try { if (sniffShared(await b.slice(0, 4096).text())) loose.push(inp); } catch { /* unreadable: leave it alone */ }
+  }
+  if (loose.length < 2) return list;
+  const merged = makeInput(`${loose.length} survey responses`, loose.flatMap(i => i.files), 'folder');
+  const set = new Set(loose);
+  const out = [];
+  for (const inp of list) { if (!set.has(inp)) out.push(inp); else if (inp === loose[0]) out.push(merged); }
+  return out;
 }
 
 export const pathOf = f => f.path || f.webkitRelativePath || f.name || '';

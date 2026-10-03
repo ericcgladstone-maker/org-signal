@@ -6,11 +6,21 @@
 // toggles a binary tie, digits 0..max set a valued tie, Delete/Backspace clear.
 // Headers stay put while the grid scrolls inside its own wrapper, so a 50+
 // person roster never makes the page itself scroll sideways.
+//
+// Tie fields (fields + attrs): the grid itself stays one character per cell,
+// so it stays fast at 100 people; the fields of the focused cell are edited
+// in one details panel under the grid. F2 or Shift+Enter on a cell moves
+// focus into the panel; Escape in the panel returns to the cell. Cells whose
+// tie has details carry a corner mark.
 
 import { html, useState, useRef, useEffect, useMemo } from '../../../../vendor/preact.js';
 import { pairKey } from '../../../builders/matrix.js';
+import { PersonSelect } from '../pick.js';
+import { TieFieldInputs } from '../tiefields.js';
+import { describeTieValues } from '../../../builders/tiefields.js';
 
-export function Matrix({ people, values, onSet, scale = 'binary', max = 5, caption = 'Ties', rowHeading = 'From', colHeading = 'To' }) {
+export function Matrix({ people, values, onSet, scale = 'binary', max = 5, caption = 'Ties', rowHeading = 'From', colHeading = 'To',
+  fields = [], attrs = {}, onSetAttrs = null }) {
   const [focus, setFocus] = useState({ r: 0, c: people.length > 1 ? 1 : 0 });
   const [hl, setHl] = useState(null);
   const tableRef = useRef(null);
@@ -34,11 +44,15 @@ export function Matrix({ people, values, onSet, scale = 'binary', max = 5, capti
     else set(r, c, cur >= max ? 0 : cur + 1); // click cycles 0..max
   };
 
+  const panelRef = useRef(null);
+  const withFields = fields.length > 0 && onSetAttrs;
+  const openDetails = () => { const el = panelRef.current?.querySelector('input,select,button'); el?.focus(); };
   const onKey = e => {
     const td = e.target.closest('td[data-r]');
     if (!td) return;
     const r = Number(td.dataset.r), c = Number(td.dataset.c);
     const k = e.key;
+    if (withFields && r !== c && (k === 'F2' || (k === 'Enter' && e.shiftKey))) { e.preventDefault(); openDetails(); return; }
     if (k === 'ArrowRight') moveTo(r, c + 1);
     else if (k === 'ArrowLeft') moveTo(r, c - 1);
     else if (k === 'ArrowDown') moveTo(r + 1, c);
@@ -56,9 +70,9 @@ export function Matrix({ people, values, onSet, scale = 'binary', max = 5, capti
     e.preventDefault();
   };
 
-  const help = scale === 'binary'
+  const help = (scale === 'binary'
     ? 'Arrow keys move. Space or Enter toggles a tie. 1 sets, 0 clears.'
-    : `Arrow keys move. Type 0 to ${max} to set a value; Space steps it up.`;
+    : `Arrow keys move. Type 0 to ${max} to set a value; Space steps it up.`) + (withFields ? ' F2 or Shift+Enter edits the tie\u2019s details below the grid.' : '');
   const counts = useMemo(() => Object.keys(values).length, [values]);
 
   if (!n) return html`<p class="ob-empty">Add people to the roster first.</p>`;
@@ -78,10 +92,11 @@ export function Matrix({ people, values, onSet, scale = 'binary', max = 5, capti
               if (r === c) return html`<td class="self" aria-disabled="true" data-r=${r} data-c=${c} tabindex=${focus.r === r && focus.c === c ? 0 : -1}
                 aria-label=${`${p.label} (self)`}></td>`;
               const v = values[pairKey(p.id, q.id)] || 0;
-              const cls = v ? (scale === 'binary' ? 'on' : `v${Math.min(5, Math.max(1, Math.round((v / max) * 5)))}`) : '';
+              const det = withFields && v && attrs[pairKey(p.id, q.id)];
+              const cls = (v ? (scale === 'binary' ? 'on' : `v${Math.min(5, Math.max(1, Math.round((v / max) * 5)))}`) : '') + (det ? ' has-f' : '');
               return html`<td role="gridcell" class=${cls} data-r=${r} data-c=${c}
                 tabindex=${focus.r === r && focus.c === c ? 0 : -1}
-                aria-label=${`${p.label} to ${q.label}: ${v ? (scale === 'binary' ? 'tie' : v) : 'no tie'}`}
+                aria-label=${`${p.label} to ${q.label}: ${v ? (scale === 'binary' ? 'tie' : v) : 'no tie'}${det ? `, ${describeTieValues(fields, det)}` : ''}`}
                 onClick=${() => { setFocus({ r, c }); setHl({ r, c }); toggle(r, c); }}
                 onFocus=${() => { setHl({ r, c }); }}>${v ? (scale === 'binary' ? '●' : v) : ''}</td>`;
             })}
@@ -89,12 +104,31 @@ export function Matrix({ people, values, onSet, scale = 'binary', max = 5, capti
         </tbody>
       </table>
     </div>
+    ${withFields ? html`<${TieDetails} ref_=${panelRef} people=${people} focus=${focus} values=${values} attrs=${attrs} fields=${fields}
+      onSetAttrs=${onSetAttrs} back=${() => moveTo(focus.r, focus.c)} />` : null}
   </div>`;
+}
+
+// The details of the focused cell's tie. Entering a detail on a pair with no
+// tie records the tie (the builder does that: setTieAttrs).
+function TieDetails({ ref_, people, focus, values, attrs, fields, onSetAttrs, back }) {
+  const a = people[focus.r], b = people[focus.c];
+  if (!a || !b) return null;
+  const k = pairKey(a.id, b.id);
+  const cur = attrs[k] || {};
+  const self = a.id === b.id;
+  return html`<section class="ob-details" ref=${ref_} aria-label="Tie details" onKeyDown=${e => { if (e.key === 'Escape') { e.preventDefault(); back(); } }}>
+    <div class="ob-row"><h4 class="ob-details__h">Tie details: ${a.label} to ${b.label}</h4>
+      <span class="ob-spacer"></span><button type="button" class="tlink tlink--quiet" onClick=${back}>Back to the grid</button></div>
+    ${self ? html`<p class="ob-note">Choose a cell off the diagonal.</p>` : html`
+      <p class="ob-note">${values[k] ? 'Every detail is optional.' : 'No tie yet. Entering a detail records the tie.'}</p>
+      <${TieFieldInputs} fields=${fields} values=${cur} idPrefix=${`ob-td`} onChange=${(key, v) => onSetAttrs(a.id, b.id, { ...cur, [key]: v })} />`}
+  </section>`;
 }
 
 // Pair-at-a-time entry: the same ties as a form and a list. Better on a phone
 // and with a screen reader than a large grid.
-export function PairEntry({ people, values, onSet, scale = 'binary', max = 5 }) {
+export function PairEntry({ people, values, onSet, scale = 'binary', max = 5, fields = [], attrs = {} }) {
   const [from, setFrom] = useState(people[0]?.id || '');
   const [to, setTo] = useState(people[1]?.id || '');
   const [val, setVal] = useState(scale === 'binary' ? 1 : max);
@@ -105,20 +139,17 @@ export function PairEntry({ people, values, onSet, scale = 'binary', max = 5 }) 
   const add = e => { e.preventDefault(); if (from && to && from !== to) onSet(from, to, scale === 'binary' ? 1 : Number(val)); };
   return html`<div class="ob-stack">
     <form class="ob-row" onSubmit=${add} aria-label="Add a tie">
-      <div class="field"><label class="field__label" for="ob-pe-from">From</label>
-        <select id="ob-pe-from" class="select" value=${from} onChange=${e => setFrom(e.currentTarget.value)}>
-          ${people.map(p => html`<option value=${p.id}>${p.label}</option>`)}</select></div>
-      <div class="field"><label class="field__label" for="ob-pe-to">To</label>
-        <select id="ob-pe-to" class="select" value=${to} onChange=${e => setTo(e.currentTarget.value)}>
-          ${people.map(p => html`<option value=${p.id}>${p.label}</option>`)}</select></div>
+      <div class="field"><${PersonSelect} id="ob-pe-from" label="From" people=${people} value=${from} onChange=${setFrom} /></div>
+      <div class="field"><${PersonSelect} id="ob-pe-to" label="To" people=${people} value=${to} onChange=${setTo} exclude=${from} /></div>
       ${scale === 'valued' ? html`<div class="field" style="width:5rem"><label class="field__label" for="ob-pe-val">Value</label>
         <input id="ob-pe-val" class="input" type="number" min="1" max=${max} value=${val} onInput=${e => setVal(e.currentTarget.value)} /></div>` : null}
       <button class="btn" type="submit" style="align-self:flex-end" disabled=${!from || from === to}>Add tie</button>
     </form>
     ${list.length ? html`<div class="table-wrap"><table class="tbl">
-      <thead><tr><th>From</th><th>To</th>${scale === 'valued' ? html`<th class="num">Value</th>` : null}<th><span class="visually-hidden">Remove</span></th></tr></thead>
+      <thead><tr><th>From</th><th>To</th>${scale === 'valued' ? html`<th class="num">Value</th>` : null}${fields.length ? html`<th>Details</th>` : null}<th><span class="visually-hidden">Remove</span></th></tr></thead>
       <tbody>${list.map(t => html`<tr><td>${label.get(t.from)}</td><td>${label.get(t.to)}</td>
         ${scale === 'valued' ? html`<td class="num">${t.v}</td>` : null}
+        ${fields.length ? html`<td class="ob-note">${describeTieValues(fields, attrs[pairKey(t.from, t.to)]) || '—'}</td>` : null}
         <td><button type="button" class="btn btn--sm btn--quiet" onClick=${() => onSet(t.from, t.to, 0)} aria-label=${`Remove ${label.get(t.from)} to ${label.get(t.to)}`}>Remove</button></td></tr>`)}
       </tbody></table></div>` : html`<p class="ob-note">No ties yet.</p>`}
   </div>`;

@@ -11,6 +11,7 @@ import { Histogram } from '../components/charts.js';
 import { RULES, RULE_TEXT, ruleEvidence, activityHistogram, visibilityPresent, mediaPresent, botCount, timeExtent } from '../lib/dsutil.js';
 import { fmtInt, isoDay, fmtDate } from '../lib/format.js';
 import { RULE_LABEL } from '../actions.js';
+import { inferEventAttributeSchema } from '../../core/model.js';
 
 const ruleName = r => { const l = RULE_LABEL[r] || r; return l.charAt(0).toUpperCase() + l.slice(1); };
 const MEDIA_TEXT = { chat: 'Chat', email: 'Email', meeting: 'Meetings', calendar: 'Calendar', social: 'Social media', survey: 'Surveys', sms: 'Text messages', forum: 'Forums', canvas: 'Drawn' };
@@ -140,6 +141,8 @@ export function SettingsDrawer() {
         ${media.map(m => html`<label class="check" style="display:flex"><input type="checkbox" checked=${!mediaSel || mediaSel.has(m)} onChange=${e => { const n = new Set(mediaSel || media); if (e.currentTarget.checked) n.add(m); else n.delete(m); setS(x => ({ ...x, media: n.size === media.length ? null : [...n] })); }} />${MEDIA_TEXT[m] || m}</label>`)}
       </div>`}
 
+      <${TieFieldsSection} ds=${ds} s=${s} setS=${setS} />
+
       <div class="section">
         <p class="label">Bots</p>
         <label class="check"><input type="checkbox" checked=${!!s.excludeBots} onChange=${e => setS(x => ({ ...x, excludeBots: e.currentTarget.checked }))} />Leave out accounts marked as bots</label>
@@ -153,4 +156,49 @@ export function SettingsDrawer() {
       <button type="button" class="btn btn--primary" onClick=${apply} disabled=${busy}>${busy ? 'Rebuilding' : 'Apply and rebuild'}</button>
     </div>
   </aside>`;
+}
+
+// Tie fields (survey tie type, strength, how often, reported as ...): take
+// the tie amount from a numeric or ordered field, and keep only ties whose
+// fields match (settings.tieFields, see src/analysis/construct.js). Shown only
+// when the data has tie fields.
+function TieFieldsSection({ ds, s, setS }) {
+  const schema = useMemo(() => ds.eventAttributeSchema || inferEventAttributeSchema(ds), [ds]);
+  if (!schema.length) return null;
+  const tf = s.tieFields || { weight: null, filters: [] };
+  const filters = tf.filters || [];
+  const setTf = patch => setS(x => ({ ...x, tieFields: { weight: null, filters: [], ...(x.tieFields || {}), ...patch } }));
+  const filterFor = key => filters.find(f => f.key === key);
+  const setFilter = (key, f) => setTf({ filters: [...filters.filter(x => x.key !== key), ...(f ? [{ key, ...f }] : [])] });
+  const weighable = schema.filter(f => f.type === 'numeric' || (f.type === 'categorical' && f.ordered));
+  const choices = schema.filter(f => f.type === 'categorical' && f.values?.length && f.values.length <= 40);
+  const numbers = schema.filter(f => f.type === 'numeric');
+  return html`<div class="section">
+    <p class="label">Tie fields</p>
+    <p class="small text2">Qualities recorded on each tie in this data (${schema.map(f => f.label).join(', ')}). Filters apply only to sources that record the field.</p>
+    ${weighable.length > 0 && html`<${Select} label="Tie amount from" value=${tf.weight || ''} onChange=${v => setTf({ weight: v || null })}
+      options=${[{ value: '', label: 'The tie value as recorded' }, ...weighable.map(f => ({ value: f.key, label: f.type === 'numeric' ? f.label : `${f.label} (position in its list)` }))]} />`}
+    ${choices.map(f => {
+      const cur = filterFor(f.key);
+      const sel = new Set(cur?.values || f.values);
+      const toggle = (v, on) => {
+        const n = new Set(sel); if (on) n.add(v); else n.delete(v);
+        const all = f.values.every(x => n.has(x)), keep = cur ? cur.keepMissing !== false : true;
+        // Everything ticked, blanks included, is no filter at all.
+        setFilter(f.key, all && keep ? null : { values: [...n], keepMissing: keep });
+      };
+      return html`<fieldset class="tf-group" style="border:0;padding:0;margin:.75rem 0 0">
+        <legend class="small" style="color:var(--text)">Keep ties whose ${f.label.toLowerCase()} is</legend>
+        ${f.values.map(v => html`<label class="check" style="display:flex"><input type="checkbox" checked=${sel.has(v)} onChange=${e => toggle(v, e.currentTarget.checked)} />${v}</label>`)}
+        <label class="check" style="display:flex"><input type="checkbox" checked=${cur ? cur.keepMissing !== false : true}
+          onChange=${e => { const keep = e.currentTarget.checked; const vals = cur?.values || f.values; setFilter(f.key, keep && vals.length === f.values.length ? null : { values: [...vals], keepMissing: keep }); }} /><span class="text2">Not recorded</span></label>
+      </fieldset>`;
+    })}
+    ${numbers.length > 0 && html`<div class="grid-2" style="gap:.75rem 1rem;margin-top:.75rem">
+      ${numbers.map(f => { const cur = filterFor(f.key); return html`<label class="field"><span>Keep ties with ${f.label.toLowerCase()} at least</span>
+        <input class="input tnum" type="number" step="any" placeholder="any" value=${cur && Number.isFinite(cur.min) ? cur.min : ''}
+          onInput=${e => { const v = e.currentTarget.value; setFilter(f.key, v === '' ? null : { min: Number(v), keepMissing: false }); }} /></label>`; })}
+    </div>`}
+    <p class="basis">A filter drops the events whose field does not match; a tie with no evidence left disappears. "Not recorded" keeps ties where the field was left blank.</p>
+  </div>`;
 }

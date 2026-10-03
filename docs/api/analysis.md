@@ -90,6 +90,7 @@ Every method returns a Promise. Positional arguments follow the pure function, m
   visibility: [...],                  // context visibilities to include; no context = 'unknown'
   media: null | [...],                // context medium, or source medium without a context
   excludeBots: true, excludeNodes: [] /* dataset indices */, includeIsolates: true,
+  tieFields: { weight: null, filters: [] },  // tie fields (events.attrs), see below
 }
 ```
 
@@ -116,6 +117,16 @@ The amount per piece of evidence is `event.weight` times the bootstrap multiplic
 
 **Bots:** bot actors' events are dropped and bot targets ignored.
 
+### Tie fields (`settings.tieFields`, `tieFieldPlan(ds, tieFields)`)
+
+Events may carry tie fields (`events.attrs`: tie type, strength, how often, reported as ...; see CONTRACTS.md).
+
+- `weight: key`: an event that has the field contributes its value instead of `event.weight`: a number as is, an ordered choice its position in the declared options (first = 1), several values their highest. Events from sources that carry the field but leave it blank keep `event.weight` (counted in `summary.tieFields.weightMissing`); events from other sources are untouched.
+- `filters: [{ key, values?, min?, max?, keepMissing? }]`: each applies only to events from sources that carry the field (declared in `source.tieFields` or seen on one of their events), so filtering a survey's tie type leaves a Slack export alongside it alone. Such an event passes when one of its values is in `values` and within `[min, max]`; a blank value fails unless `keepMissing`. All filters must pass. Dropped events are counted in `summary.events.dropped.tieField` and `summary.tieFields.filtered`.
+- Applied in `forEachEvidence`, so bootstrap, time windows and `edgeEvidence` agree with `buildNetwork`.
+
+`edgeTieAttributes(ds, net)` replays the evidence and returns the tie fields behind each network edge: numbers averaged, choices and text as distinct values joined by `; ` (used by the exporters and available to tie panels).
+
 ### `buildNetwork(ds, settings) -> Network`
 
 ```js
@@ -126,7 +137,8 @@ The amount per piece of evidence is `event.weight` times the bootstrap multiplic
            layerMask: Uint8Array },      // bit i = VISIBILITY[i]: public 1, private 2, direct 4, group 8, unknown 16
   settings,                              // normalised
   summary: { nodes, edges, isolates, directed, weighting,
-             events: { considered, used, dropped: { bots, excluded, time, undated, visibility, media, broadcast, largeMeetings } },
+             events: { considered, used, dropped: { bots, excluded, time, undated, visibility, media, broadcast, largeMeetings, tieField } },
+             tieFields: { weight, filters, filtered, weightMissing },
              tiesBelowMinWeight, byRule: { [rule]: { ties, evidence } }, layers: { [visibility]: ties }, weight: { min, max, mean } } }
 ```
 
@@ -134,7 +146,7 @@ Edges are sorted by (src, dst). With `includeIsolates`, every eligible person is
 
 ### `edgeEvidence(ds, net, a, b, { limit = 50, bothDirections = false })`
 
-Returns an array, oldest first: `{ event, t, type, rule, amount, from, to, actor, actorLabel, context, visibility, text (280 chars max) }`. In a directed network only a -> b is returned unless `bothDirections`.
+Returns an array, oldest first: `{ event, t, type, rule, amount, from, to, actor, actorLabel, context, visibility, text (280 chars max), attrs }` (`attrs`: the event's tie fields or `null`). In a directed network only a -> b is returned unless `bothDirections`.
 
 ### `networkFromEdges(n, [[a, b, w]], { directed, nodeIds })`
 
@@ -278,7 +290,7 @@ Each row is `{ key, label, n, mean (VADER compound), sd, se, pos, neg, neu, posS
 
 `keywords(ds, { by = 'node', attr, window, k = 10, minCount = 2, minTokens = 20, maxUnits = 300 })` ->
 `{ by, units: [{ key, label, tokens, terms: [{ term, count, tfidf }] }], overall: [{ term, count, messages }], meta }`.
-It uses TF-IDF over each unit's pooled text, with smooth idf `ln((1+U)/(1+df)) + 1`.
+It uses TF-IDF over each unit's pooled text, with smooth idf `ln((1+U)/(1+df)) + 1`. `overall` counts terms (`count`) and the messages using them (`messages`) over the same messages: those by non-bots that fall in a unit of `by` (so `by: 'window'` leaves out undated messages, `by: 'group'` people without a value).
 
 `topics(ds, { k = 10, seed, iterations = 150, alpha = 0.1, beta = 0.01, pool = 'none' | 'author-day', minTokens = 3, minDf, maxDfShare = 0.25, maxVocab = 5000, maxDocs = 150000, topTerms = 10, attr, window })` ->
 `{ topics: [{ id, share, terms: [{ term, weight }], distinctive: [term] }], byNode: [{ key, label, n, shares[k] }], byGroup?, byWindow?, meta }`.

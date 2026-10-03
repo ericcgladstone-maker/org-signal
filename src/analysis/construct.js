@@ -9,7 +9,7 @@
 // bootstrap resampling (event multiplicities) and time windows (event subsets),
 // so all of them agree exactly on what counts as a tie.
 
-import { EVENT_TYPES, ROLES, VISIBILITY, VIEWS } from '../core/model.js';
+import { EVENT_TYPES, ROLES, VISIBILITY, VIEWS, inferEventAttributeSchema } from '../core/model.js';
 
 export const RULES = ['reply', 'mention', 'dm', 'to', 'cc', 'bcc', 'adjacency', 'copresence', 'declared', 'repost', 'like', 'follow', 'reaction'];
 export const RULE_INFO = {
@@ -110,6 +110,9 @@ export function defaultSettings(ds) {
     excludeBots: true,
     excludeNodes: [],
     includeIsolates: true,
+    // Tie fields (events.attrs): take each tie's amount from a numeric or
+    // ordered field, and keep only ties whose fields match. See tieFieldPlan.
+    tieFields: { weight: null, filters: [] },
     _hasBots: hasBots,
   };
 }
@@ -119,7 +122,83 @@ export function normalizeSettings(ds, s = {}) {
   const d = defaultSettings(ds);
   const rules = {};
   for (const r of RULES) rules[r] = { ...d.rules[r], ...(s.rules?.[r] || {}) };
-  return { ...d, ...s, rules, time: { ...d.time, ...(s.time || {}) } };
+  return { ...d, ...s, rules, time: { ...d.time, ...(s.time || {}) }, tieFields: { ...d.tieFields, ...(s.tieFields || {}) } };
+}
+
+// ---- tie fields -----------------------------------------------------------------
+
+// settings.tieFields = { weight: key | null, filters: [{ key, values?, min?, max?, keepMissing? }] }
+//
+// weight: the evidence amount of an event that has this field is the field's
+//   value instead of event.weight: a number as is, an ordered choice as its
+//   position (first option 1), several choices their highest. Events from
+//   sources that carry the field but leave it blank keep event.weight and are
+//   counted (weightMissing). Events from other sources are untouched.
+// filters: each filter applies only to events from sources that carry its
+//   field (declared in source.tieFields or seen on one of their events), so a
+//   filter on a survey's tie type leaves a Slack export alongside it alone.
+//   Such an event passes when its value is one of `values` (any of them, for
+//   several choices) and within [min, max] for numbers. A blank value fails
+//   unless keepMissing. Every filter must pass.
+// Returns null when nothing is asked, so the common case costs nothing.
+export function tieFieldPlan(ds, tf) {
+  if (!tf) return null;
+  const weightKey = tf.weight || null;
+  const filters = (tf.filters || []).filter(f => f && f.key && (Array.isArray(f.values) || Number.isFinite(f.min) || Number.isFinite(f.max)));
+  if (!weightKey && !filters.length) return null;
+  const ev = ds.events, attrs = ev.attrs || null;
+  const sources = ds.meta?.sources || [];
+  const schema = new Map((ds.eventAttributeSchema || inferEventAttributeSchema(ds)).map(x => [x.key, x]));
+  const carriers = key => {
+    const has = new Uint8Array(Math.max(1, sources.length));
+    sources.forEach((src, k) => { if ((src.tieFields || []).some(f => f.key === key)) has[k] = 1; });
+    if (attrs) for (let i = 0; i < attrs.length; i++) if (attrs[i] && key in attrs[i]) has[ev.source[i]] = 1;
+    return has;
+  };
+  const plan = { weightKey: null, filters: [] };
+  if (weightKey) {
+    const sc = schema.get(weightKey);
+    const order = sc?.type === 'categorical' && sc.values ? new Map(sc.values.map((v, k) => [v, k + 1])) : null;
+    const num = x => {
+      if (typeof x === 'number') return x;
+      if (typeof x === 'boolean') return x ? 1 : 0;
+      const n = Number(x);
+      if (String(x).trim() !== '' && Number.isFinite(n)) return n;
+      return order?.get(String(x)) ?? NaN;
+    };
+    plan.weightKey = weightKey;
+    plan.weightCarriers = carriers(weightKey);
+    plan.weightOf = (a) => {
+      const v = a?.[weightKey];
+      if (v === undefined) return NaN;
+      if (Array.isArray(v)) { let best = NaN; for (const x of v) { const n = num(x); if (!(n <= best)) best = n; } return best; }
+      return num(v);
+    };
+  }
+  for (const f of filters) {
+    plan.filters.push({
+      key: f.key, carriers: carriers(f.key), keepMissing: !!f.keepMissing,
+      values: Array.isArray(f.values) ? new Set(f.values.map(String)) : null,
+      min: Number.isFinite(f.min) ? f.min : -Infinity, max: Number.isFinite(f.max) ? f.max : Infinity,
+    });
+  }
+  plan.pass = (i, a) => {
+    for (const f of plan.filters) {
+      if (!f.carriers[ev.source[i]]) continue;
+      const v = a?.[f.key];
+      if (v === undefined) { if (!f.keepMissing) return false; continue; }
+      const list = Array.isArray(v) ? v : [v];
+      let ok = false;
+      for (const x of list) {
+        if (f.values && !f.values.has(String(x))) continue;
+        if (f.min !== -Infinity || f.max !== Infinity) { const n = Number(x); if (!(n >= f.min && n <= f.max)) continue; }
+        ok = true; break;
+      }
+      if (!ok) return false;
+    }
+    return true;
+  };
+  return plan;
 }
 
 // ---- rule engine ---------------------------------------------------------------
@@ -153,7 +232,10 @@ export function forEachEvidence(ds, settings, emit, opts = {}) {
   // they are emitted as symmetric evidence, like co-attendance.
   const symSource = sources.map(x => x.directed === false);
 
-  const drop = { events: 0, used: 0, bots: 0, time: 0, undated: 0, visibility: 0, media: 0, broadcast: 0, copresenceLarge: 0, excluded: 0 };
+  const tf = tieFieldPlan(ds, s.tieFields);
+  const evAttrs = ev.attrs || null;
+
+  const drop = { events: 0, used: 0, bots: 0, time: 0, undated: 0, visibility: 0, media: 0, broadcast: 0, copresenceLarge: 0, excluded: 0, tieField: 0, tieWeightMissing: 0 };
   const adjSeq = on[RI.adjacency] ? [] : null;
 
   const each = (i) => {
@@ -174,9 +256,17 @@ export function forEachEvidence(ds, settings, emit, opts = {}) {
       const med = c >= 0 ? ds.contexts.medium[c] : sources[ev.source[i]]?.medium;
       if (!media.has(med)) { drop.media++; return; }
     }
+    let amt = ev.weight[i] * m;
+    if (tf) {
+      const a = evAttrs ? evAttrs[i] : null;
+      if (tf.filters.length && !tf.pass(i, a)) { drop.tieField++; return; }
+      if (tf.weightKey && tf.weightCarriers[ev.source[i]]) {
+        const w = tf.weightOf(a);
+        if (Number.isFinite(w) && w >= 0) amt = w * m; else drop.tieWeightMissing++;
+      }
+    }
     drop.used++;
     const ty = ev.type[i];
-    const amt = ev.weight[i] * m;
     const a0 = ev.tOff[i], a1 = ev.tOff[i + 1];
 
     if (ty === T.copresence) {
@@ -366,7 +456,8 @@ function summarize(net, drop, droppedWeak) {
   for (let e = 0; e < edges.count; e++) { const x = edges.w[e]; if (x < wMin) wMin = x; if (x > wMax) wMax = x; wSum += x; }
   return {
     nodes: n, edges: edges.count, isolates, directed: net.directed, weighting: net.settings.weighting,
-    events: { considered: drop.events, used: drop.used, dropped: { bots: drop.bots, excluded: drop.excluded, time: drop.time, undated: drop.undated, visibility: drop.visibility, media: drop.media, broadcast: drop.broadcast, largeMeetings: drop.copresenceLarge } },
+    events: { considered: drop.events, used: drop.used, dropped: { bots: drop.bots, excluded: drop.excluded, time: drop.time, undated: drop.undated, visibility: drop.visibility, media: drop.media, broadcast: drop.broadcast, largeMeetings: drop.copresenceLarge, tieField: drop.tieField } },
+    tieFields: { weight: net.settings.tieFields?.weight || null, filters: (net.settings.tieFields?.filters || []).length, filtered: drop.tieField, weightMissing: drop.tieWeightMissing },
     tiesBelowMinWeight: droppedWeak,
     byRule, layers,
     weight: edges.count ? { min: wMin, max: wMax, mean: wSum / edges.count } : { min: 0, max: 0, mean: 0 },
@@ -406,7 +497,68 @@ export function summarizeEvent(ds, o) {
     context: c >= 0 ? ds.contexts.names[c] : null,
     visibility: c >= 0 ? VISIBILITY[ds.contexts.visibility[c]] : 'unknown',
     text: text ? (text.length > 280 ? text.slice(0, 277) + '...' : text) : null,
+    // Tie fields of the event (tie type, strength, notes ...), or null.
+    attrs: ev.attrs?.[i] || null,
   };
+}
+
+// ---- tie fields per network edge ---------------------------------------------------
+
+// The tie fields behind each network edge, for exports and tie panels: the
+// events that built the edge (under the network's own settings) are replayed
+// and their fields combined per edge. Numbers are averaged; choices and text
+// keep their distinct values, joined by '; ' in first-seen order.
+// Returns { fields: [{ key, label, type }], values: Array(edges) of { key: value } | null }.
+export function edgeTieAttributes(ds, net) {
+  const m = net.edges?.count || 0;
+  const empty = { fields: [], values: new Array(m).fill(null) };
+  if (!ds.events?.attrs || !m || !net.settings?.rules || !net.index) return empty;
+  const schema = ds.eventAttributeSchema || inferEventAttributeSchema(ds);
+  if (!schema.length) return empty;
+  const type = new Map(schema.map(f => [f.key, f.type]));
+  const n = net.n;
+  const lookup = new Map();
+  for (let e = 0; e < m; e++) lookup.set(net.edges.src[e] * n + net.edges.dst[e], e);
+  const acc = new Array(m).fill(null);
+  const take = (e, a) => {
+    const slot = acc[e] || (acc[e] = {});
+    for (const [k, v] of Object.entries(a)) {
+      const t = type.get(k);
+      const c = slot[k] || (slot[k] = t === 'numeric' ? { sum: 0, n: 0 } : { set: [] });
+      for (const x of Array.isArray(v) ? v : [v]) {
+        if (t === 'numeric') { const num = Number(x); if (Number.isFinite(num)) { c.sum += num; c.n++; } }
+        else if (!c.set.includes(String(x))) c.set.push(String(x));
+      }
+    }
+  };
+  const lastEvent = new Int32Array(m).fill(-1);
+  forEachEvidence(ds, net.settings, (a, b, rule, amt, i, vis, sym) => {
+    const at = ds.events.attrs[i];
+    if (!at) return;
+    const x = net.index[a], y = net.index[b];
+    if (x < 0 || y < 0) return;
+    const pairs = !net.directed ? [[Math.min(x, y), Math.max(x, y)]] : sym ? [[x, y], [y, x]] : [[x, y]];
+    for (const [p, q] of pairs) {
+      const e = lookup.get(p * n + q);
+      // One event counts once per edge, even when several of its targets map there.
+      if (e === undefined || lastEvent[e] === i) continue;
+      lastEvent[e] = i;
+      take(e, at);
+    }
+  });
+  const used = new Set();
+  const values = acc.map(slot => {
+    if (!slot) return null;
+    const o = {};
+    for (const [k, c] of Object.entries(slot)) {
+      if (c.n !== undefined) { if (c.n) o[k] = c.sum / c.n; }
+      else if (c.set.length) o[k] = c.set.join('; ');
+      if (k in o) used.add(k);
+    }
+    return o;
+  });
+  const fields = schema.filter(f => used.has(f.key)).map(f => ({ key: f.key, label: f.label, type: f.type }));
+  return { fields, values };
 }
 
 // Which views the dataset's sources record (for applicability).

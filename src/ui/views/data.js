@@ -19,7 +19,7 @@ import { store, useStore } from '../store.js';
 import { ViewHead, Flag, ErrorLine, Seg } from '../components/common.js';
 import { importReport, suggestMatches, applyMerges, mergeDatasets, joinProfiles, pipelineMode, filesForRels } from '../services/pipeline.js';
 import { fmtInt, plural } from '../lib/format.js';
-import { inputsFromDrop, inputsFromPicker, detect, importOne, tableKindOf, shortName, browserZone, isCSV, blobOf, pathOf } from './data/io.js';
+import { inputsFromDrop, inputsFromPicker, detect, importOne, tableKindOf, shortName, browserZone, isCSV, blobOf, pathOf, groupSharedResponses } from './data/io.js';
 import { InputList, effectiveImporters, isRecognized, inputUse } from './data/inputs.js';
 import { ReportView } from './data/report.js';
 import { ownersOf, ownerPairs, Owners, MatchList, ManualMerge, IdentityPanel } from './data/identity.js';
@@ -50,8 +50,9 @@ export function DataView() {
   const updateMany = (ids, fn) => { const set = new Set(ids); setInputs(prev => prev.map(x => (set.has(x.id) ? { ...x, ...fn(x) } : x))); };
   const remove = id => setInputs(prev => prev.filter(x => x.id !== id));
 
-  const addInputs = async (list) => {
-    if (!list.length) return;
+  const addInputs = async (list0) => {
+    if (!list0.length) return;
+    const list = await groupSharedResponses(list0);
     setError(null);
     setInputs(prev => [...prev, ...list]);
     for (const inp of list) {

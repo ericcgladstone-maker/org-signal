@@ -12,7 +12,7 @@
 //
 // Both return new Datasets in the shape DatasetBuilder.build() produces.
 
-import { inferAttributeSchema } from './model.js';
+import { inferAttributeSchema, inferEventAttributeSchema } from './model.js';
 
 export function mergeDatasets(list, { name } = {}) {
   if (!list.length) throw new Error('mergeDatasets needs at least one dataset.');
@@ -27,6 +27,8 @@ export function mergeDatasets(list, { name } = {}) {
     type: new Uint8Array(total), t: new Float64Array(total), actor: new Int32Array(total), context: new Int32Array(total),
     parent: new Int32Array(total), weight: new Float32Array(total), source: new Uint16Array(total),
     tOff: new Int32Array(total + 1), tgt: new Int32Array(tgtTotal), role: new Uint8Array(tgtTotal), text: [], keys: [],
+    // Tie fields stay null unless some input carries them.
+    attrs: list.some(d => d.events.attrs) ? new Array(total).fill(null) : null,
   };
   let eo = 0, to = 0;
   for (const ds of list) {
@@ -73,6 +75,7 @@ export function mergeDatasets(list, { name } = {}) {
       E.weight[k] = e.weight[i]; E.source[k] = e.source[i] + soff;
       E.tOff[k] = to + e.tOff[i];
       E.text.push(e.text[i]); E.keys.push(e.keys[i]);
+      if (E.attrs && e.attrs?.[i]) E.attrs[k] = e.attrs[i];
     }
     for (let j = 0; j < e.tgt.length; j++) { E.tgt[to + j] = nmap[e.tgt[j]]; E.role[to + j] = e.role[j]; }
     eo += e.count; to += e.tgt.length;
@@ -88,6 +91,7 @@ export function mergeDatasets(list, { name } = {}) {
   const merges = list.flatMap(d => d.meta.merges || []);
   if (merges.length) out.meta.merges = merges;
   out.attributeSchema = inferAttributeSchema(out.nodes.attrs);
+  out.eventAttributeSchema = inferEventAttributeSchema(out);
   return dedupeSelfTargets(out);
 }
 

@@ -251,11 +251,23 @@ function keepFocus(e) {
   }, 0);
 }
 
+// A share link (#survey=1.<data>) or #respond (a survey file) opens
+// respondent mode: the survey only, no analysis navigation and nothing from
+// any organizer's session (src/ui/build/respond/index.js).
+const RESPOND = /^#(survey=|respond\b)/;
+
 async function boot() {
+  if (RESPOND.test(location.hash)) {
+    const m = await import('./build/respond/index.js');
+    m.mountRespondent(document.getElementById('app'));
+    return;
+  }
   registerActions();
   const fromHash = location.hash.slice(1).split('?')[0];
   store.set({ view: VIEWS.some(v => v.id === fromHash) ? fromHash : 'data', notices: [], ui: { drawer: false, menuOpen: false } });
   window.addEventListener('hashchange', () => {
+    // A survey link pasted into this tab: open it as a respondent would.
+    if (RESPOND.test(location.hash)) { location.reload(); return; }
     const v = location.hash.slice(1).split('?')[0];
     if (v && v !== store.get().view) store.actions.setView(v);
   });

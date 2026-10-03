@@ -14,12 +14,12 @@ import { EVENT_TYPES, ROLES, VISIBILITY, VIEWS } from './model.js';
 //   warn   data was skipped, guessed or is less reliable than it looks
 //   info   context worth knowing; nothing was lost
 const CODES = {
-  error: ['import-failed', 'pst-unsupported', 'parse-error', 'xml-error', 'no-network-questions', 'slack-bad-json', 'teams-bad-json',
+  error: ['import-failed', 'survey-invalid', 'pst-unsupported', 'parse-error', 'xml-error', 'no-network-questions', 'slack-bad-json', 'teams-bad-json',
     'teams-free-no-messages', 'spreadsheet-unsupported'],
   info: ['auto-mapping', 'multiple-egos', 'matrix-duplicate', 'pair-values-as-weights', 'self-nominations', 'self-loops',
     'direction-assumed', 'interval-end-dropped', 'edge-attrs-dropped', 'node-times-dropped', 'dynamic-attr-flattened',
     'slack-usergroup-mentions', 'teams-channel-visibility-unknown', 'mbox-preamble', 'empty-mbox', 'empty-file', 'duplicate-sessions-skipped',
-    'combine-rule', 'spam-trash-excluded', 'automated-excluded', 'automated-included', 'owner-from-chat-title', 'nested-zip'],
+    'combine-rule', 'survey-responded', 'survey-nonrespondents', 'survey-earlier-version', 'survey-perceived', 'spam-trash-excluded', 'automated-excluded', 'automated-included', 'owner-from-chat-title', 'nested-zip'],
 };
 const CODE_SEV = new Map(Object.entries(CODES).flatMap(([sev, list]) => list.map(c => [c, sev])));
 const SEVERITY = {
@@ -47,7 +47,7 @@ const FORMAT_LABELS = {
   meta: 'Messenger or Instagram', messenger: 'Messenger', instagram: 'Instagram', discord: 'Discord', reddit: 'Reddit',
   tabular: 'Spreadsheet', 'google-forms': 'Google Forms survey', qualtrics: 'Qualtrics survey', 'egor-long': 'egor survey',
   'egor-wide': 'egor survey', egoweb: 'EgoWeb survey', 'network-canvas': 'Network Canvas interview', 'ego-interview': 'Ego interview',
-  roster: 'Roster', drawn: 'Drawn network', perceived: 'Perceived networks', graphml: 'GraphML', gexf: 'GEXF', gml: 'GML',
+  roster: 'Roster', 'shared-survey': 'Shared survey', drawn: 'Drawn network', perceived: 'Perceived networks', graphml: 'GraphML', gexf: 'GEXF', gml: 'GML',
   pajek: 'Pajek', ucinet: 'UCINET', dl: 'UCINET', 'ucinet-dl': 'UCINET', edgelist: 'Edge list', 'csv-edgelist': 'Edge list', 'gephi-csv': 'Edge list', 'csv-matrix': 'Adjacency matrix',
   fullmatrix: 'Adjacency matrix', synthetic: 'Synthetic',
 };

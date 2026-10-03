@@ -16,7 +16,7 @@
 //     activity). networkx reads these spells as strings.
 
 import { xmlEscape } from '../importers/xml.js';
-import { nodeColumns, fmtNum, nodeLabel, nodeKey } from './graphml.js';
+import { nodeColumns, fmtNum, nodeLabel, nodeKey, edgeColumns } from './graphml.js';
 
 const GEXF_TYPE = { string: 'string', double: 'double', long: 'long', boolean: 'boolean' };
 
@@ -66,9 +66,12 @@ export function exportGEXF(ds, net, opts = {}) {
   // Evidence per construction rule (replies, mentions, ...) on every tie, so a
   // tie can be filtered or styled by what created it in Gephi.
   const rules = Object.keys(net.edges.byRule || {}).filter(r => net.edges.byRule[r]?.length === net.edges.count);
-  if (rules.length) {
+  // Tie fields (survey tie type, strength ...) as further edge attributes.
+  const ecols = edgeColumns(ds, net, { taken: rules.map(r => `evidence_${r}`) });
+  if (rules.length || ecols.length) {
     out.push('    <attributes class="edge" mode="static">');
     rules.forEach((r, k) => out.push(`      <attribute id="e${k}" title="evidence_${xmlEscape(r)}" type="double"/>`));
+    ecols.forEach((c, k) => out.push(`      <attribute id="t${k}" title="${xmlEscape(c.name)}" type="${c.type}"/>`));
     out.push('    </attributes>');
   }
   out.push('    <nodes>');
@@ -95,7 +98,8 @@ export function exportGEXF(ds, net, opts = {}) {
     // Gephi needs parallel edges to differ by kind.
     const kind = dup > 1 ? ` kind="parallel-${dup}"` : '';
     const open = `      <edge id="${e}" source="${xmlEscape(nodeKey(ds, net, a))}" target="${xmlEscape(nodeKey(ds, net, b))}" weight="${fmtNum(E.w[e])}"${kind}`;
-    const ev = rules.map((r, k) => (E.byRule[r][e] ? `<attvalue for="e${k}" value="${fmtNum(E.byRule[r][e])}"/>` : '')).join('');
+    const ev = rules.map((r, k) => (E.byRule[r][e] ? `<attvalue for="e${k}" value="${fmtNum(E.byRule[r][e])}"/>` : '')).join('')
+      + ecols.map((c, k) => (c.values[e] !== undefined ? `<attvalue for="t${k}" value="${xmlEscape(c.type === 'double' ? fmtNum(c.values[e]) : c.values[e])}"/>` : '')).join('');
     const spells = times && times[e].length ? `<spells>${[...new Set(times[e].map(fmtT))].map(v => `<spell start="${v}" end="${v}"/>`).join('')}</spells>` : '';
     out.push(ev || spells ? `${open}>${ev ? `<attvalues>${ev}</attvalues>` : ''}${spells}</edge>` : `${open}/>`);
   }

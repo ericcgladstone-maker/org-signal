@@ -1,9 +1,14 @@
 // Roster entry: paste or import names (with optional attribute columns), then
 // edit them as a table. Shared by the roster and perceived-network builders.
+// Attribute columns are typed (text, number, choice, ordered, yes/no, date):
+// each can be renamed, retyped or removed from its header, cells take input
+// of their type, and values that do not fit the type are flagged.
 
 import { html, useState } from '../../../../vendor/preact.js';
-import { parseRosterText } from '../../../builders/roster.js';
-import { uid, normName } from '../../../builders/common.js';
+import { parseRosterText, renameAttrColumn, removeAttrColumn, badAttrValues } from '../../../builders/roster.js';
+import { uid, normName, ATTR_TYPES } from '../../../builders/common.js';
+
+const TYPE_LABEL = { text: 'Text', number: 'Number', categorical: 'Choice', ordinal: 'Ordered', boolean: 'Yes / no', date: 'Date' };
 import { pickFile, readFileText } from '../shared.js';
 
 // onSurvey(text, fileName), when given, takes a survey responses file that
@@ -50,13 +55,22 @@ export function PeopleEditor({ people, attrColumns = [], onChange, withAttrs = t
     setNewName('');
   };
   const [newCol, setNewCol] = useState('');
+  const [newType, setNewType] = useState('text');
   const addColumn = e => {
     e.preventDefault();
     const key = newCol.trim();
-    if (!key || attrColumns.some(c => c.key === key)) return;
-    onChange(people, [...attrColumns, { key, type: 'text' }]);
+    if (!key) return;
+    if (attrColumns.some(c => c.key === key)) { setMsg({ err: true, text: `There is already a column called ${key}.` }); return; }
+    onChange(people, [...attrColumns, { key, type: newType }]);
     setNewCol('');
   };
+  const model = { people, attrColumns };
+  const renameCol = (key, next) => { const m = renameAttrColumn(model, key, next); onChange(m.people, m.attrColumns); };
+  const retypeCol = (key, type) => onChange(people, attrColumns.map(c => (c.key === key ? { ...c, type } : c)));
+  const removeCol = key => { if (!confirm(`Remove the column ${key} and its values?`)) return; const m = removeAttrColumn(model, key); onChange(m.people, m.attrColumns); };
+  const isChoice = c => c.type === 'categorical' || c.type === 'ordinal';
+  const listIdOf = c => `${idPrefix}-dl-${normName(c.key).replace(/\W+/g, '_')}`;
+  const choices = key => [...new Set(people.map(p => p.attrs?.[key]).filter(v => v !== undefined && v !== ''))].sort();
 
   return html`<div class="ob-stack">
     <div class="field">
@@ -89,18 +103,49 @@ export function PeopleEditor({ people, attrColumns = [], onChange, withAttrs = t
     ${withAttrs ? html`<form class="ob-row" onSubmit=${addColumn}>
       <label class="visually-hidden" for=${idPrefix + '-col'}>New attribute column</label>
       <input id=${idPrefix + '-col'} class="input" style="max-width:16rem" placeholder="New attribute, e.g. department" value=${newCol} onInput=${e => setNewCol(e.currentTarget.value)} />
+      <label class="visually-hidden" for=${idPrefix + '-coltype'}>Type of the new attribute</label>
+      <select id=${idPrefix + '-coltype'} class="select select--sm" style="width:auto" value=${newType} onChange=${e => setNewType(e.currentTarget.value)}>
+        ${ATTR_TYPES.map(t => html`<option value=${t}>${TYPE_LABEL[t] || t}</option>`)}</select>
       <button type="submit" class="btn btn--sm" disabled=${!newCol.trim()}>Add attribute column</button>
     </form>` : null}
     ${people.length ? html`<div class="table-wrap" style="max-height:22rem">
       <table class="tbl">
-        <thead><tr><th>#</th><th>Name</th>${withAttrs ? attrColumns.map(c => html`<th>${c.key}</th>`) : null}<th><span class="visually-hidden">Remove</span></th></tr></thead>
-        <tbody>${people.map((p, i) => html`<tr>
+        <thead><tr><th>#</th><th>Name</th>${withAttrs ? attrColumns.map(c => html`<th class="ob-colhead">
+          <input class="input input--sm" aria-label=${`Column name ${c.key}`} value=${c.key} onChange=${e => renameCol(c.key, e.currentTarget.value)} />
+          <span class="ob-row" style="gap:.25rem .5rem;flex-wrap:nowrap">
+            <select class="select select--sm" aria-label=${`Type of ${c.key}`} value=${c.type || 'text'} onChange=${e => retypeCol(c.key, e.currentTarget.value)}>
+              ${ATTR_TYPES.map(t => html`<option value=${t}>${TYPE_LABEL[t] || t}</option>`)}</select>
+            <button type="button" class="tlink tlink--quiet" aria-label=${`Remove the column ${c.key}`} onClick=${() => removeCol(c.key)}>Remove</button>
+          </span>
+          ${(() => { const bad = badAttrValues(model, c.key); return bad.length ? html`<span class="ob-note ob-warn">${bad.length} not ${(TYPE_LABEL[c.type] || c.type).toLowerCase()}</span>` : null; })()}
+        </th>`) : null}<th><span class="visually-hidden">Remove</span></th></tr></thead>
+        <tbody>${people.map((p, i) => html`<tr key=${p.id}>
           <td class="num muted">${i + 1}</td>
           <td><input class="input" aria-label=${`Name ${i + 1}`} value=${p.label} onChange=${e => update(p.id, { label: e.currentTarget.value.trim() || p.label })} /></td>
-          ${withAttrs ? attrColumns.map(c => html`<td><input class="input" aria-label=${`${c.key} for ${p.label}`} value=${p.attrs?.[c.key] ?? ''}
-            onChange=${e => update(p.id, { attrs: { ...p.attrs, [c.key]: e.currentTarget.value } })} /></td>`) : null}
+          ${withAttrs ? attrColumns.map(c => html`<td><${AttrCell} col=${c} p=${p} listId=${isChoice(c) ? listIdOf(c) : null}
+            onSet=${v => update(p.id, { attrs: { ...p.attrs, [c.key]: v } })} /></td>`) : null}
           <td><button type="button" class="btn btn--sm btn--quiet" aria-label=${`Remove ${p.label}`} onClick=${() => remove(p.id)}>Remove</button></td>
         </tr>`)}</tbody>
-      </table></div>` : null}
+      </table>
+      ${withAttrs ? attrColumns.filter(isChoice).map(c => html`<datalist id=${listIdOf(c)}>${choices(c.key).map(v => html`<option value=${v} />`)}</datalist>`) : null}
+      </div>` : null}
   </div>`;
+}
+
+// One attribute value, with an input of the column's type. Choice columns
+// suggest the values already used (a datalist), so categories stay consistent.
+function AttrCell({ col, p, onSet, listId }) {
+  const v = p.attrs?.[col.key] ?? '';
+  const label = `${col.key} for ${p.label}`;
+  if (col.type === 'boolean') {
+    const cur = v === '' ? '' : /^(true|yes|1|y)$/i.test(String(v)) ? 'true' : 'false';
+    return html`<select class="select select--sm" aria-label=${label} value=${cur} onChange=${e => onSet(e.currentTarget.value)}>
+      <option value="">-</option><option value="true">Yes</option><option value="false">No</option></select>`;
+  }
+  const type = col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text';
+  const bad = v !== '' && ((col.type === 'number' && !Number.isFinite(Number(v))) || (col.type === 'date' && Number.isNaN(Date.parse(String(v)))));
+  return html`<span>
+    <input class="input" type=${bad ? 'text' : type} step=${type === 'number' ? 'any' : undefined} aria-label=${label} aria-invalid=${bad ? 'true' : undefined}
+      list=${listId || undefined} value=${v} onChange=${e => onSet(e.currentTarget.value)} />
+  </span>`;
 }

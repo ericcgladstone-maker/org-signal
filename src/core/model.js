@@ -10,9 +10,22 @@
 //   attributeSchema  [{ key, type, label, values? }]   inferred from node attrs
 //   contexts    { count, keys[], names[], kinds[], visibility Uint8Array, medium[], members[] }
 //   events      columnar; see EventColumns below
+//   eventAttributeSchema  [{ key, type, label, values?, ordered?, coverage }]  tie fields
+//                         found on events (see "Tie fields" below)
 //
 // Events are stored column-wise in typed arrays so a few million of them fit
 // in memory and can be handed to a Web Worker without copying.
+//
+// Tie fields (optional per-event attributes). A survey or hand-built tie can
+// carry qualities beyond its weight: tie type, strength, frequency, notes.
+// They live in events.attrs, which is null when no event has any (so the
+// millions of messages in an export cost nothing), or else an array with one
+// entry per event: a plain object of { field: value } or null. Values are
+// numbers, strings, booleans or arrays of strings (several choices). A source
+// may declare its fields as source.tieFields = [{ key, label, type, options?,
+// max?, ordered? }] (type 'choice' | 'scale' | 'number' | 'text'), which gives
+// the schema labels and the option order an ordered choice needs. Read one
+// event's fields with eventAttrs(ds, i).
 
 export const EVENT_TYPES = ['message', 'copresence', 'declared', 'reaction', 'repost', 'like', 'follow', 'join', 'leave'];
 export const ROLES = ['to', 'cc', 'bcc', 'mention', 'reply', 'dm', 'attendee', 'member', 'declared', 'subject'];
@@ -43,6 +56,8 @@ export class DatasetBuilder {
     this._ctxIndex = new Map();
     this.contexts = { keys: [], names: [], kinds: [], visibility: [], medium: [], members: [] };
     this.ev = { type: [], t: [], actor: [], context: [], parentKey: [], weight: [], source: [], tOff: [0], tgt: [], role: [], text: [], keys: [] };
+    // Tie fields, sparse: event index -> plain object. Most datasets have none.
+    this._attrs = new Map();
     this._eventKeyIndex = new Map();
     if (source) this.beginSource(source);
   }
@@ -134,7 +149,8 @@ export class DatasetBuilder {
   //   parentKey optional key of the event this replies to / reposts / reacts to
   //   text      optional message text
   //   weight    optional, default 1 (e.g. survey closeness, reaction count)
-  event({ type = 'message', t = NaN, actor, targets = [], context = -1, key = null, parentKey = null, text = null, weight = 1 }) {
+  //   attrs     optional tie fields { field: value }; blank values are dropped
+  event({ type = 'message', t = NaN, actor, targets = [], context = -1, key = null, parentKey = null, text = null, weight = 1, attrs = null }) {
     const ty = typeIndex[type];
     if (ty === undefined) throw new Error(`Unknown event type: ${type}`);
     if (!(actor >= 0)) throw new Error('event() needs an actor node index');
@@ -157,6 +173,10 @@ export class DatasetBuilder {
     ev.text.push(text);
     ev.keys.push(key);
     if (key != null) this._eventKeyIndex.set(key, i);
+    if (attrs) {
+      const a = cleanEventAttrs(attrs);
+      if (a) this._attrs.set(i, a);
+    }
     return i;
   }
 
@@ -209,14 +229,21 @@ export class DatasetBuilder {
       role: Uint8Array.from(ev.role),
       text: ev.text,
       keys: ev.keys,
+      attrs: null,
     };
-    return {
+    if (this._attrs.size) {
+      events.attrs = new Array(n).fill(null);
+      for (const [i, a] of this._attrs) events.attrs[i] = a;
+    }
+    const out = {
       meta: { name: this.name, createdAt: Date.now(), sources: this.sources },
       nodes,
       attributeSchema: inferAttributeSchema(nodes.attrs),
       contexts,
       events,
     };
+    out.eventAttributeSchema = inferEventAttributeSchema(out);
+    return out;
   }
 }
 
@@ -244,6 +271,82 @@ export function inferAttributeSchema(attrs) {
     schema.push(entry);
   }
   return schema;
+}
+
+// ---- tie fields ------------------------------------------------------------------
+
+// Keep only values a field can hold; null when nothing is left.
+export function cleanEventAttrs(attrs) {
+  let out = null;
+  for (const [k, v0] of Object.entries(attrs || {})) {
+    let v = v0;
+    if (Array.isArray(v)) { v = v.filter(x => x !== null && x !== undefined && x !== '').map(String); if (!v.length) continue; if (v.length === 1) v = v[0]; }
+    else if (v === undefined || v === null || v === '' || (typeof v === 'number' && !Number.isFinite(v))) continue;
+    else if (typeof v === 'object') v = JSON.stringify(v);
+    (out ||= {})[k] = v;
+  }
+  return out;
+}
+
+// Tie fields of event i (an empty object when it has none). Works on datasets
+// saved before events.attrs existed.
+const NO_ATTRS = Object.freeze({});
+export function eventAttrs(ds, i) {
+  return ds.events.attrs?.[i] || NO_ATTRS;
+}
+
+// Schema of the tie fields: declared ones (source.tieFields) first, in their
+// order and with their labels and options, then any others found on events.
+//   type 'numeric'      numbers (weights can be taken from it)
+//        'categorical'  choices; values[] in declared order when declared,
+//                       ordered: true when the order means low to high
+//        'text'         free text (notes)
+//        'boolean'
+export function inferEventAttributeSchema(ds) {
+  const attrs = ds.events?.attrs;
+  const seen = new Map();
+  let withAttrs = 0;
+  if (attrs) for (let i = 0; i < attrs.length; i++) {
+    const a = attrs[i];
+    if (!a) continue;
+    withAttrs++;
+    for (const [k, v] of Object.entries(a)) {
+      if (!seen.has(k)) seen.set(k, { n: 0, vals: new Set(), num: true, bool: true, multi: false });
+      const e = seen.get(k);
+      e.n++;
+      const list = Array.isArray(v) ? v : [v];
+      if (Array.isArray(v)) e.multi = true;
+      for (const x of list) {
+        if (e.vals.size < 500) e.vals.add(String(x));
+        if (typeof x !== 'number' && !(typeof x === 'string' && x.trim() !== '' && Number.isFinite(Number(x)))) e.num = false;
+        if (typeof x !== 'boolean') e.bool = false;
+      }
+    }
+  }
+  const declared = new Map();
+  for (const s of ds.meta?.sources || []) for (const f of s.tieFields || []) if (f && f.key && !declared.has(f.key)) declared.set(f.key, f);
+  const out = [];
+  const label = k => k.replace(/[_-]+/g, ' ').replace(/^\w/, c => c.toUpperCase());
+  const add = (key, d, e) => {
+    let type;
+    if (d) type = d.type === 'choice' ? 'categorical' : d.type === 'scale' || d.type === 'number' ? 'numeric' : d.type === 'boolean' ? 'boolean' : 'text';
+    else if (e.bool) type = 'boolean';
+    else if (e.num) type = 'numeric';
+    else type = e.vals.size <= Math.max(12, e.n * 0.5) && !e.multi ? 'categorical' : e.multi ? 'categorical' : 'text';
+    const entry = { key, type, label: d?.label || label(key), coverage: withAttrs ? (e?.n || 0) / withAttrs : 0 };
+    if (type === 'categorical') {
+      const found = e ? [...e.vals] : [];
+      const opts = d?.options ? d.options.map(String) : [];
+      entry.values = [...opts, ...found.filter(v => !opts.includes(v)).sort()];
+      entry.ordered = !!d?.ordered;
+    }
+    if (type === 'numeric' && d?.max) entry.max = d.max;
+    if (d) entry.declared = true;
+    out.push(entry);
+  };
+  for (const [k, d] of declared) add(k, d, seen.get(k));
+  for (const [k, e] of seen) if (!declared.has(k)) add(k, null, e);
+  return out;
 }
 
 // ---- helpers for readers of a Dataset ---------------------------------------

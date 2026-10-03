@@ -7,6 +7,7 @@
 // XML-illegal control characters stripped.
 
 import { xmlEscape } from '../importers/xml.js';
+import { edgeTieAttributes } from '../analysis/construct.js';
 
 // ---- shared helpers (used by gexf, gml, pajek, ucinet, csv) --------------------
 
@@ -82,6 +83,22 @@ export function edgeRules(net) {
   return net.edges.byRule ? Object.keys(net.edges.byRule).filter(r => net.edges.byRule[r]) : [];
 }
 
+// Edge columns from tie fields (survey tie type, strength, notes ...): the
+// fields of the events behind each tie, combined per tie (numbers averaged,
+// choices and text as distinct values joined by '; '). Column names avoid the
+// fixed edge columns. Returns [{ name, source, type: 'double'|'string', values: Array(edges) }].
+export function edgeColumns(ds, net, { taken = [] } = {}) {
+  const { fields, values } = edgeTieAttributes(ds, net);
+  const used = new Set(['id', 'source', 'target', 'weight', 'type', 'label', ...taken].map(x => x.toLowerCase()));
+  return fields.map(f => {
+    let name = f.key;
+    for (let i = 2; used.has(name.toLowerCase()); i++) name = `${f.key}_${i}`;
+    used.add(name.toLowerCase());
+    const numeric = f.type === 'numeric';
+    return { name, source: f.key, label: f.label, type: numeric ? 'double' : 'string', values: values.map(v => (v && v[f.key] !== undefined ? (numeric ? Number(v[f.key]) : String(v[f.key])) : undefined)) };
+  });
+}
+
 // ---- GraphML -----------------------------------------------------------------------
 
 const SAFE_ID = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
@@ -100,6 +117,9 @@ export function exportGraphML(ds, net, opts = {}) {
   out.push('  <key id="weight" for="edge" attr.name="weight" attr.type="double"/>');
   const ruleIds = rules.map((r, k) => keyId(`w_${r}`, `r${k}`));
   rules.forEach((r, k) => out.push(`  <key id="${xmlEscape(ruleIds[k])}" for="edge" attr.name="w_${xmlEscape(r)}" attr.type="double"/>`));
+  const ecols = edgeColumns(ds, net, { taken: rules.map(r => `w_${r}`) });
+  const ecolIds = ecols.map((c, k) => keyId(`e_${c.name}`, `t${k}`));
+  ecols.forEach((c, k) => out.push(`  <key id="${xmlEscape(ecolIds[k])}" for="edge" attr.name="${xmlEscape(c.name)}" attr.type="${c.type}"/>`));
   out.push(`  <graph id="G" edgedefault="${net.directed ? 'directed' : 'undirected'}">`);
   for (let i = 0; i < net.n; i++) {
     let s = `    <node id="${xmlEscape(nodeKey(ds, net, i))}"><data key="label">${xmlEscape(nodeLabel(ds, net, i))}</data>`;
@@ -114,6 +134,7 @@ export function exportGraphML(ds, net, opts = {}) {
   for (let e = 0; e < E.count; e++) {
     let s = `    <edge id="e${e}" source="${xmlEscape(nodeKey(ds, net, E.src[e]))}" target="${xmlEscape(nodeKey(ds, net, E.dst[e]))}"><data key="weight">${fmtNum(E.w[e])}</data>`;
     rules.forEach((r, k) => { const v = E.byRule[r][e]; if (v) s += `<data key="${xmlEscape(ruleIds[k])}">${fmtNum(v)}</data>`; });
+    ecols.forEach((c, k) => { const v = c.values[e]; if (v !== undefined) s += `<data key="${xmlEscape(ecolIds[k])}">${xmlEscape(c.type === 'double' ? fmtNum(v) : v)}</data>`; });
     out.push(s + '</edge>');
   }
   out.push('  </graph>');

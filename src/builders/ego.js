@@ -13,12 +13,19 @@
 // moving someone between contexts updates the implied ties without losing
 // the explicit corrections.
 //
+// Tie fields (src/builders/tiefields.js) describe the ego->alter tie itself
+// (type, strength, how often) rather than the person; they are stored per
+// alter in alter.tie and written as event attributes on ego's ties. When the
+// interview runs against a roster, alters carry the roster person's id
+// (alter.personId) so many respondents' interviews can be stitched together.
+//
 // Pure functions; sessions are plain JSON. Every mutating function returns a
 // new session (shallow copies) so the UI can use it directly as state.
 
 import { DatasetBuilder } from '../core/model.js';
 import { parseCSV, rowsToObjects } from '../importers/tabular.js';
 import { uid, uuid, slug, normName, toCSV, coerce } from './common.js';
+import { makeTieField, updateTieField as updateField, cleanTieValues, declareTieFields } from './tiefields.js';
 
 export const SESSION_VERSION = 1;
 
@@ -87,6 +94,7 @@ export function newSession({ caseId = '', egoLabel = 'Respondent', protocolName 
     finishedAt: null,
     generators: [],
     interpreters: [],
+    tieFields: [],
     alters: [],
     contexts: [],
     ties: {},
@@ -155,6 +163,36 @@ export function removeInterpreter(s, id) {
   return set(s, { interpreters: s.interpreters.filter(i => i.id !== id), alters });
 }
 
+// ---- tie fields on ego's ties ------------------------------------------------
+
+export function addTieField(s, def) {
+  const f = makeTieField(def, [...(s.tieFields || []).map(x => x.key), ...s.interpreters.map(i => i.name)]);
+  return set(s, { tieFields: [...(s.tieFields || []), f] });
+}
+
+export function updateTieField(s, id, patch) {
+  return set(s, { tieFields: (s.tieFields || []).map(f => (f.id === id ? updateField(f, patch) : f)) });
+}
+
+export function removeTieField(s, id) {
+  const f = (s.tieFields || []).find(x => x.id === id);
+  if (!f) return s;
+  const alters = s.alters.map(a => { if (!a.tie || !(f.key in a.tie)) return a; const tie = { ...a.tie }; delete tie[f.key]; return { ...a, tie }; });
+  return set(s, { tieFields: s.tieFields.filter(x => x.id !== id), alters });
+}
+
+// Stored as entered (like interpreter answers); typed on export.
+export function setTieValue(s, alterId, key, value) {
+  return set(s, {
+    alters: s.alters.map(a => {
+      if (a.id !== alterId) return a;
+      const tie = { ...(a.tie || {}) };
+      if (value === '' || value === null || value === undefined || (Array.isArray(value) && !value.length)) delete tie[key]; else tie[key] = value;
+      return { ...a, tie };
+    }),
+  });
+}
+
 export function generatorCount(s, genId) {
   return s.alters.filter(a => a.generators.includes(genId)).length;
 }
@@ -165,13 +203,19 @@ export function generatorCount(s, genId) {
 // second person. Returns { session, alter, status } where status is
 //   'added' | 'duplicate-other' (existing alter, generator recorded)
 //   | 'duplicate-same' (already named here) | 'cap' (generator full) | 'empty'
-export function addAlter(s, name, genId) {
-  const label = String(name ?? '').trim().replace(/\s+/g, ' ');
+//
+// opts.personId: a roster person's id when names are picked from a roster;
+// the same person is then recognised by id whatever the spelling.
+// opts.alterId: name an existing alter under this generator too (the
+// one-click "already mentioned" toggles and the "Same person" merge).
+export function addAlter(s, name, genId, { personId = null, alterId = null } = {}) {
+  const byId = alterId ? s.alters.find(a => a.id === alterId) : null;
+  const label = String(byId?.label ?? name ?? '').trim().replace(/\s+/g, ' ');
   if (!label) return { session: s, alter: null, status: 'empty' };
   const gen = s.generators.find(g => g.id === genId);
   if (!gen) throw new Error(`Unknown name generator: ${genId}`);
   const key = normName(label);
-  const existing = s.alters.find(a => normName(a.label) === key);
+  const existing = byId || (personId && s.alters.find(a => a.personId === personId)) || s.alters.find(a => normName(a.label) === key && (!personId || !a.personId));
   if (existing?.generators.includes(genId)) return { session: s, alter: existing, status: 'duplicate-same' };
   if (generatorCount(s, genId) >= gen.cap) return { session: s, alter: existing ?? null, status: 'cap' };
   if (existing) {
@@ -179,7 +223,40 @@ export function addAlter(s, name, genId) {
     return { session: set(s, { alters: s.alters.map(a => (a.id === existing.id ? alter : a)) }), alter, status: 'duplicate-other' };
   }
   const alter = { id: uid('a'), uuid: uuid(), label, generators: [genId], attrs: {} };
+  if (personId) alter.personId = personId;
   return { session: set(s, { alters: [...s.alters, alter] }), alter, status: 'added' };
+}
+
+// Two alters are one person (the respondent said "Jon" under one question
+// and "Jonathan Reyes" under another). keepId survives with its label; it
+// gains the other's generators, answers it lacks, settings and pair
+// exceptions. Returns the new session.
+export function mergeAlters(s, keepId, dropId) {
+  if (keepId === dropId) return s;
+  const keep = s.alters.find(a => a.id === keepId), drop = s.alters.find(a => a.id === dropId);
+  if (!keep || !drop) return s;
+  const merged = {
+    ...keep,
+    generators: [...new Set([...keep.generators, ...drop.generators])],
+    attrs: { ...drop.attrs, ...keep.attrs },
+    tie: { ...(drop.tie || {}), ...(keep.tie || {}) },
+  };
+  if (!merged.personId && drop.personId) merged.personId = drop.personId;
+  const contexts = s.contexts.map(c => {
+    if (!c.members.includes(dropId)) return c;
+    const members = c.members.filter(m => m !== dropId);
+    if (!members.includes(keepId)) members.push(keepId);
+    return { ...c, members };
+  });
+  const ties = {};
+  for (const [k, v] of Object.entries(s.ties)) {
+    const [a, b] = k.split('|');
+    const a2 = a === dropId ? keepId : a, b2 = b === dropId ? keepId : b;
+    if (a2 === b2) continue;
+    const k2 = pairKey(a2, b2);
+    if (!(k2 in ties) || k2 === k) ties[k2] = v;
+  }
+  return set(s, { alters: s.alters.filter(a => a.id !== dropId).map(a => (a.id === keepId ? merged : a)), contexts, ties });
 }
 
 // Drop the alter from one generator only (or entirely when genId is omitted
@@ -331,9 +408,13 @@ export function tieList(s) {
 // who-knows-whom counts alters placed in at least one context, since ego has
 // at least considered them (pairs are never "unanswered": absent means no tie).
 export function progress(s) {
-  const nA = s.alters.length, nI = s.interpreters.length;
+  const tf = s.tieFields || [];
+  const nA = s.alters.length, nI = s.interpreters.length + tf.length;
   let answered = 0;
-  for (const a of s.alters) for (const it of s.interpreters) if (a.attrs[it.name] !== undefined && a.attrs[it.name] !== '') answered++;
+  for (const a of s.alters) {
+    for (const it of s.interpreters) if (a.attrs[it.name] !== undefined && a.attrs[it.name] !== '') answered++;
+    for (const f of tf) if (a.tie?.[f.key] !== undefined && a.tie[f.key] !== '') answered++;
+  }
   const placed = new Set(s.contexts.flatMap(c => c.members));
   const steps = {
     generators: s.generators.length ? 1 : 0,
@@ -396,11 +477,21 @@ function typedValue(it, raw) {
 
 export function toDataset(s, { name } = {}) {
   if (!s.alters.length) throw new Error('Name at least one person before analyzing.');
+  const b = new DatasetBuilder({ name: name || `Ego network: ${s.egoLabel || s.caseId || 'respondent'}` });
+  writeEgoSession(b, s);
+  return b.build();
+}
+
+// One interview into a DatasetBuilder as its own ego source. Shared with the
+// survey-response importer, which writes one source per respondent when the
+// interviews were not run against a roster. source: extra source fields.
+export function writeEgoSession(b, s, { source = {} } = {}) {
   const t = Date.parse(s.startedAt);
   const egoKey = `ego:${s.egoId}`;
-  const b = new DatasetBuilder({ name: name || `Ego network: ${s.egoLabel || s.caseId || 'respondent'}` });
+  const tf = s.tieFields || [];
   b.beginSource({ format: 'ego-interview', family: 'survey', medium: 'survey', view: 'ego', context: 'survey', egoKey, tz: 'UTC',
-    fileNames: [], directed: false, sessionId: s.id, protocolName: s.protocolName });
+    fileNames: [], directed: false, sessionId: s.id, protocolName: s.protocolName,
+    ...(tf.length ? { tieFields: declareTieFields(tf) } : {}), ...source });
   const ego = b.node(egoKey, { label: s.egoLabel || 'Ego', attrs: { kind: 'ego', caseId: s.caseId || undefined, ...s.egoAttrs } });
   const genCtx = new Map();
   const usedSlugs = new Set();
@@ -420,9 +511,10 @@ export function toDataset(s, { name } = {}) {
     idx.set(a.id, i);
     b.stat('alters');
     const w = weightIt ? Number(typedValue(weightIt, a.attrs[weightIt.name])) : 1;
+    const tieAttrs = cleanTieValues(tf, a.tie);
     for (const g of a.generators) {
       if (!genCtx.has(g)) continue;
-      b.event({ type: 'declared', t, actor: ego, targets: [[i, 'declared']], context: genCtx.get(g), weight: Number.isFinite(w) && w > 0 ? w : 1 });
+      b.event({ type: 'declared', t, actor: ego, targets: [[i, 'declared']], context: genCtx.get(g), weight: Number.isFinite(w) && w > 0 ? w : 1, attrs: tieAttrs });
       b.stat('ego-alter ties');
     }
   }
@@ -434,7 +526,7 @@ export function toDataset(s, { name } = {}) {
     b.event({ type: 'declared', t, actor: idx.get(p.a), targets: [[idx.get(p.b), 'declared']], context: aaCtx, weight: 1 });
     b.stat('alter-alter ties');
   }
-  return b.build();
+  return ego;
 }
 
 // ---- JSON save / resume ----------------------------------------------------
@@ -454,9 +546,15 @@ export function sessionFromJSON(text) {
   s.contexts = Array.isArray(o.contexts) ? o.contexts : [];
   s.ties = o.ties && typeof o.ties === 'object' ? o.ties : {};
   const ids = new Set(s.alters.map(a => a.id));
-  s.alters = s.alters.map(a => ({ id: a.id || uid('a'), uuid: a.uuid || uuid(), label: String(a.label ?? ''), generators: a.generators || [], attrs: a.attrs || {} }));
+  s.tieFields = Array.isArray(o.tieFields) ? o.tieFields : [];
+  s.alters = s.alters.map(a => {
+    const x = { id: a.id || uid('a'), uuid: a.uuid || uuid(), label: String(a.label ?? ''), generators: a.generators || [], attrs: a.attrs || {} };
+    if (a.tie && typeof a.tie === 'object') x.tie = a.tie;
+    if (a.personId) x.personId = String(a.personId);
+    return x;
+  });
   s.contexts = s.contexts.map(c => ({ ...c, members: (c.members || []).filter(m => ids.has(m)) }));
-  if (!STEPS.some(x => x.id === s.step)) s.step = 'generators';
+  if (!STEPS.some(x => x.id === s.step) && s.step !== 'share') s.step = 'generators';
   return s;
 }
 

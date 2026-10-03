@@ -1,8 +1,12 @@
 // Roster (bounded network) builder UI: roster -> relations -> collect -> review.
 
 import { html, useState, useMemo } from '../../../../vendor/preact.js';
-import { newRoster, makeRelation, RELATION_PRESETS, MERGE_RULES, formTemplate, parseRosterResponses, responsesFromDataset, tiesFor, toDataset, coverage, rosterFromResponses } from '../../../builders/roster.js';
+import { newRoster, makeRelation, RELATION_PRESETS, MERGE_RULES, formTemplate, parseRosterResponses, responsesFromDataset, tiesFor, toDataset, coverage, rosterFromResponses, setTieAttrs, pruneTieAttrs } from '../../../builders/roster.js';
 import { setTie } from '../../../builders/matrix.js';
+import { uid } from '../../../builders/common.js';
+import { surveyFromRoster, recombine, recombineNotes, rosterRespondents } from '../../../builders/share.js';
+import { ShareLink, ResponsesIn, RecombineNotes } from '../sharing.js';
+import { TieFieldsEditor } from '../tiefields.js';
 import { Steps, HandOffBar, usePersistentState, downloadText, pickFile, readFileText } from '../shared.js';
 import { importRosterResponses } from '../service.js';
 import { Matrix, PairEntry } from './Matrix.js';
@@ -102,7 +106,7 @@ function Relations({ model, patch }) {
     </form>
     ${model.relations.length ? html`<div class="table-wrap"><table class="tbl">
       <thead><tr><th>Relation</th><th>Question asked</th><th>Answer</th><th class="num">Top of scale</th><th><span class="visually-hidden">Remove</span></th></tr></thead>
-      <tbody>${model.relations.map(r => html`<tr>
+      <tbody>${model.relations.map(r => html`<tr key=${r.id}>
         <td><input class="input" aria-label="Relation name" value=${r.name} onChange=${e => update(r.id, { name: e.currentTarget.value || r.name })} /></td>
         <td style="min-width:16rem"><input class="input" aria-label=${`Question for ${r.name}`} value=${r.question} placeholder="Question text" onChange=${e => update(r.id, { question: e.currentTarget.value })} /></td>
         <td><select class="select" aria-label=${`Answer type for ${r.name}`} value=${r.scale} onChange=${e => update(r.id, { scale: e.currentTarget.value })}>
@@ -110,7 +114,12 @@ function Relations({ model, patch }) {
         <td class="num">${r.scale === 'valued' ? html`<input class="input" type="number" min="2" max="10" style="width:4.5rem" aria-label=${`Top of scale for ${r.name}`} value=${r.max}
           onChange=${e => update(r.id, { max: Math.max(2, Math.min(10, Number(e.currentTarget.value) || 5)) })} />` : html`<span class="muted">—</span>`}</td>
         <td><button type="button" class="btn btn--sm btn--quiet" aria-label=${`Remove ${r.name}`} onClick=${() => remove(r.id)}>Remove</button></td>
-      </tr>`)}</tbody></table></div>` : html`<p class="ob-empty">Choose at least one relation.</p>`}
+      </tr>
+      <tr class="ob-subrow" key=${r.id + '-f'}><td colspan="5">
+        <details open=${(r.fields || []).length > 0}><summary class="tlink">Tie fields for ${r.name}${(r.fields || []).length ? ` (${r.fields.length})` : ''}: type, strength, how often, notes</summary>
+          <${TieFieldsEditor} fields=${r.fields || []} idPrefix=${'ob-tf-' + r.id} onChange=${fields => update(r.id, { fields })}
+            intro="Optional details recorded on each tie of this relation. Every one is optional for whoever answers." />
+        </details></td></tr>`)}</tbody></table></div>` : html`<p class="ob-empty">Choose at least one relation.</p>`}
   </div>`;
 }
 
@@ -120,7 +129,11 @@ function Collect({ model, patch }) {
   const rel = model.relations.find(r => r.id === relId) || model.relations[0];
   if (!model.people.length || !rel) return html`<p class="ob-empty">Add the roster and at least one relation first.</p>`;
   const values = model.ties[rel.id] || {};
-  const onSet = (from, to, v) => patch(m => ({ ties: { ...m.ties, [rel.id]: setTie(m.ties[rel.id] || {}, from, to, v) } }));
+  const attrs = model.tieAttrs?.[rel.id] || {};
+  const fields = rel.fields || [];
+  // Clearing a tie clears its details too.
+  const onSet = (from, to, v) => patch(m => pruneTieAttrs({ ...m, ties: { ...m.ties, [rel.id]: setTie(m.ties[rel.id] || {}, from, to, v) } }));
+  const onSetAttrs = (from, to, vals) => patch(m => setTieAttrs(m, rel.id, from, to, vals));
   return html`<div class="ob-stack">
     <fieldset class="ob-fieldset">
       <legend id="ob-roster-mode">Who answers</legend>
@@ -142,8 +155,9 @@ function Collect({ model, patch }) {
       </div>
       ${rel.question ? html`<p class="ob-note">${rel.question}</p>` : null}
       ${entry === 'grid'
-        ? html`<${Matrix} people=${model.people} values=${values} onSet=${onSet} scale=${rel.scale} max=${rel.max} caption=${`${rel.name} ties`} rowHeading="Who" colHeading="Names" />`
-        : html`<${PairEntry} people=${model.people} values=${values} onSet=${onSet} scale=${rel.scale} max=${rel.max} />`}`
+        ? html`<${Matrix} people=${model.people} values=${values} onSet=${onSet} scale=${rel.scale} max=${rel.max} caption=${`${rel.name} ties`} rowHeading="Who" colHeading="Names"
+            fields=${fields} attrs=${attrs} onSetAttrs=${onSetAttrs} />`
+        : html`<${PairEntry} people=${model.people} values=${values} onSet=${onSet} scale=${rel.scale} max=${rel.max} fields=${fields} attrs=${attrs} />`}`
     : html`<${MultiCollect} model=${model} patch=${patch} />`}
   </div>`;
 }
@@ -172,6 +186,9 @@ function MultiCollect({ model, patch }) {
     finally { setBusy(false); }
   };
   return html`<div class="ob-stack">
+    <${ShareSection} model=${model} patch=${patch} />
+    <details class="ob-section">
+      <summary class="tlink">Or use Google Forms or Qualtrics instead of a link</summary>
     <div class="ob-section">
       <h3>1. Build the form</h3>
       ${tplErr ? html`<p class="ob-err">${tplErr}</p>` : html`
@@ -199,6 +216,7 @@ function MultiCollect({ model, patch }) {
         ${(resp.warnings || []).map(w => html`<dt>Note</dt><dd>${w}</dd>`)}
       </dl>` : null}
     </div>
+    </details>
     <fieldset class="ob-fieldset">
       <legend>3. Combine the self-reports</legend>
       <div class="radios">
@@ -235,5 +253,39 @@ function Review({ model, patch }) {
     </dl>
     <${HandOffBar} disabled=${!model.people.length || !sel.length} build=${() => toDataset(model, { relationIds: sel })}
       note=${nTies ? null : 'No ties yet; the network will have isolates only.'} />
+  </div>`;
+}
+
+// The share-link way of collecting: make the link, then read the response
+// files back. Every response read so far is kept (model.shared.items) so
+// files can arrive over days; each import recombines the whole set, the
+// latest response per person winning.
+function ShareSection({ model, patch }) {
+  const share = model.share || null;
+  const meta = { title: share?.title ?? model.name, intro: share?.intro ?? '' };
+  const ensure = p => patch(m => ({ share: { id: m.share?.id || uid('s'), createdAt: m.share?.createdAt || new Date().toISOString(), title: m.share?.title ?? m.name, intro: m.share?.intro ?? '', ...p } }));
+  const makeDef = () => surveyFromRoster(model, { id: share?.id || 'pending', title: meta.title, intro: meta.intro, createdAt: share?.createdAt });
+  const [notes, setNotes] = useState(model.shared?.notes || null);
+  const read = ({ items, surveys, errors }) => {
+    const def = surveyFromRoster(model, { id: share.id, title: meta.title, intro: meta.intro, createdAt: share.createdAt });
+    const all = [...(model.shared?.items || []), ...items];
+    const res = recombine(all, { survey: def });
+    res.invalid.push(...errors.map(e => ({ file: e.file, reason: e.reason })));
+    const n = recombineNotes(res);
+    if (surveys.length) n.push({ level: 'info', text: 'A survey file was among the files; it is the survey itself, not a response, and was skipped.' });
+    setNotes(n);
+    // Keep only what this survey can use, so a wrong file is not re-reported forever.
+    const keep = all.filter(x => x.ok && x.response.survey.id === share.id);
+    patch({ shared: { items: keep, notes: n }, responses: { respondents: rosterRespondents(res), file: `${res.accepted.length} response ${res.accepted.length === 1 ? 'file' : 'files'}`, format: 'shared link', unmatchedNames: [], unmatchedQuestions: [], warnings: [] } });
+  };
+  return html`<div class="ob-section">
+    <h3>1. Send a link</h3>
+    ${share ? html`<${ShareLink} makeDef=${makeDef} meta=${meta} onMeta=${p => ensure(p)} idPrefix="ob-roster-share" />`
+      : html`<p class="ob-note">Each member opens the link on their own computer or phone, finds their own name, answers for themselves, and sends you back a small response file. No form service and no server: nothing anyone enters is uploaded.</p>
+        <div class="ob-row"><button type="button" class="btn" onClick=${() => ensure({})} disabled=${!model.people.length || !model.relations.length}>Make a share link</button></div>`}
+    ${share ? html`<h3>2. Collect the responses</h3>
+      <${ResponsesIn} onRead=${read} idPrefix="ob-roster-resp" />
+      <${RecombineNotes} notes=${notes} />
+      ${model.shared?.items?.length ? html`<p class="ob-note">Dropping the same response files on Data, Import gives the same network.</p>` : null}` : null}
   </div>`;
 }

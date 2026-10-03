@@ -5,7 +5,7 @@
 // RFC 4180 quoting; no formula-injection prefix is added, because that would
 // change ids that Gephi must match between the two tables.
 
-import { nodeColumns, fmtNum, nodeLabel, nodeKey, edgeRules } from './graphml.js';
+import { nodeColumns, fmtNum, nodeLabel, nodeKey, edgeRules, edgeColumns } from './graphml.js';
 
 export function csvCell(v) {
   if (v === undefined || v === null) return '';
@@ -22,13 +22,15 @@ export function exportNodesCSV(ds, net, opts = {}) {
   return out.join('\r\n') + '\r\n';
 }
 
+// Tie fields follow the rule columns, one column each (see edgeColumns).
 export function exportEdgesCSV(ds, net) {
   const rules = edgeRules(net);
-  const out = [row(['Source', 'Target', 'Type', 'Weight', ...rules.map(r => `w_${r}`)])];
+  const ecols = edgeColumns(ds, net, { taken: rules.map(r => `w_${r}`) });
+  const out = [row(['Source', 'Target', 'Type', 'Weight', ...rules.map(r => `w_${r}`), ...ecols.map(c => c.name)])];
   const E = net.edges;
   const type = net.directed ? 'Directed' : 'Undirected';
   for (let e = 0; e < E.count; e++) {
-    out.push(row([nodeKey(ds, net, E.src[e]), nodeKey(ds, net, E.dst[e]), type, E.w[e], ...rules.map(r => net.edges.byRule[r][e] || 0)]));
+    out.push(row([nodeKey(ds, net, E.src[e]), nodeKey(ds, net, E.dst[e]), type, E.w[e], ...rules.map(r => net.edges.byRule[r][e] || 0), ...ecols.map(c => c.values[e])]));
   }
   return out.join('\r\n') + '\r\n';
 }

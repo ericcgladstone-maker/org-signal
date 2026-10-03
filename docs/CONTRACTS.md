@@ -28,7 +28,8 @@ Org Signal turns raw relational traces (exports, surveys, hand-drawn networks, s
 
 - Nodes: namespaced key (`slack:U012`, `email:ann@x.org`, `x:12345`), label, attrs (any key/values), isBot, platformIds.
 - Contexts: channel / dm / group_dm / thread / email_thread / meeting / chat / server / subreddit / survey / canvas …, with visibility (`public | private | direct | group | unknown`), medium and optional members.
-- Events (columnar): `type` (`message | copresence | declared | reaction | repost | like | follow | join | leave`), `t`, `actor`, targets as `[node, role]` (`to | cc | bcc | mention | reply | dm | attendee | member | declared | subject`), `context`, `parent` (event index), `weight`, `text`, `source`.
+- Events (columnar): `type` (`message | copresence | declared | reaction | repost | like | follow | join | leave`), `t`, `actor`, targets as `[node, role]` (`to | cc | bcc | mention | reply | dm | attendee | member | declared | subject`), `context`, `parent` (event index), `weight`, `text`, `source`, `attrs`.
+- Tie fields: `events.attrs` is `null` when no event has any, else an array with one entry per event, a plain object `{ field: value }` or `null` (values: number, string, boolean or array of strings). Write them with `builder.event({ ..., attrs })` (blanks dropped); read with `eventAttrs(ds, i)` (works on datasets saved before the column existed). A source may declare its fields as `source.tieFields = [{ key, label, type: 'choice'|'scale'|'number'|'text', options?, ordered?, multiple?, max? }]`. `ds.eventAttributeSchema = [{ key, type: 'numeric'|'categorical'|'text'|'boolean', label, values?, ordered?, max?, declared?, coverage }]` is built by `build()` and `mergeDatasets` (`inferEventAttributeSchema(ds)` recomputes it). The column survives `toJSON`/`fromJSON`, `toTransfer`, `mergeDatasets`, `applyMerges` and the import worker.
 - Importers put *who an event is directed at* into targets whenever the source says so: DM partners as `dm`, email recipients as `to/cc/bcc`, a reply's parent author as `reply` (even when the parent message itself is absent), meeting attendees as `attendee`, survey ties as `declared`, follows as `follow` event with the followed account as `subject` target.
 - Sources: `{ format, family, medium, view, context, tz, fileNames, egoKey, counts, warnings }`. `view` is one of `VIEWS`. Set `egoKey` (the node key of the person whose export it is) for ego views when known.
 - Optional source fields in use: `directed` (false = ties stored once and meant undirected, e.g. LinkedIn connections, drawn or survey networks), `variant` (export layout variant), `egoKeys` / `egoInferredFrom` (how the ego was identified), `window` (`{ start, end }` of a bounded export, e.g. calendar recurrence expansion), `tableKind` (tabular imports: events | edges | nodes).
@@ -66,7 +67,8 @@ buildNetwork(ds, settings) -> Network
   settings = {
     rules: { reply, mention, dm, to, cc, bcc, adjacency, copresence, declared, repost, like, follow, reaction }  // each { on, weight } (+ adjacency.windowMin, copresence.normalize)
     directed, weighting: 'count'|'log'|'binary', minWeight, maxRecipients,
-    time: { start, end }, visibility: [...], media: [...]|null, excludeBots, includeIsolates
+    time: { start, end }, visibility: [...], media: [...]|null, excludeBots, includeIsolates,
+    tieFields: { weight: fieldKey|null, filters: [{ key, values?, min?, max?, keepMissing? }] }
   }
   Network = { n, nodeIds Int32Array (dataset node index per network node), directed,
               edges: { count, src, dst, w, byRule {rule: Float64Array}, layerMask Uint8Array }, settings, summary }
@@ -84,7 +86,8 @@ applicability(ds, net) -> { [metric]: { level: 'ok'|'caution'|'na', reason } }
 timeSeries(ds, settings, { window, metrics }) -> { windows[], node{}, network{}, ties{ formed[], dissolved[] } }
 detectShifts(series, opts) / compareBeforeAfter(ds, settings, date)
 affect(ds, { by }) / keywords(ds, { by, k }) / topics(ds, { k, seed }) / diffusion(ds, net, { terms })
-edgeEvidence(ds, net, a, b, { limit }) -> [event summaries]
+edgeEvidence(ds, net, a, b, { limit }) -> [event summaries]   // each with attrs (tie fields) or null
+edgeTieAttributes(ds, net) -> { fields: [{ key, label, type }], values: Array(edges) }   // src/analysis/construct.js
 ```
 
 Every metric is documented in `docs/api/analysis.md` with a one-line plain-language meaning and a reliability note (shown in the UI). Validation: values match networkx (python3 + networkx 3.2 are installed) on reference graphs, recorded as fixtures.

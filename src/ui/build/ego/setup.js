@@ -2,16 +2,17 @@
 
 import { html } from '../../../../vendor/preact.js';
 import * as E from '../../../builders/ego.js';
+import { TieFieldsEditor } from '../tiefields.js';
 
 const TYPES = [
   ['text', 'Text'], ['number', 'Number'], ['ordinal', 'Ordered choice'], ['categorical', 'Choice'], ['boolean', 'Yes / no'], ['date', 'Date'],
 ];
 
-export function GeneratorsStep({ s, update }) {
+export function GeneratorsStep({ s, update, survey = false }) {
   const has = id => s.generators.some(g => g.id === id);
   const togglePreset = (p, on) => update(x => (on ? E.addGenerator(x, { preset: p.id }) : E.removeGenerator(x, p.id)));
   return html`<div class="ob-stack">
-    <fieldset class="ob-fieldset">
+    ${survey ? null : html`<fieldset class="ob-fieldset">
       <legend>Respondent</legend>
       <div class="ob-grid-form">
         <div class="field"><label class="field__label" for="ego-label">Name or pseudonym</label>
@@ -19,7 +20,7 @@ export function GeneratorsStep({ s, update }) {
         <div class="field"><label class="field__label" for="ego-case">Case id</label>
           <input id="ego-case" class="input" value=${s.caseId} placeholder="for example P014" onInput=${e => update(x => ({ ...x, caseId: e.target.value }))} /></div>
       </div>
-    </fieldset>
+    </fieldset>`}
     <fieldset class="ob-fieldset">
       <legend>Questions that elicit names</legend>
       <p class="ob-note">Pick one or more. Each question has a cap on how many names it accepts; caps shape network size, so record them in your methods.</p>
@@ -99,6 +100,16 @@ export function InterpretersStep({ s, update }) {
             onChange=${e => update(x => E.updateInterpreter(x, it.id, { options: textToOptions(e.target.value) }))}></textarea></div>` : null}
       </div>`)}
     </fieldset>` : html`<p class="ob-empty">No questions about alters yet. You can still collect names and ties without them.</p>`}
+    <fieldset class="ob-fieldset">
+      <legend>Questions about each tie</legend>
+      <${TieFieldsEditor} fields=${s.tieFields || []} idPrefix="ego-tf" taken=${s.interpreters.map(i => i.name)}
+        intro="Details of the respondent's tie to each person (type, strength, how often), recorded on the tie rather than on the person. All optional."
+        onChange=${fields => update(x => {
+          // Answers to a removed field go with it.
+          const keys = new Set(fields.map(f => f.key));
+          return { ...x, tieFields: fields, alters: x.alters.map(a => (a.tie ? { ...a, tie: Object.fromEntries(Object.entries(a.tie).filter(([k]) => keys.has(k))) } : a)) };
+        })} />
+    </fieldset>
     ${weighable.length ? html`<div class="field" style="max-width:22rem"><label class="field__label" for="ego-weight">Weight ego's ties by</label>
       <select id="ego-weight" class="select" value=${s.weightBy || ''} onChange=${e => update(x => ({ ...x, weightBy: e.target.value || null }))}>
         <option value="">Nothing (every tie counts 1)</option>
