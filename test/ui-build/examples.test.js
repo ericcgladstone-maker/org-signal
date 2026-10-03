@@ -132,6 +132,10 @@ test('C4: Priyanka\'s A3 interview gives Burt\'s binary effective size (8.33), n
   for (const [a, b] of [['Mom', 'Hana'], ['Dad', 'Hana'], ['Mom', 'Lily'], ['Chloe Nguyen', 'Hana']]) s = E.setTie(s, id[a], id[b], true);
   const m = E.egoMeasures(s);
   near(m.effectiveSize, 8.333); near(m.constraint, 0.267); near(m.density, 0.333);
+  // One reading rule (by density): 22 of 66 pairs is in between, not
+  // "brokering" next to a constraint high in its range (retest a3-11).
+  assert.equal(m.reading, 'mixed');
+  assert.equal(E.egoReading(0.2), 'brokering'); assert.equal(E.egoReading(0.8), 'closed'); assert.equal(E.egoReading(12 / 45), 'brokering');
   const ds = E.toDataset(s);
   const ego = egoMetrics(buildNetwork(ds, defaultSettings(ds)), 0);
   near(ego.effectiveSize, 8.333); near(ego.constraint, 0.267);

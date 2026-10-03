@@ -284,7 +284,7 @@ function RankedList({ ds, ids, node, rows, metric, keys, label, fmt, dot, badges
   // Competition ranks at the precision shown: equal values share a rank.
   const ranks = [];
   order.forEach((v, x) => { ranks.push(x > 0 && fmt[metric](arr[v]) === fmt[metric](arr[order[x - 1]]) ? ranks[x - 1] : x + 1); });
-  return html`<div class="people-list">
+  return html`<div class="people-list" data-notice-avoid>
     <${Select} label="Measure" value=${metric} onChange=${onMetric} options=${keys.map(k => ({ value: k, label: label(k) }))} />
     <ol class="people-list__items">
       ${shown.map((v, x) => { const i = ids[v]; return html`<li><button type="button" class="people-list__row" onClick=${e => onOpen(v, e)}>
@@ -425,7 +425,9 @@ function Profile({ ds, net, i, hidden }) {
   if (edge) return html`<${Evidence} ds=${ds} a=${edge.a} b=${edge.b} onClose=${() => setEdge(null)} />`;
   const t = tokens();
   const attrs = Object.entries(ds.nodes.attrs[i]).filter(([k]) => k !== 'deactivated');
-  const sv = series.data ? sparkSeries(series.data, i) : null;
+  // The plots follow the table: a measure that does not apply here (path
+  // measures in one person's exports) is not plotted either.
+  const sv = series.data ? sparkSeries(series.data, i, ['degree', 'strength', 'betweenness'].filter(k => ap[k]?.level !== 'na' && !(k === 'strength' && unweighted))) : null;
   return html`<div>
     <h2 class="label">Profile</h2>
     <p class="profile-head" tabindex="-1" ref=${head}>${nodeLabel(ds, i)}</p>

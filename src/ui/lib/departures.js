@@ -34,7 +34,11 @@ export function departures(ds, opts = QUIET) {
   }
   const out = new Map();
   const span = t1 - t0;
-  const timed = Number.isFinite(span) && span >= opts.minSpanDays * DAY;
+  // Silence means leaving only in a bounded group's record (view 'full', such
+  // as a workspace export). In one person's exports (chats, a mailbox, an
+  // archive; family or context 'personal') a contact who goes quiet has just
+  // stopped talking with the owner, so only deactivations are marked there.
+  const timed = Number.isFinite(span) && span >= opts.minSpanDays * DAY && wholeGroup(ds);
   const gap = Math.max(opts.minDays * DAY, opts.minShare * span);
   for (let i = 0; i < n; i++) {
     const lt = Number.isFinite(last[i]) ? last[i] : null;
@@ -43,6 +47,13 @@ export function departures(ds, opts = QUIET) {
   }
   cache.set(ds, { opts, value: out });
   return out;
+}
+
+// Does any source record a whole group (not one person's view of it)?
+export function wholeGroup(ds) {
+  const S = ds?.meta?.sources || [];
+  if (!S.length) return true;
+  return S.some(x => (x.view == null || x.view === 'full') && x.family !== 'personal' && x.context !== 'personal');
 }
 
 // Does the data carry times that differ? (Drawings have none and an

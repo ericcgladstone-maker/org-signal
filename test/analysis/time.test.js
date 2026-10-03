@@ -258,3 +258,27 @@ test('detectShifts says which window it was computed with', async () => {
   const ds = messageDataset(20, 600, { seed: 4 });
   for (const w of ['day', 'week']) assert.equal(detectShifts(timeSeries(ds, { directed: true }, { window: w, metrics: ['degree'] })).meta.window, w);
 });
+
+test('daily windows: quiet weekends are left out, so the headline is not "a drop on Saturday"', () => {
+  // Ten people messaging on weekdays only, five weeks, starting Monday 6 Jan 2025.
+  const b = new DatasetBuilder({ source: { format: 't', view: VIEWS.FULL } });
+  const ps = Array.from({ length: 10 }, (_, i) => b.node('t:' + i));
+  const rng = createRng(3);
+  const D = 86400000, T = Date.UTC(2025, 0, 6);
+  for (let d = 0; d < 35; d++) {
+    const dow = new Date(T + d * D).getUTCDay();
+    const k = dow === 0 || dow === 6 ? 2 : 60;
+    for (let e = 0; e < k; e++) { const a = rng.int(10); let c = rng.int(10); if (c === a) c = (c + 1) % 10; b.event({ actor: ps[a], t: T + d * D + 3600000 * (1 + rng.int(8)), targets: [[ps[c], 'dm']] }); }
+  }
+  const ds = b.build();
+  const ts = timeSeries(ds, defaultSettings(ds), { window: 'day' });
+  const sh = detectShifts(ts);
+  assert.equal(sh.meta.weekendsSkipped, true);
+  const weekend = x => { const d = new Date(x.start).getUTCDay(); return d === 0 || d === 6; };
+  assert.ok(!sh.shifts.some(x => x.target === 'network' && weekend(x)), JSON.stringify(sh.shifts.filter(weekend).map(x => x.metric)));
+  // Without the skip the first Saturday is flagged as a drop.
+  const raw = detectShifts(ts, { skipWeekends: false });
+  assert.ok(raw.shifts.some(x => x.target === 'network' && weekend(x)));
+  // Weekly windows are unaffected.
+  assert.equal(detectShifts(timeSeries(ds, defaultSettings(ds), { window: 'week' })).meta.weekendsSkipped, false);
+});

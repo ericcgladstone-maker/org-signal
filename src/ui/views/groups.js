@@ -21,6 +21,7 @@ import * as d3 from '../../../vendor/d3.js';
 import { preferredAttributes, isBookkeeping, orderedValues, defaultGroupAttr, label as nodeLabel } from '../lib/dsutil.js';
 import { cachedRender } from '../lib/render-cache.js';
 import { fmtNum, fmtInt, fmtPct, fmtDate, humanize, columnFormat } from '../lib/format.js';
+import { communityWords, communityCounts } from '../lib/rebuild.js';
 import { isBookkeepingAttr } from '../../analysis/groups.js';
 import { cssVar, useTimeShifts, groupShift, snapshotNote, inWindow } from './time.js';
 import { timeExtent } from '../lib/dsutil.js';
@@ -115,7 +116,7 @@ function GroupsInner({ ds, net }) {
       actions=${html`<${ConstructionButton} />`} />
     <div class="toolbar">
       <${Select} label="Groups from" value=${by} onChange=${v => { setBy(v); setOpenGroup(null); }} options=${[
-        ...(communities ? [{ value: '__community', label: `Detected communities (${communities.count})` }] : []),
+        ...(communities ? [{ value: '__community', label: `Detected communities (${communityCounts(communities).groups})` }] : []),
         ...(attrs.length ? [{ group: 'Attributes', options: attrs.map(a => ({ value: a.key, label: `${attrLabel(ds, a.key)} (${a.values.length})` })) }] : []),
       ]} />
     </div>
@@ -213,7 +214,7 @@ function Reading({ isComm, name, assort, ei, nA, nE, nQ, communities, loadingNul
   const out = [];
   if (isComm) {
     if (communities) {
-      const head = `The network splits into ${communities.count} communities (modularity ${fmtNum(communities.modularity)}).`;
+      const head = `The network splits into ${communityWords(communities)} (modularity ${fmtNum(communities.modularity)}).`;
       if (usable(nQ)) {
         const real = sig(nQ) && nQ.observed > nQ.mean;
         out.push(html`<${Verdict} level=${real ? null : 'info'}
@@ -277,7 +278,7 @@ function ShiftBanner({ ds, by, isComm, name, attrs }) {
   return html`<div class="notice-line gview__shift" role="note">
     <${Flag} level="caution" />
     <div class="grow">
-      <p><strong>The network changed partway through.</strong> Time found a ${sh.direction === 'up' ? 'rise' : 'drop'} in ${what} ${inWindow(sh.start, unit)}, from ${fmtV(sh.baseline)} to ${fmtV(sh.value)}${sh.heldToEnd ? ', and it stayed at the new level to the end of the data' : Number.isFinite(sh.held) ? `; it stayed nearer the new level in ${sh.held} of the ${sh.span} ${unit || 'window'}s from then on` : ''}. The numbers below cover the whole period, so they mix before and after.</p>
+      <p><strong>The network changed partway through.</strong> Time found a ${sh.direction === 'up' ? 'rise' : 'drop'} in ${what} ${inWindow(sh.start, unit)}${sh.metric === 'crossGroupShare' ? ` (measured in each ${unit || 'window'}'s own network; the before-and-after comparison pools each period, see its note)` : `, from ${fmtV(sh.baseline)} to ${fmtV(sh.value)}`}${sh.heldToEnd ? ', and it stayed at the new level to the end of the data' : Number.isFinite(sh.held) ? `; it stayed nearer the new level in ${sh.held} of the ${sh.span} ${unit || 'window'}s from then on` : ''}. The numbers below cover the whole period, so they mix before and after.</p>
       ${attr ? html`<p class="gview__shift-acts"><button type="button" class="tlink" disabled=${q.loading} onClick=${() => setRan({ date: sh.start, attr })}>Compare ${gName} mixing before and after ${fmtDate(sh.start)}</button>
         <a class="tlink tlink--arrow" href="#time" onClick=${e => { e.preventDefault(); store.actions.setView('time'); }}>See it in Time</a></p>` : html`<p class="small"><a class="tlink tlink--arrow" href="#time" onClick=${e => { e.preventDefault(); store.actions.setView('time'); }}>See it in Time</a></p>`}
       ${q.loading && html`<${Loading}>Building the networks before and after</${Loading}>`}<${ErrorLine} error=${q.error} />
@@ -285,10 +286,10 @@ function ShiftBanner({ ds, by, isComm, name, attrs }) {
           <thead><tr><th scope="col">By ${gName}</th><th scope="col" class="num">Before ${fmtDate(q.data.date)}</th><th scope="col" class="num">After</th></tr></thead>
           <tbody>
             <tr><td><${Term} k="eiIndex">E-I index</${Term}></td><td class="num">${fmtNum(mix.before.eiIndex)}</td><td class="num">${fmtNum(mix.after.eiIndex)}</td></tr>
-            <tr><td>Ties crossing groups</td><td class="num">${fmtPct(mix.before.crossShare)}</td><td class="num">${fmtPct(mix.after.crossShare)}</td></tr>
+            <tr><td>Ties crossing groups (share of the period's ties)</td><td class="num">${fmtPct(mix.before.crossShare)}</td><td class="num">${fmtPct(mix.after.crossShare)}</td></tr>
             <tr><td>Ties with both ends in a group</td><td class="num">${fmtInt(mix.before.coded)}</td><td class="num">${fmtInt(mix.after.coded)}</td></tr>
           </tbody></table></div>
-        <p class="small">${Number.isFinite(mix.p) && mix.p < 0.05 ? `Ties ${mix.diff < 0 ? 'turned inward' : 'turned outward'} after the date, unlikely by chance (${pShort(mix.p, mix.reps)}).` : `No clear change in mixing at this date${Number.isFinite(mix.p) ? ` (${pShort(mix.p, mix.reps)})` : ''}.`} Periods of ${Math.round(q.data.span / 86400000)} days either side; messages on the date count as after.</p>
+        <p class="small">${Number.isFinite(mix.p) && mix.p < 0.05 ? `Ties ${mix.diff < 0 ? 'turned inward' : 'turned outward'} after the date, unlikely by chance (${pShort(mix.p, mix.reps)}).` : `No clear change in mixing at this date${Number.isFinite(mix.p) ? ` (${pShort(mix.p, mix.reps)})` : ''}.`} Periods of ${Math.round(q.data.span / 86400000)} days either side, each pooled into one network: crossing ties are the share of that network's ties (with both ends in a ${gName}) that join two different ${gName}s, and E-I is the same split (E-I = 2 × share − 1). Pooling more ${unit || 'window'}s collects more of the rare crossing ties, so these shares run higher than single ${unit || 'window'}s in Time. Messages on the date count as after.</p>
 `}
       ${attr && html`<p class="small text2">${snapshotNote(ds, attr, attrLabel(ds, attr))}</p>`}
     </div>

@@ -20,7 +20,7 @@ import { TieFieldInputs } from '../tiefields.js';
 import { describeTieValues } from '../../../builders/tiefields.js';
 
 export function Matrix({ people, values, onSet, scale = 'binary', max = 5, caption = 'Ties', rowHeading = 'From', colHeading = 'To',
-  fields = [], attrs = {}, onSetAttrs = null }) {
+  fields = [], attrs = {}, onSetAttrs = null, onToggle = null, mutual = false }) {
   const [focus, setFocus] = useState({ r: 0, c: people.length > 1 ? 1 : 0 });
   const [hl, setHl] = useState(null);
   const tableRef = useRef(null);
@@ -38,7 +38,10 @@ export function Matrix({ people, values, onSet, scale = 'binary', max = 5, capti
 
   const valueAt = (r, c) => values[pairKey(people[r].id, people[c].id)] || 0;
   const set = (r, c, v) => { if (r !== c) onSet(people[r].id, people[c].id, v); };
+  // onToggle: the caller decides what a click means (perceived networks keep
+  // a mutual tie when its mirror cell is clicked).
   const toggle = (r, c) => {
+    if (onToggle && scale === 'binary') { if (r !== c) onToggle(people[r].id, people[c].id); return; }
     const cur = valueAt(r, c);
     if (scale === 'binary') set(r, c, cur ? 0 : 1);
     else set(r, c, cur >= max ? 0 : cur + 1); // click cycles 0..max
@@ -73,11 +76,17 @@ export function Matrix({ people, values, onSet, scale = 'binary', max = 5, capti
   const help = (scale === 'binary'
     ? 'Arrow keys move. Space or Enter toggles a tie. 1 sets, 0 clears.'
     : `Arrow keys move. Type 0 to ${max} to set a value; Space steps it up.`) + (withFields ? ' F2 or Shift+Enter edits the tie\u2019s details below the grid.' : '');
-  const counts = useMemo(() => Object.keys(values).length, [values]);
+  // mutual: both cells of a pair hold the tie; count each pair once.
+  const counts = useMemo(() => {
+    if (!mutual) return Object.keys(values).length;
+    const seen = new Set();
+    for (const k of Object.keys(values)) { if (!values[k]) continue; const i = k.indexOf('|'); const a = k.slice(0, i), b = k.slice(i + 1); seen.add(a < b ? a + '|' + b : b + '|' + a); }
+    return seen.size;
+  }, [values, mutual]);
 
   if (!n) return html`<p class="ob-empty">Add people to the roster first.</p>`;
   return html`<div class="ob-stack" style="gap:.4rem">
-    <p class="ob-note" id="ob-matrix-help"><span class="ob-kbdonly">${help} </span><span class="ob-touchonly">${scale === 'binary' ? 'Tap a cell to tick it; tap again to clear it.' : `Tap a cell to step its value up to ${max}, then back to empty.`} </span>Rows are ${rowHeading.toLowerCase()}, columns are ${colHeading.toLowerCase()}. ${counts} ${counts === 1 ? 'tie' : 'ties'} entered.</p>
+    <p class="ob-note" id="ob-matrix-help"><span class="ob-kbdonly">${help} </span><span class="ob-touchonly">${scale === 'binary' ? 'Tap a cell to tick it; tap again to clear it.' : `Tap a cell to step its value up to ${max}, then back to empty.`} </span>Rows are ${rowHeading.toLowerCase()}, columns are ${colHeading.toLowerCase()}. ${counts} ${counts === 1 ? 'tie' : 'ties'} entered${mutual ? ' (each pair of people counted once)' : ''}.</p>
     <div class="ob-matrixwrap">
       <table class="ob-matrix" role="grid" aria-label=${caption} aria-describedby="ob-matrix-help" ref=${tableRef}
         onKeyDown=${onKey} onFocusOut=${e => { if (!tableRef.current?.contains(e.relatedTarget)) setHl(null); }}>

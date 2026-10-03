@@ -266,8 +266,8 @@ export function summarizeRun(kind, r, { labels = null } = {}) {
   }
   if (kind === 'diffusion') {
     return {
-      terms: (r.terms || []).slice(0, 12).map(t => ({ ...pick(t, ['term', 'adopters', 'exposed', 'eligible', 'exposedShare']), null: pick(t.null || {}, ['mean', 'sd', 'z', 'pUpper', 'reps']) })),
-      meta: pick(r.meta || {}, ['reps', 'seed', 'window', 'auto', 'neighbours', 'null']),
+      terms: (r.terms || []).slice(0, 12).map(t => ({ ...pick(t, ['term', 'adopters', 'exposed', 'eligible', 'exposedShare']), null: pick(t.null || {}, ['mean', 'sd', 'z', 'pUpper', 'pAdjusted', 'reps', 'ceiling']) })),
+      meta: pick(r.meta || {}, ['reps', 'seed', 'window', 'auto', 'neighbours', 'null', 'correction', 'tested']),
     };
   }
   return null;
@@ -413,7 +413,7 @@ export function buildMethodsAppendix(input = {}) {
   if (input.communities) {
     const c = input.communities;
     out.push('## Community detection', '');
-    out.push(`Communities were detected with the Louvain method${cite(['blondel2008'])}, which maximizes modularity${cite(['newman2004'])}, at resolution ${c.resolution ?? 1} with random seed ${c.seed ?? 'unspecified'}${c.runs > 1 ? ` over ${c.runs} runs` : ''}${Number.isFinite(c.count) ? `; it found ${fmtNum(c.count)} communities (modularity ${n3(c.modularity)}), numbered from 1 by size in the app and in every export` : ''}. Louvain partitions depend on the seed and can contain poorly connected communities${cite(['traag2019'])}, so community boundaries should be read as one plausible partition.`, '');
+    out.push(`Communities were detected with the Louvain method${cite(['blondel2008'])}, which maximizes modularity${cite(['newman2004'])}, at resolution ${c.resolution ?? 1} with random seed ${c.seed ?? 'unspecified'}${c.runs > 1 ? ` over ${c.runs} runs` : ''}${Number.isFinite(c.count) ? `; it found ${fmtNum(c.count)} communities${c.isolates ? ` of two or more people, plus ${fmtNum(c.isolates)} ${c.isolates === 1 ? 'person' : 'people'} with no ties (not counted as communities)` : ''} (modularity ${n3(c.modularity)}), numbered from 1 ${c.numbering === 'matched' ? 'by matching (after a rebuild each community keeps the number of the earlier community it shares most people with, so numbers need not follow size)' : 'by size'} in the app and in every export` : ''}. Louvain partitions depend on the seed and can contain poorly connected communities${cite(['traag2019'])}, so community boundaries should be read as one plausible partition.`, '');
   }
 
   // 5. Groups: only the attributes actually analyzed, with their mixing results.
@@ -529,13 +529,13 @@ export function buildMethodsAppendix(input = {}) {
     for (const d of diff) {
       const r = d.result;
       const reps = r?.meta?.reps ?? d.reps ?? 200;
-      out.push(`Diffusion along ties: for each term, an adopter counts as exposed when a contact (a tie in either direction) used the term before them${r?.meta?.window ? ` within ${r.meta.window}` : ''}. The share of exposed adopters was compared with ${fmtNum(reps)} timelines in which adoption times were shuffled among the same adopters (seed ${r?.meta?.seed ?? d.seed ?? 1}); p is one-sided, (k + 1) / (R + 1), where k shuffled timelines reached the observed share.${r?.meta?.auto ? ' The terms were found automatically among words that spread over time.' : ''}`);
+      out.push(`Diffusion along ties: for each term, an adopter counts as exposed when a contact (a tie in either direction) used the term before them${r?.meta?.window ? ` within ${r.meta.window}` : ''}. The share of exposed adopters was compared with ${fmtNum(reps)} timelines in which adoption times were shuffled among the same adopters (seed ${r?.meta?.seed ?? d.seed ?? 1}); p is one-sided, (k + 1) / (R + 1), where k shuffled timelines reached the observed share.${r?.meta?.auto ? ' The terms were found automatically: words not used in the first tenth of the period, excluding stopwords and everyday English words, ranked by number of adopters.' : ''}${(r?.meta?.tested ?? 0) > 1 ? ` p-values were adjusted for the ${fmtNum(r.meta.tested)} terms tested with Holm's step-down method; a term is read as following ties only when its adjusted p is below 0.05 and the shuffled baseline is below 85% (otherwise the test is inconclusive).` : ''}`);
       if (r) {
         out.push('');
         for (const t of r.terms) {
           const x = t.null || {};
-          const ceiling = finite(x.mean) != null && x.mean >= 0.9;
-          out.push(`- "${t.term}": ${fmtNum(t.adopters)} adopters; ${fmtNum(t.exposed)} of ${fmtNum(t.eligible)} (${share(t.exposedShare)}) had an earlier-adopting contact, against ${share(x.mean)} in the shuffled timelines (sd ${n3(x.sd)}; z ${n3(x.z)}; ${pWords(x.pUpper, x.reps ?? reps, 'shuffled timelines')}).${ceiling ? ' The shuffled baseline is already near 100%, so this test has little room to show spread along ties.' : ''}`);
+          const ceiling = x.ceiling ?? (finite(x.mean) != null && x.mean >= 0.85);
+          out.push(`- "${t.term}": ${fmtNum(t.adopters)} adopters; ${fmtNum(t.exposed)} of ${fmtNum(t.eligible)} (${share(t.exposedShare)}) had an earlier-adopting contact, against ${share(x.mean)} in the shuffled timelines (sd ${n3(x.sd)}; z ${n3(x.z)}; ${pWords(x.pUpper, x.reps ?? reps, 'shuffled timelines')}${finite(x.pAdjusted) != null && (r.meta?.tested ?? 0) > 1 ? `; Holm-adjusted p = ${n3(x.pAdjusted)}` : ''}).${ceiling ? ' The shuffled baseline is already near 100%, so this test has little room to show spread along ties: inconclusive.' : ''}`);
         }
       }
       out.push('');

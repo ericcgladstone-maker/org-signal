@@ -48,7 +48,7 @@ function Loaded() {
   const name = ds.meta?.name || 'Untitled';
   const n = ds.nodes?.count ?? 0;
   return html`<div class="loaded">
-    <span class="loaded__name" title=${`${name}: ${n.toLocaleString('en-US')} people`}><span class="loaded__label">Analyzing: </span><strong>${shortName(name)}</strong></span>
+    <span class="loaded__name" title=${`${name}: ${n.toLocaleString('en-US')} people`}><span class="loaded__label">Analyzing: </span><strong>${shortName(name, 40)}</strong></span>
     <button type="button" class="tlink tlink--quiet" ref=${btn} aria-expanded=${String(ask)} aria-controls="startOver" onClick=${() => setAsk(!ask)}>Clear loaded data</button>
     ${ask && html`<div class="confirm" id="startOver" ref=${box} role="dialog" aria-labelledby="startOverH">
       <p id="startOverH"><strong style="color:var(--text)">Clear loaded data?</strong></p>

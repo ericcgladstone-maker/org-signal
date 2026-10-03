@@ -350,3 +350,9 @@ test('workplace: every department rolls up to a division, at most eight of them,
   const again = generate(spec).groundTruth.people.attrs.map(a => a.division);
   assert.deepEqual(again, attrs.map(a => a.division));
 });
+
+test('J14: a generated dataset names its scenario', async () => {
+  const { generate } = await import('../../src/generator/index.js');
+  const { dataset } = generate({ context: 'workplace', medium: 'slack', structure: 'bridge-dependent', size: 30, seed: 1, content: 'none' });
+  assert.equal(dataset.meta.name, 'Synthetic workplace, bridge-dependent (Slack, seed 1)');
+});

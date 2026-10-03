@@ -487,7 +487,7 @@ pre.code{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);fon
 /* "Analyzing: <name>" with Start over, always in the masthead while data is
    loaded (decision 7). Text and a rule, no pill. */
 .loaded{display:flex;align-items:center;gap:.75rem;min-width:0;font-size:var(--fs-foot);color:var(--text-2);padding-left:1.25rem;border-left:1px solid var(--rule-strong)}
-.loaded__name{min-width:0;max-width:16rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.loaded__name{min-width:0;max-width:19.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .loaded__name strong{color:var(--text);font-weight:600}
 .loaded .tlink{font-size:var(--fs-foot)}
 .confirm{position:absolute;right:var(--pad-app);top:calc(100% + .5rem);z-index:90;width:min(24rem,calc(100vw - 2*var(--pad-app)));background:var(--bg-deep);border:1px solid var(--rule-strong);padding:1rem;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:var(--fs-small);color:var(--text-2)}
@@ -496,9 +496,12 @@ pre.code{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);fon
 /* On narrow screens the chip moves to its own row under the bar. */
 .loaded-row{display:none}
 @media (max-width:1240px){ .loaded__name{max-width:10rem} }
-/* With Learn and the Explanations switch the row is full below 1280px: the
+/* In the one-row header the dataset name needs the room (a generated
+   scenario's name, J14): the "Analyzing:" label stays for screen readers. */
+@media (min-width:1421px) and (max-width:1560px){ .app-header__end > .loaded .loaded__label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap} }
+/* With Learn and the Explanations switch the row is full below 1420px: the
    chip takes its own row under the bar there (and on phones). */
-@media (max-width:1280px){
+@media (max-width:1420px){
   .app-header__end > .loaded{display:none}
   .loaded-row{display:block;border-top:1px solid var(--rule)}
   .loaded-row .loaded{border-left:0;padding-left:0;min-height:2.5rem;justify-content:space-between}
@@ -506,6 +509,9 @@ pre.code{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);fon
   :root[data-loaded='true']{--header-h:calc(var(--bar-h) + 2.5rem)}
   .confirm{top:100%}
 }
+/* Phones: the name may take two lines of the chip's row rather than lose its
+   scenario to an ellipsis. */
+@media (max-width:600px){ .loaded-row .loaded__name{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3} }
 
 /* ---------- minimum target sizes (WCAG 2.5.8) ---------- */
 /* Small inline controls keep their look; padding grows the hit area. */

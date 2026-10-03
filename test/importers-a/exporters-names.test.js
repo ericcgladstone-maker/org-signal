@@ -124,6 +124,16 @@ test('contact details are left out on request: columns and account ids (networkx
   const nodes = exportNodesCSV(ds, net, priv), edges = exportEdgesCSV(ds, net, priv);
   const ids = new Set(nodes.split('\r\n').slice(1, -1).map(r => r.split(',')[0]));
   for (const r of edges.split('\r\n').slice(1, -1)) { const [s, t] = r.split(','); assert.ok(ids.has(s) && ids.has(t)); }
+  // Every id is pseudonymized, also keys that carry a name (roster:leo-park).
+  assert.deepEqual([...ids].sort(), Array.from({ length: net.n }, (_, i) => `p${i + 1}`).sort());
   // Without the option the keys and emails stay (files join back to the data).
   assert.match(exportGraphML(ds, net, opts), /ana@x\.org/);
+});
+
+test('roster keys that carry a name are pseudonymized when contact details are left out', async () => {
+  const { exportIds } = await import('../../src/exporters/graphml.js');
+  const ds = { nodes: { keys: ['roster:leo-park', 'roster:ana-lima'] } };
+  const net = { n: 2, nodeIds: [0, 1] };
+  assert.deepEqual(exportIds(ds, net, { omitContacts: true }), ['p1', 'p2']);
+  assert.deepEqual(exportIds(ds, net), ['roster:leo-park', 'roster:ana-lima']);
 });

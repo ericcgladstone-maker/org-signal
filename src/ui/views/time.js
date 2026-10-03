@@ -223,9 +223,18 @@ export function snapshotClause(attr) {
 
 // The shift Groups points to: a change in how much ties cross groups first,
 // then tie retention, then the strongest whole-network shift.
+// Only a shift that lasted counts (persistentShift): a one-window blip, such
+// as one quiet day in a date-restricted network, does not raise the banner.
 export function groupShift(list) {
-  const net = (list || []).filter(x => x.target === 'network' && Number.isFinite(x.start));
+  const net = (list || []).filter(x => x.target === 'network' && Number.isFinite(x.start) && persistentShift(x));
   return net.find(x => x.metric === 'crossGroupShare') || net.find(x => x.metric === 'tieRetention') || net[0] || null;
+}
+
+// A shift that lasted: at least two windows at the new level (the flagged
+// one included) and most of the windows from it to the end of the data
+// (persistence against the pre-shift baseline, J3).
+export function persistentShift(x) {
+  return Number.isFinite(x?.held) && x.span > 0 && x.held >= 2 && x.held / x.span >= 0.5;
 }
 
 // "stayed nearer the new level ... to the end" or "for 3 of 9 windows", from
@@ -414,7 +423,7 @@ function Shifts({ ds, s, shifts, list, unit, xName, edges, xDomain, groupAttr })
     ${shifts.loading && html`<${Loading}>Scanning for shifts</${Loading}>`}<${ErrorLine} error=${shifts.error} />
     ${shifts.data && (shown.length ? html`
       <p class="tview__verdict">${verdict} Select a row for what changed.</p>
-      ${meta?.window && html`<p class="small text2">Computed with ${meta.window === 'day' ? 'daily' : meta.window === 'week' ? 'weekly' : 'monthly'} windows${meta.window === 'day' ? '; daily counts swing with weekends, so read day-level flags with care' : ''}.</p>`}
+      ${meta?.window && html`<p class="small text2">Computed with ${meta.window === 'day' ? 'daily' : meta.window === 'week' ? 'weekly' : 'monthly'} windows${meta.window === 'day' ? (meta.weekendsSkipped ? '; weekends are left out, so each weekday is compared with weekdays' : '; daily counts swing with the weekly rhythm, so read day-level flags with care, or use weeks') : ''}.</p>`}
       <div class="table-wrap"><table class="tbl tview__shifts">
         <thead><tr><th scope="col">What</th><th scope="col">Measure</th><th scope="col">From</th><th scope="col">Change</th><th scope="col">Lasted</th><th scope="col" class="num">Typical before</th><th scope="col" class="num">New value</th><th scope="col" class="num">How unusual (<${Term} k="shiftZ">z</${Term}>)</th></tr></thead>
         <tbody>${shown.map((x, i) => { const k = keyOf(x, i); const isOpen = open === k; const v = isOpen ? seriesOf(x) : null; return html`<tr class=${isOpen ? 'is-open' : ''}>
@@ -431,7 +440,7 @@ function Shifts({ ds, s, shifts, list, unit, xName, edges, xDomain, groupAttr })
       ${groupRow && groupAttr && html`<p class="small text2"><${Flag} level="caution" /> ${snapshotNote(ds, groupAttr)}</p>`}
       <${HowToRead} means="A shift is a window whose value is far from the windows just before it. Lasted compares every later window with the level before the change: nearer the new level, or back at the old one." scale="How unusual (z) counts typical week-to-week wobbles: 3.5 or more is flagged for the whole network, 5 or more for one person." mistake="Reading the flagged run as how long the change lasted. A step that never reverses stops being flagged after a few windows, because the windows just before it now share the new level; use the Lasted column." />`
       : html`<p class="tview__verdict">No window departs from its recent level by more than the threshold.</p>`)}
-    ${meta && html`<p class="basis">Basis: each window compared with the ${meta.baseline ?? 8} windows before it (${meta.method === 'cusum' ? 'CUSUM' : 'robust z: distance from their median in units of their typical spread, the MAD'}); flagged at ${meta.threshold ?? 3.5} or more (${meta.nodeThreshold ?? 5} for single people). ${fmtInt(meta.seriesScanned)} measures were scanned, so expect some flags by chance; confirm with the before and after comparison below.${meta.sourceEdges?.length ? ` Not tested near source edges: ${meta.sourceEdges.slice(0, 4).map(e => `${e.label} ${e.kind} ${fmtDate(e.t)}`).join('; ')}${meta.sourceEdges.length > 4 ? `; and ${meta.sourceEdges.length - 4} more` : ''}.` : ''}</p>`}
+    ${meta && html`<p class="basis">Basis: each window compared with the ${meta.baseline ?? 8} windows before it (${meta.method === 'cusum' ? 'CUSUM' : 'robust z: distance from their median in units of their typical spread, the MAD'}); flagged at ${meta.threshold ?? 3.5} or more (${meta.nodeThreshold ?? 5} for single people). ${fmtInt(meta.seriesScanned)} measures were scanned, so expect some flags by chance; confirm with the before and after comparison below.${meta.weekendsSkipped ? ' Daily windows: Saturdays and Sundays carry far less activity here, so they are left out of the scan and of the baselines (and Mondays out of tie turnover), and each weekday is compared with weekdays.' : ''}${meta.sourceEdges?.length ? ` Not tested near source edges: ${meta.sourceEdges.slice(0, 4).map(e => `${e.label} ${e.kind} ${fmtDate(e.t)}`).join('; ')}${meta.sourceEdges.length > 4 ? `; and ${meta.sourceEdges.length - 4} more` : ''}.` : ''}</p>`}
   </section>`;
 }
 

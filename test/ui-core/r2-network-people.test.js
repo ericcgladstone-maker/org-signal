@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { metricLabel, measureNote, measureFormat, betweennessPairs, displayTies, standouts, distinctMeasures } from '../../src/ui/lib/measures.js';
 import { stabilityReading, stabilitySummary, resamplingCaveat } from '../../src/ui/lib/stability.js';
 import { departures, hasTimes } from '../../src/ui/lib/departures.js';
-import { topShare, structure, whatIf } from '../../src/ui/lib/fragility.js';
+import { topShare, structure, whatIf, concentrationWords } from '../../src/ui/lib/fragility.js';
 import { hullEdgeSpots, namesFirst, overlaps } from '../../src/ui/lib/labels.js';
 import { settingsChanges, rebuildSummary, communityCounts } from '../../src/ui/lib/rebuild.js';
 import { requestPeopleSort, peopleSort, rememberPeopleSort, rememberColumn, applyColumnChoices } from '../../src/ui/lib/viewprefs.js';
@@ -117,6 +117,15 @@ test('J7: people who went silent well before the end, or were deactivated, are f
   assert.ok(dep.get(idx.C).quietDays >= 49);
   fake.nodes.attrs[idx.B] = { deactivated: true };
   assert.equal(departures({ ...fake }).get(idx.B).kind, 'deactivated');
+  // One person's exports (WhatsApp chats, a mailbox): a quiet contact has not
+  // left, so no silence marks; a deactivation the export states is kept.
+  for (const src of [{ view: 'chat', family: 'personal', format: 'whatsapp' }, { view: 'ego', format: 'email' }]) {
+    const own = { ...fake, meta: { sources: [src, { ...src }] } };
+    const d2 = departures(own);
+    assert.equal(d2.has(idx.C), false, src.format);
+    assert.equal(d2.get(idx.B).kind, 'deactivated');
+  }
+  assert.equal(departures({ ...fake, nodes: { ...fake.nodes, attrs: fake.nodes.attrs.map(() => ({})) }, meta: { sources: [{ view: 'full', format: 'slack' }] } }).get(idx.C).kind, 'silent');
   // A drawing has no times: nobody is "silent", and first/last seen is hidden.
   assert.equal(hasTimes(ds), false);
   assert.equal(departures(ds).size, 0);
@@ -192,4 +201,34 @@ test('L6, N21: People dots use the same group colors as the map, by network inde
   assert.equal(c.key(0), String(ds.nodes.attrs[3].dept));
   assert.equal(c.of(3), c.gc.color(ds.nodes.attrs[0].dept));
   assert.equal(c.title, 'Department');
+});
+
+test('Groups banner: only a shift that lasted raises it, not a one-window blip', async () => {
+  const { groupShift, persistentShift } = await import('../../src/ui/views/time.js');
+  const blip = { target: 'network', metric: 'crossGroupShare', start: 1, held: 1, span: 20, heldToEnd: false };
+  const last = { target: 'network', metric: 'crossGroupShare', start: 1, held: 1, span: 1, heldToEnd: true };
+  const step = { target: 'network', metric: 'crossGroupShare', start: 2, held: 6, span: 7, heldToEnd: false };
+  assert.equal(persistentShift(blip), false);
+  assert.equal(persistentShift(last), false);
+  assert.equal(persistentShift(step), true);
+  assert.equal(groupShift([blip, last]), null);
+  assert.equal(groupShift([blip, step]), step);
+});
+
+test('fragility wording is relative to an even spread; "run through" only above the stated threshold', () => {
+  // Top 5 of 96 holding 20%: concentrated (3.8x), not "depends on a few people".
+  const a = concentrationWords({ k: 5, share: 0.2, even: 5 / 96 });
+  assert.equal(a.level, 'concentrated');
+  assert.match(a.text, /3\.8 times the 5% an even spread gives/);
+  assert.doesNotMatch(a.text, /run through/);
+  assert.equal(concentrationWords({ k: 5, share: 0.6, even: 5 / 96 }).level, 'depends');
+  assert.equal(concentrationWords({ k: 5, share: 0.07, even: 5 / 96 }).level, 'even');
+});
+
+test('N17: an isolate is not counted as a community', async () => {
+  const { communityWords, communityCounts } = await import('../../src/ui/lib/rebuild.js');
+  const c = { count: 7, nontrivial: 6, sizes: [20, 18, 15, 15, 14, 13, 1] };
+  assert.equal(communityWords(c), '6 communities, plus 1 person with no ties');
+  assert.equal(communityCounts(c).groups, 6);
+  assert.equal(communityWords({ count: 2, sizes: [3, 3] }), '2 communities');
 });

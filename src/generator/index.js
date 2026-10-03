@@ -99,7 +99,10 @@ export function generate(specIn) {
   const obs = normalizeObservation(spec, world, ident, root.fork('observe'), { forcedView });
   const acc = makeTruthAccumulator(world);
   report(0.15, `World: ${world.n} people, ${world.ties.count} true ties`);
-  const name = spec.name || `Synthetic ${spec.context} (${spec.medium}, ${world.preset || 'default'}, seed ${spec.seed})`;
+  // The scenario (preset) is in the name itself, not only in the parenthesis,
+  // so the header and export file names say which world this is (J14):
+  // "Synthetic workplace, bridge-dependent (Slack, seed 1)".
+  const name = spec.name || `Synthetic ${spec.context}, ${world.preset || 'default'} (${MEDIUM_INFO[spec.medium]?.label || spec.medium}, seed ${spec.seed})`;
   const native = spec.output === 'native';
   const hooks = {};
   const ds = makeDatasetSink({ world, medium: spec.medium, ident, obs, name, seed: spec.seed, hooks,

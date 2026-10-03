@@ -82,7 +82,7 @@ export const STEPS = [
 
 // ---- session ---------------------------------------------------------------
 
-export function newSession({ caseId = '', egoLabel = 'Respondent', protocolName = 'Org Signal ego interview', now = Date.now() } = {}) {
+export function newSession({ caseId = '', egoLabel = '', protocolName = 'Org Signal ego interview', now = Date.now() } = {}) {
   return {
     version: SESSION_VERSION,
     id: uuid(),
@@ -111,12 +111,19 @@ export function addGenerator(s, g) {
   const base = preset ? { ...preset } : { name: 'Custom question', prompt: '', cap: 10 };
   const gen = { ...base, ...g, id: g.id || (preset && !s.generators.some(x => x.id === preset.id) ? preset.id : uid('g')) };
   delete gen.preset;
-  gen.cap = Math.max(1, Math.floor(Number(gen.cap) || 10));
+  gen.cap = clampCap(Number(gen.cap) || 10);
   return set(s, { generators: [...s.generators, gen] });
 }
 
+// Most names one question takes: 1 to MAX_CAP. A typo such as 510 is not a
+// limit anyone means, and a long list stalls the who-knows-whom step
+// (MAX_CAP people make 4,950 pairs).
+export const MAX_CAP = 100;
+export const clampCap = v => Math.min(MAX_CAP, Math.max(1, Math.floor(Number(v) || 1)));
+
 export function updateGenerator(s, id, patch) {
-  return set(s, { generators: s.generators.map(g => (g.id === id ? { ...g, ...patch } : g)) });
+  const p = 'cap' in patch ? { ...patch, cap: clampCap(patch.cap) } : patch;
+  return set(s, { generators: s.generators.map(g => (g.id === id ? { ...g, ...p } : g)) });
 }
 
 // Removing a generator drops it from every alter; alters elicited by no
@@ -569,7 +576,18 @@ export function egoMeasures(s) {
     constraint: n ? constraint : NaN,
     constraintMin: n ? 1 / n : NaN,
     constraintMax: n ? (2 * n - 1) ** 2 / n ** 3 : NaN,
+    reading: egoReading(possible ? ties / possible : NaN),
   };
+}
+
+// One stated rule for reading an ego network, used by every line of the
+// review: by density, the share of pairs of people named who know each
+// other. Constraint is not part of it (it also rises when the people named
+// form close-knit clusters that do not know each other).
+export const EGO_READING_RULE = 'Read from density, the share of pairs of people named who know each other: below 1/3 brokering, above 2/3 closed, in between mixed.';
+export function egoReading(density) {
+  if (!Number.isFinite(density)) return null;
+  return density < 1 / 3 - 1e-12 ? 'brokering' : density > 2 / 3 + 1e-12 ? 'closed' : 'mixed';
 }
 
 // ---- JSON save / resume ----------------------------------------------------

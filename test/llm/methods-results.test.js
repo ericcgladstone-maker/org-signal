@@ -83,8 +83,10 @@ test('shift detection, before/after and diffusion are described with parameters 
   assert.ok(md.includes(`- Total ties (in + out): mean ${n3(d.meanBefore)} before and ${n3(d.meanAfter)} after (${d.n} people; d_z ${n3(d.dz)}; none of the 200 random relabellings came this close (p ≤ 1/201)).`), md);
   assert.match(md, /Diffusion along ties: .* compared with 50 timelines in which adoption times were shuffled among the same adopters/);
   const t0 = df.terms[0];
-  assert.ok(md.includes(`- "${t0.term}": ${t0.adopters} adopters; ${t0.exposed} of ${t0.eligible} (100%) had an earlier-adopting contact, against 91% in the shuffled timelines`));
-  assert.match(md, /The shuffled baseline is already near 100%, so this test has little room/);
+  assert.ok(md.includes(`- "${t0.term}": ${t0.adopters} adopters; ${t0.exposed} of ${t0.eligible} (100%) had an earlier-adopting contact, against ${Math.round(t0.null.mean * 100)}% in the shuffled timelines`), md);
+  assert.match(md, /The shuffled baseline is already near 100%, so this test has little room to show spread along ties: inconclusive/);
+  assert.match(md, /p-values were adjusted for the 2 terms tested with Holm's step-down method/);
+  assert.match(md, /Holm-adjusted p = /);
 });
 
 test('measure definitions: contacts, normalized betweenness, harmonic closeness, eigenvector and PageRank details (N23)', () => {
@@ -140,4 +142,11 @@ test('survey tie weights from the builders are described: roster ratings and con
   const css = { format: 'perceived', family: 'survey', view: 'full', warnings: [{ code: 'css-consensus-weight', message: 'Each tie\'s weight is the share of the 4 informants who reported it.', count: 1 }] };
   assert.match(buildMethodsAppendix({ meta: { sources: [css] }, settings }), /tie weights were the share of informants who reported each tie/);
   assert.doesNotMatch(buildMethodsAppendix({ meta: { sources: [rated] }, settings: { ...settings, weighting: 'binary' } }), /respondents' ratings/);
+});
+
+test('communities: isolates are not counted; numbering by matching is stated after a rebuild (N17)', () => {
+  const m2 = buildMethodsAppendix({ ...input, communities: { ...input.communities, count: 6, isolates: 1, numbering: 'matched' } });
+  assert.match(m2, /it found 6 communities of two or more people, plus 1 person with no ties \(not counted as communities\)/);
+  assert.match(m2, /numbered from 1 by matching \(after a rebuild/);
+  assert.match(md, /numbered from 1 by size in the app/);
 });

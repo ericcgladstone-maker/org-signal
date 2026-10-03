@@ -60,6 +60,10 @@ test('communities: a rebuild keeps numbers by overlap (D9)', () => {
   const next = orderCommunities({ membership: Int32Array.from([5, 5, 5, 3, 3, 3, 3, 9, 9]) }, prev, nodeIds);
   assert.deepEqual([...next.membership], [0, 0, 0, 1, 1, 1, 1, 2, 2]);
   assert.deepEqual(next.sizes, [3, 4, 2]);
+  // Matching kept identities, so the numbers no longer follow size, and the
+  // result says so (the reports then do not claim "numbered by size").
+  assert.equal(next.numbering, 'matched');
+  assert.equal(orderCommunities({ membership: Int32Array.from([2, 2, 2, 0, 1, 1]) }).numbering, 'size');
   // A community that vanishes leaves no empty number.
   const merged = orderCommunities({ membership: Int32Array.from([0, 0, 0, 0, 0, 0, 0, 1, 1]) }, prev, nodeIds);
   assert.equal(merged.count, 2);
@@ -82,7 +86,11 @@ test('rebuild summary: counts, moved people and the settings that changed', () =
 test('short names for the header chip and file names (D17)', () => {
   assert.equal(shortName('Synthetic workplace (slack, bridge-dependent, seed 1)'), 'Synthetic workplace');
   assert.ok(shortName('A very long dataset name that keeps going and going past the limit').length <= 32);
-  assert.equal(fileBase({ meta: { name: 'Synthetic workplace (slack, bridge-dependent, seed 1)' } }), 'synthetic-workplace');
+  assert.equal(fileBase({ meta: { name: 'Synthetic workplace (slack, bridge-dependent, seed 1)' } }), 'synthetic-workplace-seed1');
+  // J14: generated data names its scenario in the chip and the file names.
+  const gen = 'Synthetic workplace, bridge-dependent (Slack, seed 1)';
+  assert.equal(shortName(gen, 40), 'Synthetic workplace, bridge-dependent');
+  assert.equal(fileBase({ meta: { name: gen } }), 'synthetic-workplace-bridge-dependent-seed1');
   assert.equal(fileBase({ meta: { name: 'Acme Corp Slack export plus HR roster 2025' } }), 'acme-corp-slack-export');
   assert.equal(fileBase({ meta: {} }), 'network');
 });

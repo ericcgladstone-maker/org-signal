@@ -30,10 +30,11 @@ import { tokens, dim, mixTo } from '../lib/palette.js';
 import { preferredAttributes, isBookkeeping, label as nodeLabel, RULE_LABEL, VISIBILITY_LABEL } from '../lib/dsutil.js';
 import { groupColoring, groupLabelMin, OTHER, MISSING } from '../lib/grouping.js';
 import { fmtNum, fmtInt, fmtDateTime, fmtP, fmtAttr, humanize, plural } from '../lib/format.js';
+import { communityWords, communityCounts } from '../lib/rebuild.js';
 import { withContacts, metricLabel, displayKey, isDeactivated, distinctMeasures, measureNote, measureFormat, standouts } from '../lib/measures.js';
 import { nodeColoring, getColorBy, setColorBy as shareColorBy } from '../lib/coloring.js';
 import { departures } from '../lib/departures.js';
-import { topShare, whatIf } from '../lib/fragility.js';
+import { topShare, whatIf, concentrationWords, DEPENDS_SHARE } from '../lib/fragility.js';
 import { requestPeopleSort } from '../lib/viewprefs.js';
 import { communityScale } from '../lib/communities.js';
 import { orientLayout, labelBudget, overlaps, groupAnchors, hullEdgeSpots, namesFirst } from '../lib/labels.js';
@@ -166,7 +167,7 @@ function NetworkInner({ ds, net }) {
   const bookAttrs = attrs.filter(a => isBookkeeping(a));
   const colorOptions = [
     { value: 'none', label: 'Single color' },
-    ...(communities ? [{ value: 'community', label: `Community (${communities.count})` }] : []),
+    ...(communities ? [{ value: 'community', label: `Community (${communityCounts(communities).groups})` }] : []),
     ...(plainAttrs.length ? [{ group: 'Attributes', options: plainAttrs.map(a => ({ value: `attr:${a.key}`, label: `${a.label} (${a.values.length})` })) }] : []),
     { group: 'Measure (low to high)', options: nodeMetricKeys.map(k => ({ value: `metric:${k}`, label: mlabel(k) })) },
     ...(bookAttrs.length ? [{ group: 'Data-collection fields', options: bookAttrs.map(a => ({ value: `attr:${a.key}`, label: `${a.label} (${a.values.length})` })) }] : []),
@@ -261,7 +262,7 @@ function Search({ ds, ids, onPick }) {
     return out;
   }, [q, ids]);
   const pick = (i) => { onPick(i); setQ(ds.nodes.labels[i]); setOpen(false); };
-  return html`<div class="field field--grow" style="position:relative">
+  return html`<div class="field field--grow" style="position:relative" data-notice-avoid>
     <label for="net-search" class="field__label">Find a person</label>
     <input id="net-search" class="input" type="search" role="combobox" aria-expanded=${String(open && results.length > 0)} aria-controls="net-search-list" aria-autocomplete="list"
       aria-activedescendant=${open && results[active] != null ? `ns-${results[active]}` : undefined}
@@ -810,12 +811,17 @@ const NULL_WORDS = {
 
 // One comparison with random networks, verdict first (decision 5): the plain
 // sentence, the number in plain words, then the details.
-function NullVerdict({ stat, x, reps }) {
+// shown: the value displayed above the verdict. The modularity test scores
+// the best unweighted split (it re-runs the search on each random network,
+// which keeps no weights), so when that differs from the weighted modularity
+// shown, one line says why there are two numbers (as Groups does).
+function NullVerdict({ stat, x, reps, shown = null }) {
   const [subject, more, less, same] = NULL_WORDS[stat] || ['This value is', 'higher', 'lower', 'about what chance gives'];
   const flat = !(x.sd > 0);
   const near = flat ? x.observed === x.mean : !(x.p < 0.05) || !(Math.abs(x.z) >= 2);
   const verdict = `${subject} ${near ? same : chanceWords(x.z, { more, less })}.`;
-  const plain = `Here ${fmtNum(x.observed)}; random networks where everyone keeps their number of ties average ${fmtNum(x.mean)}${Number.isFinite(x.lo) && Number.isFinite(x.hi) ? ` (95% of them between ${fmtNum(x.lo)} and ${fmtNum(x.hi)})` : ''}.`;
+  const twoQ = stat === 'modularity' && Number.isFinite(shown) && fmtNum(shown) !== fmtNum(x.observed);
+  const plain = `${twoQ ? `On the ties alone, ignoring weights, the best split found scores ${fmtNum(x.observed)} (the ${fmtNum(shown)} above counts tie weights; random networks have none, so the test compares unweighted splits)` : `Here ${fmtNum(x.observed)}`}; random networks where everyone keeps their number of ties average ${fmtNum(x.mean)}${Number.isFinite(x.lo) && Number.isFinite(x.hi) ? ` (95% of them between ${fmtNum(x.lo)} and ${fmtNum(x.hi)})` : ''}.`;
   const details = `${nullInWords(x.p, reps)}${Number.isFinite(x.z) ? `; z ${fmtNum(x.z, { digits: 2 })}` : ''}.${stat === 'modularity' ? ' Communities are found again in each random network.' : ''}`;
   return html`<${Verdict} className="net-verdict" verdict=${verdict} plain=${plain} details=${details} />`;
 }
@@ -845,9 +851,9 @@ function NetworkSummary({ open = null }) {
   return html`<details class="net-summary" open=${open ?? !narrow()}>
     <summary><h2 class="label" style="display:inline;margin:0">Whole network</h2></summary>
     ${communities && html`<div class="metric-row"><span><${MetricName} metric="modularity" gloss=${true} /></span><span class="metric-row__val">${fmtNum(communities.modularity)}</span>
-      <span class="metric-row__sub">${plural(communities.count, 'community', 'communities')}${communities.nontrivial != null && communities.nontrivial !== communities.count ? `, ${fmtInt(communities.nontrivial)} with more than one person` : ''}.
+      <span class="metric-row__sub">${communityWords(communities)}.
         ${tiny && html`<br />With only ${fmtInt(net.n)} people, community detection still splits the network into pieces (a chain of 6 becomes three pairs). Treat these communities as a suggestion, not groups, until modularity beats random networks.`}</span>
-      ${nm?.modularity && html`<${NullVerdict} stat="modularity" x=${nm.modularity} reps=${reps} />`}</div>`}
+      ${nm?.modularity && html`<${NullVerdict} stat="modularity" x=${nm.modularity} reps=${reps} shown=${communities.modularity} />`}</div>`}
     ${keys.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k === 'reciprocity' ? 'reciprocityNetwork' : k} gloss=${true} /></span><span class="metric-row__val">${k === 'largestComponentShare' ? `${Math.round(m[k] * 100)}%` : fmtNum(m[k])}</span>
       ${nm?.[k] && html`<${NullVerdict} stat=${k} x=${nm[k]} reps=${reps} />`}</div>`)}
     ${!nm ? html`<div style="margin-top:.8rem"><button type="button" class="tlink" onClick=${runNull} disabled=${busy}>${busy ? 'Comparing' : 'Compare with random networks'}</button>
@@ -921,14 +927,15 @@ function Fragility({ ds, net, data, metrics, coloring, applicability }) {
   const names = list => list.map(v => nodeLabel(ds, net.nodeIds[v])).join(', ');
   const row = (label, a, b, f) => html`<tr><th scope="row">${label}</th><td>${f(a)}</td><td>${f(b)}</td></tr>`;
   const pct = x => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '–');
-  const conc = share.share / (share.even || 1);
+  const words = concentrationWords(share);
   return html`<div class="net-frag">
-    <h2 class="label">How much depends on a few people</h2>
+    <h2 class="label">Is brokerage concentrated in a few people?</h2>
     <div class="row" style="gap:.4rem 1rem;align-items:flex-end">
       <${Select} label="Top" value=${String(k)} onChange=${v => { setK(Number(v)); setRes(null); }} options=${choices.map(x => ({ value: String(x), label: `${x} by betweenness` }))} />
     </div>
-    <${Verdict} verdict=${`The top ${share.k} people hold ${pct(share.share)} of all betweenness${conc >= 3 ? ', so routes between parts of the network depend on a few people' : conc >= 1.8 ? ', more than an even share' : ', close to an even share'}.`}
-      plain=${`If brokerage were spread evenly they would hold ${pct(share.even)}. They are ${names(share.people)}.`} />
+    <${Verdict} verdict=${`The top ${share.k} people hold ${pct(share.share)} of all betweenness, ${words.text}.`}
+      plain=${`They are ${names(share.people)}.`}
+      details=${`"Run through these people" is said only when they hold at least ${pct(DEPENDS_SHARE)} of all betweenness and at least three times an even share; 1.8 times or more reads as concentrated.`} />
     ${truncated ? html`<p class="basis">The map is simplified for this network, so the what-if is not available.</p>`
       : html`<button type="button" class="tlink" onClick=${run}>What if these ${share.k} people left?</button>`}
     ${res && res.k === k && html`<table class="net-frag__table">
@@ -945,7 +952,7 @@ function Fragility({ ds, net, data, metrics, coloring, applicability }) {
     <p class="basis">Direction ignored; steps averaged over the people who can still reach each other${res.after.sampled ? ' (sampled)' : ''}. Removing people is a what-if on this network, not a forecast: others may take over their ties.</p>`}
     <${HowToRead} title="How to read this"
       means="Betweenness counts how often a person sits on the shortest route between two others. When a few people hold most of it, many routes between parts of the network run through them."
-      scale=${`An even spread gives the top ${share.k} about ${pct(share.even)}. Two or three times that is concentrated; five times or more means the network leans on them.`}
+      scale=${`An even spread gives the top ${share.k} about ${pct(share.even)}. About twice that or more is concentrated; the network leans on them when they hold half or more of all betweenness.`}
       example=${res ? `Without them, ${res.groupTitle ? `ties across ${res.groupTitle} groups go from ${fmtInt(res.before.cross)} to ${fmtInt(res.after.cross)} and ` : ''}the average number of steps between people goes from ${fmtNum(res.before.avgSteps)} to ${fmtNum(res.after.avgSteps)}.` : null}
       mistake="Concluding a network is robust because it stays in one piece after someone leaves. Fragility shows in longer routes and lost ties across groups, not only in the network falling apart." />
   </div>`;

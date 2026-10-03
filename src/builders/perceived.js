@@ -22,8 +22,9 @@
 //
 // Model (plain JSON):
 //   { version, name, people: [{ id, label }], relation: { name, question, undirected },
-//     informants: [{ id, personId|null, label, ties: { 'i|j': 1 } }] }
-// In an undirected relation the ties map holds both 'i|j' and 'j|i'.
+//     informants: [{ id, personId|null, label, ties: { 'i|j': 1 }, mirrored?: { 'j|i': 1 } }] }
+// In an undirected relation the ties map holds both 'i|j' and 'j|i';
+// mirrored marks the cells ticked only as a mirror (see toggleInformantTie).
 
 import { DatasetBuilder, eventTargets } from '../core/model.js';
 import { uid, slug, normName } from './common.js';
@@ -68,10 +69,46 @@ export function setReportTie(css, ties, from, to, v) {
   return undirectedOf(css) ? setTie(t, to, from, v) : t;
 }
 
+// One informant after a cell is set or cleared, keeping track of which cells
+// hold a tick only because their mirror was ticked (inf.mirrored, mutual
+// relations). Clearing a cell clears the pair.
+export function setInformantTie(css, inf, from, to, v) {
+  const ties = setReportTie(css, inf.ties, from, to, v);
+  if (!undirectedOf(css)) return { ...inf, ties };
+  const mirrored = { ...(inf.mirrored || {}) };
+  delete mirrored[pairKey(from, to)];
+  if (v) { if (!inf.ties[pairKey(to, from)]) mirrored[pairKey(to, from)] = 1; }
+  else delete mirrored[pairKey(to, from)];
+  return { ...inf, ties, mirrored };
+}
+
+// A click (or Space) on a cell. In a mutual relation a click on a cell that
+// is ticked only as the mirror of the cell the informant ticked keeps the
+// tie: the student who ticks both cells of a friendship ends with it ticked,
+// not cleared. That click confirms the cell, so a further click clears the
+// pair, as does a click on the cell first ticked, Delete or 0.
+export function toggleInformantTie(css, inf, from, to) {
+  const k = pairKey(from, to);
+  if (!inf.ties[k]) return setInformantTie(css, inf, from, to, 1);
+  if (undirectedOf(css) && inf.mirrored?.[k]) {
+    const mirrored = { ...inf.mirrored };
+    delete mirrored[k];
+    return { ...inf, mirrored };
+  }
+  return setInformantTie(css, inf, from, to, 0);
+}
+
+// Cells a symmetrized matrix gained, as a mirrored map.
+function mirrorsAdded(before, after) {
+  const m = {};
+  for (const k of Object.keys(after)) if (!before[k]) m[k] = 1;
+  return m;
+}
+
 // Switch direction. Turning mutual on mirrors every informant's ticks (a pair
 // either of them ticked becomes one tie); turning it off keeps the matrices.
 export function setUndirected(css, on) {
-  const informants = on ? css.informants.map(i => ({ ...i, ties: symmetrize(i.ties) })) : css.informants;
+  const informants = on ? css.informants.map(i => { const ties = symmetrize(i.ties); return { ...i, ties, mirrored: { ...(i.mirrored || {}), ...mirrorsAdded(i.ties, ties) } }; }) : css.informants;
   return { ...css, relation: { ...css.relation, undirected: !!on }, informants };
 }
 
@@ -151,8 +188,10 @@ export function reportedCount(css, ties) {
   return c;
 }
 
-// Each informant against the consensus (which includes their own report),
-// against the consensus of the other informants only, and against a reference.
+// Each informant against the consensus (which includes their own report, so
+// it flatters everyone and is circular: kept for reference, not shown as the
+// score), against the consensus of the other informants only (leave-one-out;
+// with two informants, the other one's report), and against a reference.
 export function perInformantAccuracy(css, { threshold = 0.5, reference = null } = {}) {
   const undirected = undirectedOf(css);
   const cons = consensus(css, threshold);
@@ -160,7 +199,7 @@ export function perInformantAccuracy(css, { threshold = 0.5, reference = null } 
     id: inf.id, label: inf.label, personId: inf.personId,
     reported: reportedCount(css, inf.ties),
     vsConsensus: accuracy(inf.ties, cons, css.people, { undirected }),
-    vsOthers: css.informants.length > 2 ? accuracy(inf.ties, consensus(css, threshold, { without: inf.id }), css.people, { undirected }) : null,
+    vsOthers: css.informants.length >= 2 ? accuracy(inf.ties, consensus(css, threshold, { without: inf.id }), css.people, { undirected }) : null,
     vsReference: reference ? accuracy(inf.ties, reference, css.people, { undirected }) : null,
   }));
 }
@@ -185,11 +224,18 @@ export function symmetryCheck(css) {
     for (const k of Object.keys(inf.ties)) { if (!inf.ties[k]) continue; ties++; const [i, j] = splitKey(k); if (inf.ties[pairKey(j, i)]) both++; }
     return { id: inf.id, label: inf.label, ties, share: ties ? both / ties : NaN };
   });
-  if (undirectedOf(css)) return { rows, twoWay: [], oneWay: [], mixed: false };
+  if (undirectedOf(css)) return { rows, twoWay: [], oneWay: [], mixed: false, allTwoWay: false };
+  // Mixed: the shares of two-way ticks differ by at least 0.3 between
+  // informants; they are split at the midpoint of the range. allTwoWay: every
+  // informant ticked (almost) every tie both ways, so the relation is
+  // probably mutual.
   const judged = rows.filter(r => r.ties >= 3);
-  const twoWay = judged.filter(r => r.share >= 0.9).map(r => r.label);
-  const oneWay = judged.filter(r => r.share <= 0.4).map(r => r.label);
-  return { rows, twoWay, oneWay, mixed: twoWay.length > 0 && oneWay.length > 0 };
+  const lo = Math.min(...judged.map(r => r.share)), hi = Math.max(...judged.map(r => r.share));
+  const mixed = judged.length > 1 && hi - lo >= 0.3;
+  const mid = (lo + hi) / 2;
+  const twoWay = mixed ? judged.filter(r => r.share > mid).map(r => r.label) : [];
+  const oneWay = mixed ? judged.filter(r => r.share <= mid).map(r => r.label) : [];
+  return { rows, twoWay, oneWay, mixed, allTwoWay: judged.length > 1 && lo >= 0.9 };
 }
 
 // Pairs informants disagree about most. With share p reporting the tie, the
@@ -208,8 +254,13 @@ export function disagreement(css, { limit = 20 } = {}) {
 
 // A loaded Dataset as a reference network over the roster: any event from
 // actor to a target becomes a directed binary tie, matched by name.
+// A network built from perceived reports (format 'css', such as this study's
+// own consensus after "Analyze this network") is not a reference: scoring the
+// informants against it would be circular. It comes back as { fromStudy }.
 export function referenceFromDataset(ds, people) {
   if (!ds) return null;
+  const srcs = ds.meta?.sources || [];
+  if (srcs.length && srcs.every(s => s.format === 'css')) return { ties: {}, matched: 0, fromStudy: true };
   const idx = nameIndex(people);
   const byNode = new Array(ds.nodes.count);
   for (let n = 0; n < ds.nodes.count; n++) byNode[n] = idx.get(normName(ds.nodes.labels[n])) ?? null;

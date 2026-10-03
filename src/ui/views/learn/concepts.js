@@ -7,6 +7,8 @@
 // Each entry: { where: [[label, hash]], read, mistake, diagram? }.
 // `diagram` names a figure in diagrams.js.
 
+import { exampleById } from '../../../builders/examples.js';
+
 export const SECTIONS = [
   { id: 'basics', title: 'Basics', intro: 'What a network is made of, and the choices that make one.', keys: ['tie', 'directed', 'weight', 'path', 'communities', 'plantedGroup'] },
   { id: 'people', title: 'Who is central', intro: 'Measures for one person. Each answers a different question, so the "most central" person depends on the question.', keys: ['contacts', 'degree', 'inDegree', 'outDegree', 'strength', 'betweenness', 'closeness', 'clustering', 'eigenvector', 'pagerank', 'coreNumber', 'reciprocity'] },
@@ -178,9 +180,11 @@ export const TASKS = [
 // Build (src/ui/build) loads the example of that id. Keep these ids in step
 // with Build's example library (docs/api/ui-core.md, "Learn links").
 export const EXAMPLES = [
-  { id: 'two-cliques-broker', title: 'Two cliques and a broker', what: 'The broker is the only route between the teams: highest betweenness, though not the most contacts.', learn: ['betweenness', 'contacts'] },
-  { id: 'path-and-star', title: 'Path and star', what: 'The star center has betweenness 1; in the path the middle people score highest and the ends 0. Compare with your hand values.', learn: ['betweenness', 'closeness', 'degree'] },
-  { id: 'ring-small-world', title: 'Ring vs ring with shortcuts', what: 'A few shortcuts cut the average path length sharply while clustering barely moves.', learn: ['avgPathLength', 'clustering'] },
-  { id: 'class-friendships', title: 'Class friendships with majors', what: 'Friendships mostly within majors: positive assortativity, far from what random networks give.', learn: ['assortativity', 'eiIndex', 'nullModel'] },
-  { id: 'ego-10', title: 'A 10-person ego network', what: 'Two circles that do not know each other: low constraint, effective size close to size.', learn: ['constraint', 'effectiveSize', 'ego'] },
-];
+  { id: 'two-cliques-broker', what: 'The broker is the only route between the teams: highest betweenness, though not the most contacts.', learn: ['betweenness', 'contacts'] },
+  { id: 'path-and-star', what: 'In the path the middle people score highest and the ends 0. Then open the star (File, Start from an example): its center has betweenness 1. Compare with your hand values.', learn: ['betweenness', 'closeness', 'degree'] },
+  { id: 'ring-small-world', what: 'Then open the small world (File, Start from an example): a few shortcuts cut the average path length sharply while clustering barely moves.', learn: ['avgPathLength', 'clustering'] },
+  { id: 'class-friendships', what: 'Friendships mostly within majors: positive assortativity, far from what random networks give.', learn: ['assortativity', 'eiIndex', 'nullModel'] },
+  { id: 'ego-10', what: 'Two circles that do not know each other: low constraint, effective size close to size.', learn: ['constraint', 'effectiveSize', 'ego'] },
+// The title is the one the example opens under in Build, so Learn and the
+// header name match ("Example: <title>").
+].map(x => ({ ...x, title: exampleById(x.id)?.title || x.id }));

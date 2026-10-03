@@ -207,10 +207,14 @@ function Topics() {
 
 // ---- diffusion --------------------------------------------------------------------------
 
-function verdictOf(ex) {
+// The verdict uses the Holm-adjusted p (pAdj) when several words were
+// tested, and says "inconclusive" when the shuffled baseline leaves the test
+// little room (N8), whatever p is.
+function verdictOf(ex, room) {
   if (!ex || !Number.isFinite(ex.observed)) return { level: 'na', label: 'Too few adopters', text: 'Too few adopters to compare with shuffled timing.' };
-  if (ex.p < 0.05 && ex.observed > ex.mean) return { level: 'ok', label: 'Follows ties', text: 'Adopters had an earlier adopter among their contacts more often than shuffled timing gives. That fits spread along ties, though shared channels or outside events can produce the same pattern.' };
-  return { level: 'info', label: 'Not along ties', text: 'Adopters had an earlier adopter among their contacts no more often than shuffled timing gives, so the data do not show this word spreading along ties.' };
+  if (room) return { level: 'caution', label: 'Inconclusive', text: 'The shuffled baseline is already so high that the test cannot tell spread along ties from chance.' };
+  if ((ex.pAdj ?? ex.p) < 0.05 && ex.observed > ex.mean) return { level: 'ok', label: 'Follows ties', text: 'Adopters had an earlier adopter among their contacts more often than shuffled timing gives. That fits spread along ties, though shared channels or outside events can produce the same pattern.' };
+  return { level: 'info', label: 'No evidence of spread', text: 'Adopters had an earlier adopter among their contacts no more often than shuffled timing gives, so the data do not show this word spreading along ties.' };
 }
 
 // N8: when most adopters would have an earlier-adopting contact anyway, the
@@ -233,7 +237,7 @@ function Diffusion({ ds }) {
   const t = tokens();
   const list = Array.isArray(q.data) ? q.data : q.data?.terms || [];
   const norm = (d) => {
-    const ex = d.exposure || (d.null ? { observed: d.exposedShare, mean: d.null.mean, sd: d.null.sd, z: d.null.z, p: d.null.pUpper, reps: d.null.reps, zMax: d.null.zMax, ceiling: d.null.ceiling } : null);
+    const ex = d.exposure || (d.null ? { observed: d.exposedShare, mean: d.null.mean, sd: d.null.sd, z: d.null.z, p: d.null.pUpper, pAdj: d.null.pAdjusted, reps: d.null.reps, zMax: d.null.zMax, ceiling: d.null.ceiling } : null);
     const timeline = d.timeline || (d.adoptions || []).map((a, i) => ({ t: a.t, cumulative: i + 1 }));
     const cascade = d.cascade && Array.isArray(d.cascade) ? d.cascade : (d.adoptions || []).filter(a => a.from != null).map(a => ({ from: a.from, to: a.node, t: a.t }));
     return { ...d, ex, timeline, cascade };
@@ -244,8 +248,9 @@ function Diffusion({ ds }) {
   const xs = items.flatMap(d => d.timeline.map(p => p.t)).filter(Number.isFinite);
   const xDomain = xs.length ? [Math.min(...xs), Math.max(...xs)] : null;
   const anyCeiling = items.some(d => roomOf(d.ex));
+  const nTested = items.filter(d => Number.isFinite(d.ex?.pAdj)).length;
   return html`<div>
-    <p class="small text2 cview__tabintro">Did a new word spread from person to person? If it did, people who start using it will often have a contact who used it first. To check, the app shuffles who adopted the word when, among the same people, 200 times: if adopters had an earlier adopter among their contacts no more often than in the shuffled timelines, the network is not what spread it. ${auto ? 'Showing the newest words found automatically; trace your own below.' : ''}</p>
+    <p class="small text2 cview__tabintro">Did a new word spread from person to person? If it did, people who start using it will often have a contact who used it first. To check, the app shuffles who adopted the word when, among the same people, 200 times: if adopters had an earlier adopter among their contacts no more often than in the shuffled timelines, the network is not what spread it. ${auto ? 'Showing new words found automatically: words nobody used in the first tenth of the period, leaving out everyday English, ranked by how many people took them up; trace your own below.' : ''} When several words are tested, p is corrected for the number tested (Holm's method), so one word passing by chance does not read as spread.</p>
     <form class="toolbar" onSubmit=${e => { e.preventDefault(); const ts = input.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).slice(0, 6); if (ts.length) { setAuto(false); setTerms(ts); } }}>
       <label class="field field--grow"><span>Words to trace (comma separated)</span><input class="input" value=${input} onInput=${e => setInput(e.currentTarget.value)} placeholder="for example: roadmap, offsite" /></label>
       <button class="btn btn--primary" type="submit">Trace</button>
@@ -254,12 +259,12 @@ function Diffusion({ ds }) {
     <p class="small muted cview__note">Names of people in the data are not traced.${gen ? ' Generated data: the recovery check under Generate scores spread on the true ties, of which only some show up in messages, so its verdict for a word can differ from this view, which uses the ties in the data.' : ''}</p>
     ${q.loading && html`<${Loading}>Tracing adoption</${Loading}>`}<${ErrorLine} error=${q.error} onRetry=${q.retry} />
     ${q.data && !items.length && html`<p class="small text2">No new word was used by enough people to trace.</p>`}
-    ${items.length > 0 && html`<div class="diff-grid">${items.map(d => { const v = verdictOf(d.ex); const room = roomOf(d.ex); return html`<section class="diff-card" aria-label=${`Diffusion of ${d.term}`}>
+    ${items.length > 0 && html`<div class="diff-grid">${items.map(d => { const room = roomOf(d.ex); const v = verdictOf(d.ex, room); return html`<section class="diff-card" aria-label=${`Diffusion of ${d.term}`}>
       <h3>"${d.term}"</h3>
       ${!d.adopters ? html`<p class="small text2">Nobody in the data used this word.</p>` : html`
-        <p class="small"><${Flag} level=${room && v.level === 'ok' ? 'caution' : v.level}>${v.label}${room ? ' (little room)' : ''}</${Flag}></p>
-        <p class="small text2">${fmtPct(d.ex?.observed)} of adopters had an earlier adopter among their contacts, against ${fmtPct(d.ex?.mean)} with shuffled timing; ${nullInWords(d.ex?.p, d.ex?.reps, { what: 'shuffled timelines' }).replace('came this close', 'came this high')}.</p>
-        ${room && html`<p class="small diff-card__room"><${Flag} level="caution" /> Little room to test: even with shuffled timing ${fmtPct(d.ex.mean)} of adopters have an earlier adopter among their contacts${Number.isFinite(room.zMax) ? `, so the strongest result possible, 100%, would be only z = ${fmtNum(room.zMax, { digits: 2 })}` : ''}. Treat this result as weak evidence either way.</p>`}
+        <p class="small"><${Flag} level=${v.level}>${v.label}${room ? ' (little room)' : ''}</${Flag}></p>
+        <p class="small text2">${fmtPct(d.ex?.observed)} of adopters had an earlier adopter among their contacts, against ${fmtPct(d.ex?.mean)} with shuffled timing; ${nullInWords(d.ex?.p, d.ex?.reps, { what: 'shuffled timelines' }).replace('came this close', 'came this high')}${nTested > 1 && Number.isFinite(d.ex.pAdj) ? `; corrected for ${nTested} words tested (Holm), p = ${d.ex.pAdj.toFixed(3)}` : ''}.</p>
+        ${room && html`<p class="small diff-card__room"><${Flag} level="caution" /> Little room to test: even with shuffled timing ${fmtPct(d.ex.mean)} of adopters have an earlier adopter among their contacts${Number.isFinite(room.zMax) ? `, so the strongest result possible, 100%, would be only z = ${fmtNum(room.zMax, { digits: 2 })}` : ''}. Inconclusive either way.</p>`}
         <${TimeChart} series=${[{ id: d.term, label: 'Adopters', color: t.cat[0], values: d.timeline.map(p => ({ x: p.t, y: p.cumulative })) }]} height=${120} area=${true} yDomain=${[0, yMax]} xDomain=${xDomain} compact=${true} yFormat=${fmtInt} />
         <dl class="kv">
           <dt>Adopters</dt><dd>${fmtInt(d.adopters)}</dd>

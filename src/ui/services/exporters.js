@@ -53,8 +53,9 @@ export async function exportAs(id, { ds, settings, nodeMetrics, communities, omi
 }
 
 // Short file name stem from the dataset name (D17): the parenthetical detail
-// goes ("Synthetic workplace (slack, bridge-dependent, seed 1)" becomes
-// "synthetic-workplace"), at most four words and 32 characters. A survey's
+// goes except a seed ("Synthetic workplace, bridge-dependent (Slack, seed 1)"
+// becomes "synthetic-workplace-bridge-dependent-seed1", J14), at most four
+// words and 40 characters before it. A survey's
 // combine rule stays (C13), so the union and reciprocated saves of one
 // survey get different names: "SOC101 A4 friendship (union)" becomes
 // "soc101-a4-friendship-union".
@@ -63,9 +64,11 @@ export function fileBase(ds, fallback = 'network') {
   const name = String(ds?.meta?.name || '');
   const words = name.replace(/\([^)]*\)/g, ' ').toLowerCase().match(/[a-z0-9]+/g) || [];
   let out = '';
-  for (const w of words.slice(0, 4)) { if ((out ? out.length + 1 : 0) + w.length > 32) break; out = out ? `${out}-${w}` : w; }
+  for (const w of words.slice(0, 4)) { if ((out ? out.length + 1 : 0) + w.length > 40) break; out = out ? `${out}-${w}` : w; }
   const paren = (name.match(/\([^)]*\)/g) || []).join(' ');
   const rule = RULE_WORDS.find(([re]) => re.test(paren))?.[1];
   if (rule && !out.endsWith(rule)) out = out ? `${out}-${rule}` : rule;
+  const seed = paren.match(/\bseed (\d+)\b/i)?.[1];
+  if (seed && out) out = `${out}-seed${seed}`;
   return out || fallback;
 }

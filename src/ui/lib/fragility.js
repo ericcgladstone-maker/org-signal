@@ -20,6 +20,22 @@ export function topShare(values, k) {
   return { k: kk, share: total > 0 ? top / total : NaN, even: order.length ? kk / order.length : NaN, people: order.slice(0, kk) };
 }
 
+// Words for a topShare result, relative to an even spread. "Depends on a few
+// people" is said only above a stated threshold: they hold at least half of
+// all betweenness (DEPENDS_SHARE) and at least three times an even share.
+// Below that the ratio to an even share is given, not a verdict (20% held by
+// the top 5 of 96 is concentrated, but most routes still avoid them).
+export const DEPENDS_SHARE = 0.5;
+export function concentrationWords({ k, share, even }) {
+  const ratio = share / (even || 1);
+  const pct = x => `${Math.round(x * 100)}%`;
+  if (!Number.isFinite(ratio)) return { level: 'na', text: '' };
+  const times = `${ratio >= 10 ? Math.round(ratio) : Math.round(ratio * 10) / 10} times the ${pct(even)} an even spread gives`;
+  if (share >= DEPENDS_SHARE && ratio >= 3) return { level: 'depends', ratio, text: `${times}, so most routes between parts of the network run through these ${k} people` };
+  if (ratio >= 1.8) return { level: 'concentrated', ratio, text: `${times}: concentrated, though they hold under half of it` };
+  return { level: 'even', ratio, text: `close to the ${pct(even)} an even spread gives` };
+}
+
 // n people, ties src[k] - dst[k] (direction ignored), `removed` a Set of
 // people, groupOf(v) a group key or null. Average steps over pairs that can
 // reach each other: exact up to `exactMax` people, from `samples` evenly

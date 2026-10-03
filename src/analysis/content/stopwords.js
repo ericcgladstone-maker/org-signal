@@ -36,3 +36,59 @@ export const STOPWORDS = new Set([EN, ES, FR, DE, PT, IT, NL, CAL].join(' ').spl
 // Top-level and generic mail domain labels: never a person's name and never
 // a topic, but present in every address that slips through.
 export const DOMAIN_NOISE = new Set(['com', 'org', 'net', 'edu', 'gov', 'io', 'co', 'uk', 'us', 'de', 'fr', 'example', 'mail', 'gmail', 'googlemail', 'outlook', 'hotmail', 'yahoo', 'icloud', 'me', 'live', 'msn', 'aol', 'proton', 'protonmail', 'www']);
+
+// Everyday English vocabulary beyond the stopwords: common verbs (with their
+// irregular forms), nouns, adjectives and adverbs. Not removed from keywords
+// or topics (there they can carry meaning); used where only new vocabulary
+// should count, as when diffusion picks words automatically ("started",
+// "using" and "ask" are not new words even when a dataset first shows them
+// late). isCommonWord also strips regular endings (-s, -es, -ed, -ing, -er,
+// -est, -ly), so "asked", "tries" and "running" match their base form.
+const COMMON = `ask add agree allow answer appear apply arrive attend avoid back bake become begin believe belong blow book
+break bring build burn buy call came can care carry catch cause change check choose clean clear close come consider
+continue cook cost count cover create cut deal decide deliver describe design develop die discuss do draw dream dress
+drink drive drop eat end enjoy enter explain fail fall feel fight fill find finish fit fix fly follow forget forgive
+form give go grow handle hang happen hate head hear help hide hit hold hope hurt improve include increase join jump
+keep kill kick know laugh lay lead learn leave lend lie lift light listen live look lose love make manage mark matter
+mean meet mention mind miss move need note notice offer open order own pass pay pick plan play point prefer prepare
+present print promise prove provide pull push put reach read realize receive remember remove repeat reply report rest
+return ride ring rise run save see seem sell send serve set settle share shoot show shut sign sing sit sleep slip smile
+sort speak spend stand start stay step stick stop study suggest support suppose take talk teach tell test thank think
+throw touch track train travel treat try turn understand update use visit wait wake walk want warn wash watch wear win
+wish wonder work worry write
+was were did done went gone came made said took taken gave given saw seen knew known thought told found felt left kept
+began begun brought bought caught chose chosen drew drawn drove driven ate eaten fell fallen fought flew flown forgot
+forgotten grew grown heard held hid hidden hit hurt led lent lay lain lit lost meant met paid put ran rang read rode
+ridden rose risen sold sent set shot shut sang sung sat slept spoke spoken spent stood stuck taught tore torn threw
+thrown understood woke woken wore worn won wrote written broke broken built burnt dealt dreamt
+able bad best better big black blue busy cheap clean clear cold common cool dark dead dear early easy empty fair far
+fast fine free fresh full funny glad hard happy heavy high hot huge important interesting kind large last late least
+less little long low main major minor nice normal old open other past perfect poor possible quick quiet ready real
+recent red right rich safe short sick simple slow small soft sorry special strong sure sweet tall tiny tired top true
+usual warm weird white whole wide wild wrong young
+again ago ahead almost already always anyway around away back basically certainly definitely done else enough
+especially even everywhere exactly finally first maybe never next nothing often once perhaps probably quickly
+rather recently right second soon sometimes somewhere still today together tomorrow tonight usually yesterday
+anyone anything everyone everything someone something nobody somebody everybody
+action answer area article baby bit body book box boy business car case chance child city class company course
+day deal door end event eye face fact family father friend game girl group guy hand head home hour house idea
+issue job kid kind life line list man meeting message minute mom moment money month morning mother music name
+need news night number office paper part party people person phone picture place plan point problem question
+reason result room school side sound stuff story student system team thing time today trip way week weekend
+woman word work world year yesterday`;
+
+export const COMMON_WORDS = new Set(COMMON.split(/\s+/).filter(Boolean));
+
+export function isCommonWord(w) {
+  if (STOPWORDS.has(w) || COMMON_WORDS.has(w)) return true;
+  const c = [];
+  const stem = (suf) => (w.length > suf.length + 1 && w.endsWith(suf) ? w.slice(0, -suf.length) : null);
+  for (const suf of ['s', 'es', 'ed', 'd', 'ing', 'er', 'est', 'ly']) {
+    const s = stem(suf);
+    if (!s) continue;
+    c.push(s, s + 'e');
+    if (/([b-df-hj-np-tv-z])\1$/.test(s)) c.push(s.slice(0, -1)); // running -> run
+    if (s.endsWith('i')) c.push(s.slice(0, -1) + 'y'); // tried, tries -> try
+  }
+  return c.some(x => COMMON_WORDS.has(x) || STOPWORDS.has(x));
+}

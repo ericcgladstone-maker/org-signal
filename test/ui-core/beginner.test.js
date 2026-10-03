@@ -117,4 +117,6 @@ test('Learn: beginner concepts exist, every key is in the glossary, links go to 
   for (let i = 1; i <= 12; i++) assert.ok(TASKS.some(t => t.a === `A${i}`), `A${i}`);
   for (const t of TASKS) { assert.ok(ids.has(t.to)); for (const k of t.learn) assert.ok(GLOSSARY[k], k); }
   assert.deepEqual(EXAMPLES.map(x => x.id), ['two-cliques-broker', 'path-and-star', 'ring-small-world', 'class-friendships', 'ego-10']);
+  // Learn names each example as Build opens it.
+  assert.deepEqual(EXAMPLES.map(x => x.title), ['Two teams and a broker', 'A path of six people', 'A ring (compare with the small world)', 'Class friendships with majors', 'An ego network: you and 10 people']);
 });

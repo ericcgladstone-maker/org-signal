@@ -26,7 +26,7 @@ export async function runGenerate(spec, progress = () => {}) {
   const out = { groundTruth: res.groundTruth, dataset: res.dataset };
   if (spec.output === 'native') {
     if (!res.files || !res.files.length) throw new Error('The generator returned no native files for this medium.');
-    out.download = packNative(res.files, { name: `synthetic-${spec.context}-${spec.medium}-seed${spec.seed}` });
+    out.download = packNative(res.files, { name: `synthetic-${spec.context}-${res.groundTruth?.preset || spec.structure || 'default'}-${spec.medium}-seed${spec.seed ?? 1}` });
     out.fileList = res.files.map(f => ({ path: f.path || f.name, size: (f.bytes || f.data || f.text || '').length }));
   }
   progress(1, 'Done');

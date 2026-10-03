@@ -18,6 +18,7 @@ import { categoricalScale, tokens } from '../lib/palette.js';
 import { cachedRender, getRender } from '../lib/render-cache.js';
 import { groupableAttributes, label as nodeLabel } from '../lib/dsutil.js';
 import { fmtNum, fmtInt, fmtRange } from '../lib/format.js';
+import { communityWords, communityCounts } from '../lib/rebuild.js';
 
 export function MethodsView() {
   const ds = useStore(s => s.dataset);
@@ -62,7 +63,7 @@ export function appendixInput(state) {
     metrics: nodeKeys.includes('degree') ? ['contacts', ...nodeKeys] : nodeKeys,
     networkStats: Object.keys(metrics?.network || {}).filter(k => typeof metrics.network[k] === 'number'),
     approx,
-    communities: communities ? { resolution: communities.resolution ?? 1, seed: communities.seed ?? 1, runs: 1, count: communities.count, modularity: communities.modularity } : undefined,
+    communities: communities ? { resolution: communities.resolution ?? 1, seed: communities.seed ?? 1, runs: 1, count: communityCounts(communities).groups, isolates: communityCounts(communities).alone, numbering: communities.numbering || 'size', modularity: communities.modularity } : undefined,
     groups, attributeLabels,
     // The import report's short names, by source index (report.sources[i].id).
     sourceLabels: (dataset?.meta?.sources || []).map((_, i) => state.report?.sources?.find(x => x.id === i)?.label || null),
@@ -186,7 +187,7 @@ export function summaryMarkdown(state, appendix) {
   }
   L.push('', '## Whole network', '');
   L.push(...wholeNetworkLines(metrics?.network || {}, k => gloss(k).label));
-  if (communities) L.push(`- **Communities: ${communities.count}** (modularity ${fmtNum(communities.modularity)}), numbered from 1 by size. ${gloss('community').reliability || ''}`.trim());
+  if (communities) L.push(`- **Communities: ${communityWords(communities)}** (modularity ${fmtNum(communities.modularity)}), numbered from 1 ${communities.numbering === 'matched' ? 'by matching: after a rebuild each community keeps the number of the earlier community it shares most people with, so numbers need not follow size' : 'by size'}. ${gloss('community').reliability || ''}`.trim());
   L.push('');
   const results = summaryResults(appendixInput(state));
   if (results.length) L.push(...results);

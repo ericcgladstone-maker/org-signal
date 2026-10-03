@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newCSS, agreement, consensus, las, accuracy, perInformantAccuracy, disagreement, referenceFromDataset, toDataset, setUndirected, setReportTie, symmetryCheck, bestPerceiver, undirectedOf, isMutualRelation } from '../../src/builders/perceived.js';
+import { newCSS, agreement, consensus, las, accuracy, perInformantAccuracy, disagreement, referenceFromDataset, toDataset, setUndirected, setReportTie, symmetryCheck, bestPerceiver, undirectedOf, isMutualRelation, toggleInformantTie, setInformantTie, reportedCount } from '../../src/builders/perceived.js';
 import { defaultSettings, buildNetwork, computeNetworkMetrics } from '../../src/analysis/index.js';
 import { DatasetBuilder } from '../../src/core/model.js';
 
@@ -157,4 +157,58 @@ test('M2: the consensus of a mutual relation is analyzed as undirected', () => {
   assert.equal(net.edges.count, 13);
   assert.equal(computeNetworkMetrics(net).components, 1);
   assert.ok(ds.meta.sources[0].warnings.some(w => w.code === 'css-consensus-weight'), 'the weight is explained (M18)');
+});
+
+test('mutual: clicking the mirror of a ticked pair keeps it; pairs are counted once', () => {
+  const c = maya({});
+  let inf = { id: 'x', personId: 'Priya', label: 'Priya', ties: {} };
+  inf = toggleInformantTie(c, inf, 'Maya', 'Bea');
+  assert.deepEqual(Object.keys(inf.ties).sort(), ['Bea|Maya', 'Maya|Bea']);
+  // Priya ticks the second cell too: still ticked (was cleared before).
+  inf = toggleInformantTie(c, inf, 'Bea', 'Maya');
+  assert.deepEqual(Object.keys(inf.ties).sort(), ['Bea|Maya', 'Maya|Bea']);
+  assert.equal(reportedCount(c, inf.ties), 1);
+  // A further click on either cell clears the pair; so does an explicit clear.
+  assert.deepEqual(toggleInformantTie(c, inf, 'Bea', 'Maya').ties, {});
+  const once = toggleInformantTie(c, { ...inf, ties: {}, mirrored: {} }, 'Maya', 'Bea');
+  assert.deepEqual(toggleInformantTie(c, once, 'Maya', 'Bea').ties, {});
+  assert.deepEqual(setInformantTie(c, once, 'Bea', 'Maya', 0).ties, {});
+  // Directed relations toggle each cell on its own.
+  const d = { ...c, relation: { name: 'Advice', undirected: false } };
+  const t1 = toggleInformantTie(d, { id: 'y', ties: {} }, 'Maya', 'Bea');
+  assert.deepEqual(Object.keys(t1.ties), ['Maya|Bea']);
+  assert.deepEqual(toggleInformantTie(d, t1, 'Maya', 'Bea').ties, {});
+  // Twelve friendships ticked in both cells are twelve ties.
+  let p = { id: 'z', ties: {} };
+  for (const [a, b] of T.slice(0, 12)) { p = toggleInformantTie(c, p, a, b); p = toggleInformantTie(c, p, b, a); }
+  assert.equal(reportedCount(c, p.ties), 12);
+});
+
+test('scores leave the informant out (checked against an independent Python computation)', () => {
+  // scratchpad loo.py: Maya 11/1/2 0.7857, Priya 13/1/0 0.9286, Jordan 13/2/0 0.8667, Sam 9/1/4 0.6429
+  const acc = perInformantAccuracy(maya({}), { threshold: 0.5 });
+  assert.deepEqual(acc.map(a => [a.vsOthers.hits, a.vsOthers.falseAlarms, a.vsOthers.misses]), [[11, 1, 2], [13, 1, 0], [13, 2, 0], [9, 1, 4]]);
+  assert.deepEqual(acc.map(a => Math.round(a.vsOthers.jaccard * 1e4) / 1e4), [0.7857, 0.9286, 0.8667, 0.6429]);
+  assert.deepEqual(bestPerceiver(acc, 'vsOthers').labels, ['Priya']);
+  // Two informants: each is scored against the other's report.
+  const two = { ...maya({}), informants: maya({}).informants.slice(0, 2) };
+  assert.ok(perInformantAccuracy(two).every(a => a.vsOthers && Number.isFinite(a.vsOthers.jaccard)));
+});
+
+test('a network built from the study is never its reference (circular)', () => {
+  const c = maya({});
+  const ds = toDataset(c, { view: 'consensus', threshold: 0.5 });
+  const ref = referenceFromDataset(ds, c.people);
+  assert.equal(ref.fromStudy, true);
+  assert.equal(ref.matched, 0);
+});
+
+test('mutual off: informants who differ in symmetry are flagged; all two-way suggests mutual', () => {
+  const d = maya({ relation: { name: 'Friendship', question: '', undirected: false } });
+  const sym = symmetryCheck(d);
+  assert.equal(sym.mixed, true);
+  const all = setUndirected(setUndirected(d, true), false);
+  const s2 = symmetryCheck(all);
+  assert.equal(s2.mixed, false);
+  assert.equal(s2.allTwoWay, true);
 });

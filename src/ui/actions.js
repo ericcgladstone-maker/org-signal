@@ -310,7 +310,12 @@ export function orderCommunities(c, prev = null, nodeIds = null) {
   const membership = Int32Array.from(c.membership, m => (m >= 0 ? label[m] : -1));
   const outSizes = new Array(bySize.length).fill(0);
   for (const m of bySize) outSizes[label[m]] = sizes[m];
-  return { ...c, membership, sizes: outSizes, count: bySize.length };
+  // Matching keeps identities (and colors) across a rebuild, so the numbers
+  // need not follow size afterwards; renumbering by size would move matched
+  // communities to other numbers and colors. numbering says which held, so
+  // the reports do not claim "by size" when it is not true.
+  const bySizeOrder = outSizes.every((x, i) => i === 0 || outSizes[i - 1] >= x);
+  return { ...c, membership, sizes: outSizes, count: bySize.length, numbering: bySizeOrder ? 'size' : 'matched' };
 }
 
 // What a rebuild changed, for the notice after "Apply and rebuild" (D9).

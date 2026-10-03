@@ -51,6 +51,14 @@ export function communityCounts(c) {
   return { groups, alone };
 }
 
+// "6 communities, plus 1 person with no ties" (N17): isolates are not
+// counted as communities anywhere (Network, Groups, the appendix).
+export function communityWords(c) {
+  const k = communityCounts(c);
+  if (!k) return '';
+  return `${k.groups.toLocaleString('en-US')} ${k.groups === 1 ? 'community' : 'communities'}${k.alone ? `, plus ${k.alone.toLocaleString('en-US')} ${k.alone === 1 ? 'person' : 'people'} with no ties` : ''}`;
+}
+
 // Before/after summary of a rebuild. Counts people whose community number
 // changed (after overlap matching), by dataset node.
 export function rebuildSummary(before, after) {

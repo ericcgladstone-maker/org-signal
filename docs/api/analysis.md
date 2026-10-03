@@ -279,7 +279,7 @@ Helpers in `time.js`:
 ```
 
 `detectShifts(series, { method = 'robust' | 'cusum', threshold, nodeThreshold, baseline = 8, minBaseline = 4, minCoverage = 0.6, nodeMetric, topNodes = 200, networkMetrics, labels })` ->
-`{ shifts: [{ target: 'network'|'group'|'node', id, label, metric, window, end, length, value, baseline, z | statistic, direction, start, windowLabel, level, held, span, heldToEnd, lastHeld }], meta: { method, window, threshold, nodeThreshold, baseline, windows, seriesScanned, partialWindowsSkipped } }`.
+`{ shifts: [{ target: 'network'|'group'|'node', id, label, metric, window, end, length, value, baseline, z | statistic, direction, start, windowLabel, level, held, span, heldToEnd, lastHeld }], meta: { method, window, threshold, nodeThreshold, baseline, windows, seriesScanned, partialWindowsSkipped, weekendsSkipped } }`. Option `skipWeekends` (default true).
 
 - **Persistence** (J3). `length` / `end` describe the run of flagged windows, which ends as soon as the rolling baseline has absorbed a new level (a permanent step is flagged for 2-4 windows). `persistence(x, first, last, baseline, direction)` judges the shift against the baseline before it instead: `level` is the mean of the flagged windows, and each later tested window is assigned to whichever is nearer, the pre-shift `baseline` or `level`. `held` of `span` windows (from the first flagged one to the end of the series or of its segment between source edges) sit nearer the new level; `heldToEnd` when all do; `lastHeld` is the last window of the unbroken run. Report "stayed at the new level to the end" from `heldToEnd`, never "lasted `length` windows".
 - `meta.window` is the window unit of the series the shifts were computed from; a view shows it, and must recompute shifts when the series changes (J4).
@@ -287,6 +287,7 @@ Helpers in `time.js`:
 - **Robust z** (default): compares each window with the median and MAD of the previous 8 windows, with threshold 3.5 (5 for node series). The scale has floors: 5% of the median, sqrt(median) for count series, and binomial noise for shares from the window's tie count (reciprocity uses m/2, transitivity m/3; density uses density/sqrt(m)).
 - **CUSUM**: two-sided, k = 0.5, h = 6 (12 for node series), with the same floors.
 - Partial windows (coverage < 0.6) are skipped.
+- Daily windows with a working week (`weekendQuiet(windows, activity.total)`: Saturdays and Sundays, UTC, average under 40% of weekday activity) skip weekend days in testing and in the baselines, and Mondays in the tie-turnover series (`meta.weekendsSkipped`), so a weekday is compared with weekdays.
 - Source edges: the window holding a source's first or last event and the windows either side are not tested, and the series is cut there so the baseline restarts (an export starting is not a rise). Whole-network and group series use material sources; a person's series uses the sources in `series.nodeSources`. Reported in `meta.sourceEdges` and `meta.sourceEdgeWindowsSkipped`.
 - Series scanned by default: network `ties, density, reciprocity, transitivity, nodes`, `crossGroupShare` (when `timeSeries` got an `attr`: the share of ties between different values of it), tie retention (Jaccard with the previous window), ties formed, ties dissolved, total activity, activity per group, and the top node series. A reorg or a silo changes who talks to whom more than how much, so it shows up in cross-group share and tie retention.
 - Group series use a stricter threshold, `groupThreshold` (4.5 robust, 9 CUSUM), because every group is scanned separately.
@@ -332,13 +333,14 @@ It uses TF-IDF over each unit's pooled text, with smooth idf `ln((1+U)/(1+df)) +
 It is collapsed Gibbs LDA; `distinctive` ranks by relevance with lambda 0.6.
 
 `diffusion(ds, net, { terms, auto = 8, minAdopters = 5, window, reps = 200, seed })` ->
-`{ terms: [{ term, adopters, outsideNetwork, first, last, exposedShare, exposed, eligible, null: { mean, sd, z, pUpper, reps, room, zMax, ceiling }, cascade: { roots, maxDepth, largest }, adoptions: [{ node, label, t, exposed, from, dt }] }], meta }`.
+`{ terms: [{ term, adopters, outsideNetwork, first, last, exposedShare, exposed, eligible, null: { mean, sd, z, pUpper, pAdjusted, reps, room, zMax, ceiling }, cascade: { roots, maxDepth, largest }, adoptions: [{ node, label, t, exposed, from, dt }] }], meta }`.
 
 - A person adopts a term with their first message using it.
 - An adoption is exposed if a neighbour in either direction used the term earlier (within `window` if set).
 - The null shuffles adoption times among the same adopters.
 - `null.room = 1 - mean`; `null.zMax` = the z a 100% exposed share would get; `null.ceiling` when the shuffled baseline is at least `CEILING` (0.85). With a ceiling the test has little room either way (the generated online network's terms sit at 90-95%), and views say so (N8).
-- Automatic selection picks words new after the first 10% of the period that reach `minAdopters` people.
+- Automatic selection picks words not used in the first 10% of the period, that are not stopwords or everyday English (`isCommonWord` in `content/stopwords.js`, which also strips regular endings), and that reach `minAdopters` people, ranked by adopters.
+- Several terms tested at once: `null.pAdjusted` is Holm's step-down adjustment of `pUpper` over the terms tested (`meta.correction: 'holm'`, `meta.tested`; `holm(ps)` is exported). Views read "follows ties" only when the adjusted p is below 0.05 and there is no ceiling; with a ceiling the result is inconclusive.
 
 ## Rendering
 

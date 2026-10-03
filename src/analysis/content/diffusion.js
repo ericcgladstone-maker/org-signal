@@ -11,6 +11,7 @@
 import { corpus, tokenize } from './corpus.js';
 import { graphOf } from '../graph.js';
 import { createRng } from '../rng.js';
+import { isCommonWord } from './stopwords.js';
 
 // A shuffled baseline at or above this share of exposed adopters leaves the
 // test little room (see null.ceiling below).
@@ -55,9 +56,12 @@ export function diffusion(ds, net, opts = {}) {
   let chosen;
   if (wanted) chosen = wanted;
   else {
-    // Automatic choice: words that appear only after the first 10% of the
-    // period (new to the group; everyday vocabulary shows up early) and reach
-    // at least minAdopters people.
+    // Automatic choice: new words. A candidate is not used at all in the
+    // first 10% of the period (everyday vocabulary shows up early), is not a
+    // stopword or an everyday English word (isCommonWord: in generated and
+    // templated text "started" or "using" can first appear late without
+    // being new), and reaches at least minAdopters people. Ranked by the
+    // number of people who took it up.
     const cut = tStart + 0.1 * (tEnd - tStart);
     const cands = [];
     for (const [w, m] of first) {
@@ -65,7 +69,7 @@ export function diffusion(ds, net, opts = {}) {
       let t0 = Infinity;
       for (const t of m.values()) if (t < t0) t0 = t;
       if (t0 < cut) continue;
-      if (/^\d/.test(C.terms[w])) continue;
+      if (/^\d/.test(C.terms[w]) || isCommonWord(C.terms[w])) continue;
       cands.push([w, m.size]);
     }
     cands.sort((a, b) => b[1] - a[1] || a[0] - b[0]);
@@ -133,7 +137,23 @@ export function diffusion(ds, net, opts = {}) {
       adoptions,
     });
   });
-  return { terms: results, meta: { window: opts.window ?? null, reps, seed: opts.seed ?? 1, auto: !wanted, neighbours: 'either direction', null: 'adoption times permuted among adopters' } };
+  // Several words tested at once: some would pass p < 0.05 by chance alone.
+  // Holm's step-down correction (controls the chance of any false "follows
+  // ties" across the words tested) gives each term null.pAdjusted.
+  const tested = results.filter(r => r.null && Number.isFinite(r.null.pUpper));
+  const adj = holm(tested.map(r => r.null.pUpper));
+  tested.forEach((r, k) => { r.null.pAdjusted = adj[k]; });
+  return { terms: results, meta: { window: opts.window ?? null, reps, seed: opts.seed ?? 1, auto: !wanted, neighbours: 'either direction', null: 'adoption times permuted among adopters', correction: 'holm', tested: tested.length } };
+}
+
+// Holm-Bonferroni adjusted p-values, in the input order.
+export function holm(ps) {
+  const m = ps.length;
+  const idx = ps.map((p, i) => i).sort((a, b) => ps[a] - ps[b] || a - b);
+  const out = new Array(m);
+  let run = 0;
+  idx.forEach((i, k) => { run = Math.max(run, Math.min(1, (m - k) * ps[i])); out[i] = run; });
+  return out;
 }
 
 // Share of adopters (excluding the earliest) with an earlier-adopting neighbour.

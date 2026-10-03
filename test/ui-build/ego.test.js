@@ -235,3 +235,13 @@ test('setting labels never overlap', () => {
   const up = E.placeLabels([{ x: 300, y: 40, w: 80, anchor: 'end' }, { x: 290, y: 40, w: 80, anchor: 'end' }], { lineH: 15, midY: 220 });
   assert.deepEqual(up, [40, 25]); // above it: moves up
 });
+
+test('a new interview leaves the name blank (placeholder, not a prefilled value); the name limit is clamped', () => {
+  const s = E.newSession();
+  assert.equal(s.egoLabel, '');
+  let t = E.addGenerator(s, { preset: 'discuss' });
+  const id = t.generators[0].id;
+  assert.equal(E.updateGenerator(t, id, { cap: 510 }).generators[0].cap, E.MAX_CAP);
+  assert.equal(E.updateGenerator(t, id, { cap: 0 }).generators[0].cap, 1);
+  assert.equal(E.updateGenerator(t, id, { cap: 12 }).generators[0].cap, 12);
+});

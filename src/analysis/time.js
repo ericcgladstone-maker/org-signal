@@ -417,6 +417,13 @@ export function detectShifts(series, opts = {}) {
   const W = series.windows || [];
   const minCov = opts.minCoverage ?? 0.6;
   const partial = W.map(w => (w.coverage ?? 1) < minCov);
+  // Daily windows over data with a working week: Saturdays and Sundays carry
+  // a fraction of the weekday activity, so the first weekend reads as "a
+  // drop" and Monday as a rise. When weekend days average under 40% of
+  // weekday activity, they are left out of testing and of the baselines
+  // (meta.weekendsSkipped), so each weekday is compared with weekdays.
+  const weekendsSkipped = opts.skipWeekends !== false && series.meta?.window === 'day' && weekendQuiet(W, series.activity?.total);
+  if (weekendsSkipped) W.forEach((w, i) => { const d = new Date(w.start).getUTCDay(); if (d === 0 || d === 6) partial[i] = true; });
   const out = [];
   const raw = find;
   // Source edges. A window holding a source's first or last event, and the
@@ -490,10 +497,13 @@ export function detectShifts(series, opts = {}) {
   for (const k of netKeys) if (series.network?.[k]) push('network', null, k === 'crossGroupShare' ? `cross-${series.activity?.group?.attr ?? 'group'} share of ties` : k, k, findMasked(series.network[k], COUNTS.has(k), null, NOISE[k] || null));
   // Tie turnover: the share of last window's ties that persist (Jaccard). Rewiring
   // without a change in volume (a reorg) shows up here and nowhere else.
-  if (series.ties?.jaccard) push('network', null, 'tie retention (Jaccard with previous window)', 'tieRetention', findMasked(series.ties.jaccard, false, null, NOISE.tieRetention));
-  if (series.ties?.dissolved) push('network', null, 'ties dissolved', 'tiesDissolved', findMasked([NaN, ...series.ties.dissolved.slice(1)], true));
+  // With weekends skipped, Monday's turnover is against Sunday's sparse
+  // network, so Mondays are left out of the turnover series too.
+  const afterWeekend = (x) => (weekendsSkipped ? Array.from(x, (v, i) => (i > 0 && partial[i - 1] && new Date(W[i - 1].start).getUTCDay() === 0 ? NaN : v)) : x);
+  if (series.ties?.jaccard) push('network', null, 'tie retention (Jaccard with previous window)', 'tieRetention', findMasked(afterWeekend(series.ties.jaccard), false, null, NOISE.tieRetention));
+  if (series.ties?.dissolved) push('network', null, 'ties dissolved', 'tiesDissolved', findMasked(afterWeekend([NaN, ...series.ties.dissolved.slice(1)]), true));
   if (series.activity?.total) push('network', null, 'activity', 'activity', findMasked(series.activity.total, true));
-  if (series.ties?.formed) push('network', null, 'ties formed', 'tiesFormed', findMasked([NaN, ...series.ties.formed.slice(1)], true));
+  if (series.ties?.formed) push('network', null, 'ties formed', 'tiesFormed', findMasked(afterWeekend([NaN, ...series.ties.formed.slice(1)]), true));
   const grp = series.activity?.group;
   // Every group is scanned separately, so like node series they get a stricter
   // threshold: on flat synthetic workplaces the default threshold raised about
@@ -510,9 +520,19 @@ export function detectShifts(series, opts = {}) {
     for (const i of top) push('node', i, opts.labels?.[i] ?? String(i), metric, findMasked(arrs.map(a => a[i]), COUNTS.has(metric), nodeThr, null, edgesOf(series.nodeSources?.[i] || [])));
   }
   out.sort((a, b) => Math.abs(b.z ?? b.statistic) - Math.abs(a.z ?? a.statistic));
-  return { shifts: out, meta: { method, window: series.meta?.window ?? null, threshold: opts.threshold ?? (method === 'cusum' ? 6 : 3.5), nodeThreshold: nodeThr, groupThreshold: groupThr, baseline: opts.baseline ?? 8, windows: W.length, seriesScanned: scanned, partialWindowsSkipped: partial.filter(Boolean).length,
+  return { shifts: out, meta: { method, window: series.meta?.window ?? null, threshold: opts.threshold ?? (method === 'cusum' ? 6 : 3.5), nodeThreshold: nodeThr, groupThreshold: groupThr, baseline: opts.baseline ?? 8, windows: W.length, seriesScanned: scanned, partialWindowsSkipped: partial.filter(Boolean).length, weekendsSkipped,
     sourceEdges: (series.sources || []).filter(x => x.material).flatMap(x => [['starts', x.start], ['ends', x.end]].map(([kind, t]) => ({ source: x.id, label: x.label, kind, t, window: winOf(t) }))).filter(e => netEdges.includes(e.window)),
     sourceEdgeWindowsSkipped: suppressed } };
+}
+
+// Weekend days (UTC) average under 40% of weekday activity, with at least
+// two of each to compare.
+export function weekendQuiet(W, total) {
+  if (!total || !W.length) return false;
+  let we = 0, wd = 0, nWe = 0, nWd = 0;
+  W.forEach((w, i) => { if (!Number.isFinite(total[i]) || (w.coverage ?? 1) < 0.6) return; const d = new Date(w.start).getUTCDay(); if (d === 0 || d === 6) { we += total[i]; nWe++; } else { wd += total[i]; nWd++; } });
+  if (nWe < 2 || nWd < 5 || !(wd > 0)) return false;
+  return we / nWe < 0.4 * (wd / nWd);
 }
 
 // ---- before / after -------------------------------------------------------------------

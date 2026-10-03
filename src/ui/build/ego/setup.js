@@ -1,6 +1,6 @@
 // Ego builder steps 1 and 2: choose name generators and name interpreters.
 
-import { html } from '../../../../vendor/preact.js';
+import { html, useState } from '../../../../vendor/preact.js';
 import * as E from '../../../builders/ego.js';
 import { TieFieldsEditor } from '../tiefields.js';
 
@@ -11,13 +11,14 @@ const TYPES = [
 export function GeneratorsStep(props) {
   const { s, update, survey = false } = props;
   const has = id => s.generators.some(g => g.id === id);
+  const [capMsg, setCapMsg] = useState(null);
   const togglePreset = (p, on) => update(x => (on ? E.addGenerator(x, { preset: p.id }) : E.removeGenerator(x, p.id)));
   return html`<div class="ob-stack">
     ${survey ? null : html`<fieldset class="ob-fieldset">
       <legend>Respondent</legend>
       <div class="ob-grid-form">
         <div class="field"><label class="field__label" for="ego-label">Name or pseudonym</label>
-          <input id="ego-label" class="input" value=${s.egoLabel} onInput=${e => update(x => ({ ...x, egoLabel: e.target.value }))} /></div>
+          <input id="ego-label" class="input" value=${s.egoLabel} placeholder="Respondent" onInput=${e => update(x => ({ ...x, egoLabel: e.target.value }))} /></div>
         <div class="field"><label class="field__label" for="ego-case">Case id</label>
           <input id="ego-case" class="input" value=${s.caseId} placeholder="for example P014" onInput=${e => update(x => ({ ...x, caseId: e.target.value }))} /></div>
       </div>
@@ -47,9 +48,10 @@ export function GeneratorsStep(props) {
           <div class="field"><label class="field__label" for=${'gn-' + g.id}>Short name</label>
             <input id=${'gn-' + g.id} class="input" value=${g.name} onInput=${e => update(x => E.updateGenerator(x, g.id, { name: e.target.value }))} /></div>
           <div class="field"><label class="field__label" for=${'gc-' + g.id}>Most names (limit)</label>
-            <input id=${'gc-' + g.id} class="input" type="number" min="1" max="100" value=${g.cap}
-              onInput=${e => update(x => E.updateGenerator(x, g.id, { cap: Math.max(1, Math.floor(Number(e.target.value) || 1)) }))} /></div>
+            <input id=${'gc-' + g.id} class="input" type="number" min="1" max=${E.MAX_CAP} value=${g.cap}
+              onInput=${e => { const v = Math.floor(Number(e.target.value)); setCapMsg(v > E.MAX_CAP ? g.id : null); update(x => E.updateGenerator(x, g.id, { cap: v })); }} /></div>
         </div>
+        ${capMsg === g.id ? html`<p class="ob-note ob-warn" role="status">At most ${E.MAX_CAP} names per question; the limit is set to ${E.MAX_CAP}. For more people, add a second question.</p>` : null}
         <div class="field"><label class="field__label" for=${'gp-' + g.id}>Prompt read to the respondent</label>
           <textarea id=${'gp-' + g.id} class="input ego-prompt" rows="2" value=${g.prompt}
             onInput=${e => update(x => E.updateGenerator(x, g.id, { prompt: e.target.value }))}></textarea></div>
@@ -72,6 +74,7 @@ function textToOptions(t) {
 // tie fields, weighting) behind "Edit questions" (L12).
 export function InterpretersStep({ s, update }) {
   const has = id => s.interpreters.some(i => i.id === id);
+  const [capMsg, setCapMsg] = useState(null);
   const togglePreset = (p, on) => update(x => (on ? E.addInterpreter(x, { preset: p.id }) : E.removeInterpreter(x, p.id)));
   const weighable = s.interpreters.filter(i => i.type === 'number' || i.type === 'ordinal');
   const asked = [...s.interpreters.map(i => i.label), ...(s.tieFields || []).map(f => `${f.label} (your tie)`)];

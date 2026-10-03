@@ -5,6 +5,8 @@ import { tokenize, affect, keywords, topics, diffusion, likelyNonEnglish } from 
 import { cleanText, nameStopwords, corpus } from '../../src/analysis/content/corpus.js';
 import { buildNetwork, defaultSettings, networkFromEdges } from '../../src/analysis/construct.js';
 import { createRng } from '../../src/analysis/rng.js';
+import { holm } from '../../src/analysis/content/diffusion.js';
+import { isCommonWord } from '../../src/analysis/content/stopwords.js';
 
 const T0 = Date.UTC(2026, 0, 5);
 const OPS_WORDS = new Set(['invoice', 'vendor', 'shipment', 'warehouse', 'payroll', 'forecast', 'love', 'wonderful', 'work']);
@@ -192,4 +194,34 @@ test('diffusion: a shuffled baseline near 100% is flagged as leaving little room
   const r2 = diffusion(ring, buildNetwork(ring, s2), { terms: ['zorblax'], reps: 100, seed: 2 }).terms[0];
   assert.equal(r2.null.ceiling, false);
   assert.ok(r2.null.zMax > 3);
+});
+
+test('diffusion: automatic choice skips everyday words that first appear late; p is Holm-corrected', () => {
+  // "started using" arrives with the new word, as in templated text: it is
+  // new to the data but not a new word.
+  const b = new DatasetBuilder({ source: { format: 't', view: VIEWS.FULL } });
+  const ps = Array.from({ length: 30 }, (_, i) => b.node('t:' + i, { label: 'P' + i }));
+  const ch = b.context('c', { kind: 'channel', visibility: 'public' });
+  for (let i = 0; i < 30; i++) b.event({ actor: ps[i], t: T0 + i, targets: [[ps[(i + 1) % 30], 'dm']] });
+  for (let d = 0; d < 60; d++) b.event({ actor: ps[d % 30], t: T0 + d * 24 * H, context: ch, text: 'regular status update' });
+  for (let k = 0; k < 25; k++) b.event({ actor: ps[k], t: T0 + (20 + k) * 24 * H, context: ch, text: 'started using the zorblax again, asked around' });
+  const ds = b.build();
+  const s = defaultSettings(ds);
+  s.rules.adjacency.on = false;
+  const r = diffusion(ds, buildNetwork(ds, s), { reps: 50, seed: 2 });
+  const names = r.terms.map(t => t.term);
+  assert.equal(names[0], 'zorblax', JSON.stringify(names));
+  for (const w of ['started', 'using', 'asked', 'again']) assert.ok(!names.includes(w), w);
+  assert.equal(r.meta.correction, 'holm');
+  assert.equal(r.meta.tested, r.terms.length);
+  for (const t of r.terms) assert.ok(t.null.pAdjusted >= t.null.pUpper);
+});
+
+test('holm: step-down adjusted p-values in input order', () => {
+  // m = 4: sorted 0.01, 0.02, 0.03, 0.2 -> 0.04, 0.06, 0.06, 0.2
+  const out = holm([0.03, 0.01, 0.2, 0.02]);
+  const want = [0.06, 0.04, 0.2, 0.06];
+  out.forEach((x, i) => assert.ok(Math.abs(x - want[i]) < 1e-12, `${i}: ${x}`));
+  assert.deepEqual(holm([0.5, 0.9]), [1, 1]);
+  assert.ok(isCommonWord('started') && isCommonWord('tries') && !isCommonWord('zorblax'));
 });

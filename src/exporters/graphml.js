@@ -14,20 +14,18 @@ import { edgeTieAttributes } from '../analysis/construct.js';
 // Contact details (N19): attributes that reach a person (email addresses,
 // handles, phone numbers, account and workspace ids). With
 // { omitContacts: true } (the Methods & Export default) these columns are left
-// out and ids that carry an account id or address are replaced by p1, p2, ...
+// out and every id is replaced by p1, p2, ... (keys such as roster:leo-park
+// carry the name, and the option promises p1, p2).
 const CONTACT = /(^|_)(e_?mail|mail|email_?address|handles?|user_?name|screen_?name|phone|mobile|tel|telephone|team_?id|user_?id|account_?id|platform_?id|slack_?id|did|acct|website|url|address)(_|$)/;
 export const isContactAttr = key => CONTACT.test(String(key).toLowerCase().replace(/[^a-z0-9]+/g, '_'));
-// Key namespaces that name no account: roster, survey, drawn and interview people.
-const SAFE_KEY = /^(roster|survey|draw|drawn|alter|ego|perceived|net):[^@]*$/;
-
-// Node ids as written to files: the dataset keys, or p1..pn where a key holds
-// contact details and they are left out. One array per export, so node and
+// Node ids as written to files: the dataset keys, or p1..pn when contact
+// details are left out. One array per export, so node and
 // edge tables agree.
 export function exportIds(ds, net, { omitContacts = false } = {}) {
   const ids = new Array(net.n);
   for (let i = 0; i < net.n; i++) {
     const k = String(ds.nodes.keys[net.nodeIds[i]]);
-    ids[i] = omitContacts && !SAFE_KEY.test(k) ? `p${i + 1}` : k;
+    ids[i] = omitContacts ? `p${i + 1}` : k;
   }
   return ids;
 }
