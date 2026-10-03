@@ -599,7 +599,7 @@
     "https://www.cs.cmu.edu/~enron/",
     "https://github.com/enrondata/enrondata/blob/master/data/misc/edo_enron-custodians-data.html"
    ],
-   "license": "Made public by FERC; CMU distributes it \"as a resource for researchers\" with no license. Custodian names and titles: EnronData.org, CC BY 3.0 US. Bundled as facts from the published study, with the citation.",
+   "license": "Made public by FERC; CMU distributes it \"as a resource for researchers\" with no license. Custodian names and titles: EnronData.org, CC BY 3.0 US. Bundled as headers only (who wrote to whom, and when), with the ethics note.",
    "ethics": "These are real people's workplace communications, released during a public investigation without their consent; many were not involved in the wrongdoing. Some messages were removed at employees' request, and in 2026 forensic analyses questioned whether some mailboxes contain forged messages. This subset keeps only who wrote to whom and when (no text, no subjects), but the pattern of a named person's contacts is still personal: use it to learn methods, not to make claims about individuals.",
    "lookFor": [
     "148 people and 21,052 messages among them, Nov 1998 to Jun 2002: 2,440 directed ties.",
