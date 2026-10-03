@@ -110,3 +110,46 @@ test('weighted betweenness: equal-length paths are detected with a relative tole
   const m2 = computeNodeMetrics(networkFromEdges(4, edges.map(([a, b, x]) => [a, b, x * 1e-6])), { which: ['betweennessWeighted'] });
   assert.deepEqual(Array.from(m2.betweennessWeighted), Array.from(m.betweennessWeighted));
 });
+
+// ---- Networks 101 round (N2): the modularity null re-runs community detection ----
+
+test('modularity null: a random network is typical of its own null (the fixed-partition null put it more than 10 sd above)', async () => {
+  const { nullModel, createRewirer } = await import('../../src/analysis/uncertainty.js');
+  const { detectCommunities, modularity } = await import('../../src/analysis/communities.js');
+  const { makeGraph } = await import('../../src/analysis/graph.js');
+  const { createRng } = await import('../../src/analysis/rng.js');
+  // Erdos-Renyi, 120 people, mean degree about 6: Louvain still finds a
+  // partition with modularity ~0.4, which is what random graphs give.
+  const rng = createRng(17), e = [];
+  for (let a = 0; a < 120; a++) for (let b = a + 1; b < 120; b++) if (rng() < 0.05) e.push([a, b, 1]);
+  const net = networkFromEdges(120, e, { directed: false });
+  const com = detectCommunities(net, { seed: 1 });
+  const r = nullModel(net, { stats: ['modularity'], reps: 60, seed: 3, membership: com.membership }).modularity;
+  assert.ok(com.modularity > 0.3, `Louvain finds structure in noise: ${com.modularity}`);
+  assert.ok(r.mean > 0.3, `null mean is what the search finds in random networks: ${r.mean}`);
+  assert.ok(Math.abs(r.z) < 3 && r.p > 0.05, `z ${r.z}, p ${r.p}`);
+  near(r.partition, modularity(makeGraph(120, net.edges.src, net.edges.dst, null, false), com.membership), 1e-12, 'partition shown, unweighted');
+  // The old null (partition held fixed on rewired networks) on the same data.
+  const rw = createRewirer(120, net.edges.src, net.edges.dst, false), rr = createRng(3);
+  const xs = [];
+  for (let k = 0; k < 60; k++) { rw.shuffle(10 * net.edges.count, rr); xs.push(modularity(makeGraph(120, rw.src, rw.dst, null, false, rw.m), com.membership)); }
+  const m = xs.reduce((a, b) => a + b, 0) / xs.length, sd = Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / (xs.length - 1));
+  assert.ok((com.modularity - m) / sd > 10, 'the straw man this replaces');
+});
+
+test('modularity null on weighted ties: weights are ignored on both sides, so a null network is not "significantly low"', async () => {
+  const { nullModel } = await import('../../src/analysis/uncertainty.js');
+  const { detectCommunities } = await import('../../src/analysis/communities.js');
+  const { createRng } = await import('../../src/analysis/rng.js');
+  let low = 0;
+  for (let k = 0; k < 12; k++) {
+    const rng = createRng(100 + k), e = [];
+    for (let a = 0; a < 60; a++) for (let b = a + 1; b < 60; b++) if (rng() < 0.08) e.push([a, b, 1 + rng.int(5)]);
+    const net = networkFromEdges(60, e, { directed: false });
+    const r = nullModel(net, { stats: ['modularity'], reps: 40, seed: k + 1, membership: detectCommunities(net, { seed: 1 }).membership }).modularity;
+    if (r.p <= 0.05) low++;
+  }
+  // Scoring the weighted partition on unweighted ties put 84% of null
+  // networks at p <= 0.05 (all below the null mean).
+  assert.ok(low <= 3, `${low} of 12`);
+});

@@ -5,7 +5,8 @@
 //               chain, which is confirmed by reproducing its reported means).
 //   calibration graphs drawn from the null itself (heavily rewired) should
 //               give p-values that are uniform or conservative: the share
-//               with p <= 0.05 at most about 5%.
+//               with p <= 0.05 at most about 5%. Modularity uses the app's
+//               own partition (Louvain) and a null that re-runs Louvain.
 //   power       planted structure (blocks, triangles, homophily) is detected.
 //   bootstrap   resampleRanks intervals on simulated event data where the true
 //               ranks are known: coverage of the true rank.
@@ -21,6 +22,7 @@ import { robustShifts, cusumShifts, compareBeforeAfter } from '../../../src/anal
 import { createRng } from '../../../src/analysis/rng.js';
 import { computeNodeMetrics } from '../../../src/analysis/metrics.js';
 import { DatasetBuilder } from '../../../src/core/model.js';
+import { detectCommunities } from '../../../src/analysis/communities.js';
 import { makeCase, toNet, tally, quantiles, mean } from '../lib.mjs';
 
 export const name = 'stats';
@@ -99,7 +101,10 @@ function calibration(t, trials, seed, reps) {
     const obs = nullDraw(base, spec.seed);
     const rng = createRng(`cal|${spec.seed}`);
     const ds = attrDs(obs.n, 3, rng);
-    const membership = Int32Array.from({ length: obs.n }, (_, i) => i % 4);
+    // Modularity is tested as the app tests it: Louvain on the observed ties
+    // against Louvain re-run on every rewired network. The partition passed
+    // (the one the views show) only adds modularity.partition for reference.
+    const membership = detectCommunities(obs, { seed: k + 1 }).membership;
     const r = nullModel(obs, { reps, seed: k + 1, ds, attr: 'team', membership });
     t.case();
     for (const s of STATS) if (r[s] && r[s].p != null) { P[s].p.push(r[s].p); P[s].pUpper.push(r[s].pUpper); P[s].pLower.push(r[s].pLower); P[s].z.push(r[s].z); }

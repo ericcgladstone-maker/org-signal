@@ -13,15 +13,18 @@
 import { html, useState, useMemo } from '../../../vendor/preact.js';
 import { store, useStore } from '../store.js';
 import { engine } from '../services/engine.js';
-import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, Swatch, ConstructionButton, useEngine, Flag, Seg, applicabilityReason } from '../components/common.js';
+import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, Swatch, ConstructionButton, useEngine, Flag, Seg, applicabilityReason, Verdict, HowToRead, Term, nullInWords, pShort, chanceWords } from '../components/common.js';
 import { tokens } from '../lib/palette.js';
+import { metricLabel } from '../lib/measures.js';
 import { groupColoring } from '../lib/grouping.js';
 import * as d3 from '../../../vendor/d3.js';
 import { preferredAttributes, isBookkeeping, orderedValues, defaultGroupAttr, label as nodeLabel } from '../lib/dsutil.js';
 import { cachedRender } from '../lib/render-cache.js';
-import { fmtNum, fmtInt, fmtP, fmtPct, humanize, columnFormat } from '../lib/format.js';
+import { fmtNum, fmtInt, fmtPct, fmtDate, humanize, columnFormat } from '../lib/format.js';
 import { isBookkeepingAttr } from '../../analysis/groups.js';
-import { cssVar } from './time.js';
+import { cssVar, useTimeShifts, groupShift, snapshotNote, inWindow } from './time.js';
+import { timeExtent } from '../lib/dsutil.js';
+import { suggestTimeRange } from '../../analysis/time.js';
 
 const MEAN_METRICS = ['degree', 'strength', 'betweenness', 'constraint'];
 const PLANTED = 'Planted group (ground truth)';
@@ -63,7 +66,10 @@ function GroupsInner({ ds, net }) {
   const [cellMode, setCellMode] = useState('density');
   const [openGroup, setOpenGroup] = useState(null);
   const isComm = by === '__community';
-  const reps = net.n > 2000 ? 100 : 200;
+  // One replicate count everywhere (NULL_REPS in analysis/uncertainty.js):
+  // the engine keeps one run per network and statistic, so Network, Groups
+  // and the reports quote the same numbers (N3).
+  const reps = 200;
 
   const res = useEngine('groups', async () => {
     const r = await engine.groups(by, { membership: communities?.membership });
@@ -91,6 +97,7 @@ function GroupsInner({ ds, net }) {
   const assort = typeof r?.assortativity === 'number' ? r.assortativity : r?.assortativity?.observed;
   const ei = typeof r?.eiIndex === 'number' ? r.eiIndex : r?.eiIndex?.observed;
   const nA = nul.data?.attrAssortativity, nE = nul.data?.eiIndex, nQ = nul.data?.modularity;
+  const eiExp = !isComm && nE?.groups ? Object.fromEntries(nE.groups.map(g => [String(g.value), g])) : null;
   const colFmt = useMemo(() => {
     const f = { density: columnFormat(groupsSorted.map(g => g.density)), ei: columnFormat(groupsSorted.map(g => g.eiIndex ?? g.ei)) };
     for (const m of shownMeans) f[m] = columnFormat(groupsSorted.map(g => means?.[String(g.value)]?.[m]));
@@ -112,6 +119,7 @@ function GroupsInner({ ds, net }) {
         ...(attrs.length ? [{ group: 'Attributes', options: attrs.map(a => ({ value: a.key, label: `${attrLabel(ds, a.key)} (${a.values.length})` })) }] : []),
       ]} />
     </div>
+    <${ShiftBanner} ds=${ds} by=${by} isComm=${isComm} name=${name} attrs=${attrs} />
     ${!attrs.length && html`<p class="small text2">This data has no attribute that sorts people into a few groups. Join an HR or attribute table in the Data view to compare departments or teams; until then the groups are the communities detected in the network.</p>`}
     ${groupAp && groupAp.level !== 'ok' && html`<p class="small text2"><${Flag} level=${groupAp.level} /> ${applicabilityReason(groupAp)}</p>`}
     ${res.loading && html`<${Loading}>Comparing groups</${Loading}>`}
@@ -121,7 +129,7 @@ function GroupsInner({ ds, net }) {
       ${r.coverage != null && r.coverage < 1 && html`<p class="small text2"><${Flag} level="caution" /> ${fmtPct(r.coverage)} of people in the network have a value for ${name}; the rest are left out of these comparisons.</p>`}
       <section class="section" style="border-top:0;padding-top:.25rem" aria-labelledby="reading-h">
         <h2 id="reading-h" class="section__title">Reading</h2>
-        <${Reading} isComm=${isComm} name=${isComm ? 'community' : name.replace(/\s*\([^)]*\)$/, '').toLowerCase()} assort=${assort} ei=${ei} nA=${nA} nE=${nE} nQ=${nQ} communities=${communities} loadingNull=${nul.loading} nullError=${nul.error} meta=${nul.data?.meta} />
+        <${Reading} isComm=${isComm} name=${isComm ? 'community' : name.replace(/\s*\([^)]*\)$/, '').toLowerCase()} assort=${assort} ei=${ei} nA=${nA} nE=${nE} nQ=${nQ} communities=${communities} loadingNull=${nul.loading} nullError=${nul.error} meta=${nul.data?.meta} groups=${groupsSorted} />
       </section>
       <section class="section" aria-labelledby="gt-h">
         <h2 id="gt-h" class="section__title">${isComm ? 'Communities' : name}</h2>
@@ -131,7 +139,8 @@ function GroupsInner({ ds, net }) {
             <th scope="col" class="num"><${MetricName} metric="density" short=${true} showFlag=${false} /> within</th>
             <th scope="col" class="num">Ties within</th><th scope="col" class="num">Ties across</th>
             <th scope="col" class="num"><${MetricName} metric="eiIndex" showFlag=${false} /></th>
-            ${shownMeans.map(m => html`<th scope="col" class="num">Mean <${MetricName} metric=${m} short=${true} iconOnly=${true} /></th>`)}
+            ${eiExp && html`<th scope="col" class="num">E-I if random</th>`}
+            ${shownMeans.map(m => html`<th scope="col" class="num">Mean <${MetricName} metric=${m} label=${metricLabel(m, net.directed).replace(/^./, c => c.toLowerCase())} short=${true} iconOnly=${true} /></th>`)}
           </tr></thead>
           <tbody>${groupsSorted.map(g => { const v = String(g.value); const open = openGroup === v; const mem = members[v] || []; return html`<tr>
             <td class="name"><button type="button" class="gview__rowbtn" aria-expanded=${String(open)} onClick=${() => setOpenGroup(open ? null : v)}><span class="gview__chev" aria-hidden="true"></span><span title=${scale.isOther(v) ? 'Past the eight largest groups: gray (Other groups) on the map' : undefined}><${Swatch} color=${scale.color(v)} /></span> ${labelOf(g.value)}</button></td>
@@ -140,14 +149,15 @@ function GroupsInner({ ds, net }) {
             <td class="num">${fmtInt(g.internalTies ?? g.internal)}</td>
             <td class="num">${fmtInt(g.externalTies ?? g.external)}</td>
             <td class="num">${colFmt.ei(g.eiIndex ?? g.ei)}</td>
+            ${eiExp && html`<td class="num" title=${eiExp[v] ? `Rewired networks with the same degrees: ${colFmt.ei(eiExp[v].lo)} to ${colFmt.ei(eiExp[v].hi)} in 95% of them; ${pShort(eiExp[v].p, eiExp[v].replicates)}` : undefined}>${eiExp[v] ? colFmt.ei(eiExp[v].mean) : '–'}</td>`}
             ${shownMeans.map(m => html`<td class="num">${colFmt[m](means?.[v]?.[m])}</td>`)}
-          </tr>${open && html`<tr class="gview__detail"><td colspan=${6 + shownMeans.length}>
+          </tr>${open && html`<tr class="gview__detail"><td colspan=${6 + (eiExp ? 1 : 0) + shownMeans.length}>
             <p class="gview__members">${mem.length ? html`${mem.slice(0, 40).map(i => nodeLabel(ds, i)).join(', ')}${mem.length > 40 ? `, and ${fmtInt(mem.length - 40)} more` : ''}.` : 'No members in the current network.'}${metrics?.node?.degree ? ' Most connected first.' : ''}</p>
             ${mem.length > 0 && html`<button type="button" class="tlink" onClick=${() => store.actions.select(mem)}>Select these ${fmtInt(mem.length)} people</button>
               <span class="small muted"> The selection carries to Network and People.</span>`}
           </td></tr>`}`; })}</tbody>
         </table></div>
-        <p class="basis">Select a group to list its members. E-I index per group: ties leaving the group minus ties inside it, over all its ties (-1 entirely inward, +1 entirely outward). Density within: share of possible ties inside the group that exist.</p>
+        <p class="basis">Select a group to list its members. E-I index per group: ties leaving the group minus ties inside it, over all its ties (-1 entirely inward, +1 entirely outward).${eiExp ? ` E-I if random: the average over ${nE.replicates} rewired networks with the same degrees; a group well below it keeps to itself more than its size and connections explain.` : ''} Density within: share of possible ties inside the group that exist.</p>
       </section>
       ${mixing && shown.length > 1 && html`<section class="section" aria-labelledby="mx-h">
         <div class="row row--between"><h2 id="mx-h" class="section__title" style="margin:0">Mixing matrix</h2>
@@ -175,7 +185,7 @@ function MixTable({ rows, values, mode, caption }) {
   const narrow = rows.length > 10;
   // Ink by the fill's lightness, so every printed value keeps its contrast.
   const ink = (v) => (d3.lab(color(v)).l > 58 ? '#051521' : 'var(--text)');
-  return html`<div class="table-wrap">
+  return html`<div class="table-wrap mx-wrap">
     <table class=${`mx${narrow ? ' mx--narrow' : ''}`}>
       <caption class="visually-hidden">${caption}</caption>
       <thead><tr><td></td>${rows.map(c => html`<th scope="col"><span>${c}</span></th>`)}</tr></thead>
@@ -194,30 +204,94 @@ function MixTable({ rows, values, mode, caption }) {
   </div>`;
 }
 
-function Reading({ isComm, name, assort, ei, nA, nE, nQ, communities, loadingNull, nullError, meta }) {
+// Verdict first, then the number in plain words, then the basis (decision 5).
+function Reading({ isComm, name, assort, ei, nA, nE, nQ, communities, loadingNull, nullError, meta, groups }) {
   const sig = (x) => x && Number.isFinite(x.p) && x.p < 0.05;
   const usable = (x) => x && Number.isFinite(x.mean);
-  const p = [];
+  const reps = meta?.reps ?? 200;
+  const basis = (x) => `Compared with ${reps} random networks that keep everyone's number of ties (${meta?.model || 'degree-preserving rewiring'}, seed ${meta?.seed ?? 1})${x ? `; z ${fmtNum(x.z, { digits: 2 })}` : ''}; two-sided p, where the smallest possible is 1/${reps + 1}.`;
+  const out = [];
   if (isComm) {
-    if (communities) p.push(html`<p>The network splits into ${communities.count} communities with modularity ${fmtNum(communities.modularity)}. ${usable(nQ) ? (sig(nQ) && nQ.observed > nQ.mean
-      ? html`That is well above what random networks with the same degrees produce (${fmtNum(nQ.mean)} on average; z ${fmtNum(nQ.z, { digits: 2 })}, ${fmtP(nQ.p)}), so the grouping reflects real structure.`
-      : html`That is not clearly above random networks with the same degrees (${fmtNum(nQ.mean)} on average; ${fmtP(nQ.p)}); treat the communities as one of many similar partitions.`) : ''}</p>`);
+    if (communities) {
+      const head = `The network splits into ${communities.count} communities (modularity ${fmtNum(communities.modularity)}).`;
+      if (usable(nQ)) {
+        const real = sig(nQ) && nQ.observed > nQ.mean;
+        out.push(html`<${Verdict} level=${real ? null : 'info'}
+          verdict=${real ? `${head} That split is real structure: random networks with the same numbers of ties split far less cleanly.` : `${head} That is not clearly cleaner than random networks give; treat the communities as one of many similar splits.`}
+          plain=${html`On the ties alone, ignoring weights, the best split found scores ${fmtNum(nQ.observed)}; the same search on random networks with the same numbers of ties scores ${fmtNum(nQ.mean)} on average, and ${nullInWords(nQ.p, nQ.replicates ?? reps)}. (Modularity 0 means no cleaner than chance; above about 0.3 is usually clear structure, but random networks reach that too, which is why the comparison re-runs the search on each.)`}
+          details=${`${basis(nQ)} Community detection (Louvain) is re-run on every random network.`} />`);
+      } else out.push(html`<p class="verdict__claim">${head}</p>`);
+    }
   } else {
     if (Number.isFinite(assort)) {
       const plain = assort > 0.3 ? `People tie mostly within their ${name}` : assort > 0.05 ? `People tie somewhat more within their ${name} than across` : assort < -0.05 ? `People tie more across ${name} lines than within` : `Ties mostly ignore ${name}`;
-      p.push(html`<p>${plain}: assortativity is ${fmtNum(assort)} (1 means every tie stays within a group, 0 means ties ignore it). ${nA ? (!usable(nA)
-        ? html`There are too few ties between people with a value to compare with rewired networks, so no test is reported.`
-        : sig(nA)
-          ? html`Rewired networks with the same degrees give ${fmtNum(nA.mean)} (z ${fmtNum(nA.z, { digits: 2 })}, ${fmtP(nA.p)}): people tie ${nA.observed > nA.mean ? 'within' : 'across'} their ${name} more than the degree sequence alone explains.`
-          : html`That is not distinguishable from rewired networks with the same degrees (${fmtNum(nA.mean)}; ${fmtP(nA.p)}), so ${name} does not explain who ties to whom here.`) : ''}</p>`);
+      const scale = `Assortativity ${fmtNum(assort)} (1 means every tie stays within a group, 0 means ties ignore ${name})`;
+      if (nA && !usable(nA)) out.push(html`<${Verdict} verdict=${`${plain}.`} plain=${`${scale}. There are too few ties between people with a value to compare with random networks, so no test is reported.`} />`);
+      else if (usable(nA)) {
+        out.push(html`<${Verdict} level=${sig(nA) ? null : 'info'}
+          verdict=${sig(nA) ? `${plain}: ${Math.abs(nA.z) >= 4 ? 'far ' : ''}more ${nA.observed > nA.mean ? 'within' : 'across'} than random networks with the same numbers of ties give.` : `${plain}, but no more than random networks with the same numbers of ties give, so ${name} does not explain who ties to whom here.`}
+          plain=${html`${scale}; random networks with the same numbers of ties give ${fmtNum(nA.mean)} on average, and ${nullInWords(nA.p, nA.replicates ?? reps)}.`} />`);
+      } else out.push(html`<${Verdict} verdict=${`${plain}.`} plain=${`${scale}.`} />`);
     }
-    if (Number.isFinite(ei)) p.push(html`<p>The overall E-I index is ${fmtNum(ei)}: ${ei < -0.2 ? 'most ties stay inside groups' : ei > 0.2 ? 'most ties cross groups' : 'ties are split between staying inside and crossing groups'}${usable(nE) ? html`; random expectation ${fmtNum(nE.mean)} (${fmtP(nE.p)}).` : '.'} Larger groups have more chances for internal ties, so compare with the expectation rather than with zero.</p>`);
+    if (Number.isFinite(ei)) {
+      const lean = ei < -0.2 ? 'Most ties stay inside groups' : ei > 0.2 ? 'Most ties cross groups' : 'Ties are split between staying inside and crossing groups';
+      const outward = (groups || []).filter(g => Number.isFinite(g.eiIndex) && g.eiIndex > 0 && g.size > 1).map(g => String(g.value));
+      const exp = new Map((nE?.groups || []).map(g => [String(g.value), g]));
+      const stillIn = outward.length && outward.every(v => exp.get(v) && exp.get(v).mean > (groups.find(g => String(g.value) === v)?.eiIndex ?? Infinity));
+      const names = `${outward.slice(0, 4).join(', ')}${outward.length > 4 ? ` and ${outward.length - 4} more` : ''}`;
+      const notAll = ei < 0 && outward.length ? ` Not every group keeps to itself: ${names} ${outward.length === 1 ? 'has' : 'have'} more ties out than in${stillIn ? ', though fewer than random networks give (see E-I if random in the table)' : ''}.` : '';
+      out.push(html`<${Verdict}
+        verdict=${usable(nE) ? `${lean}, ${chanceWords(nE.z, { more: 'more outward', less: 'more inward' })} for groups of these sizes.${notAll}` : `${lean}.${notAll}`}
+        plain=${html`Overall <${Term} k="eiIndex">E-I index</${Term}> ${fmtNum(ei)} (-1 all inside, +1 all across)${usable(nE) ? html`; random networks with the same numbers of ties give ${fmtNum(nE.mean)}, and ${nullInWords(nE.p, nE.replicates ?? reps)}` : ''}. Larger groups have more chances for inside ties, so compare with the random value, not with zero.`}
+        details=${(usable(nA) || usable(nE)) ? basis(usable(nE) ? nE : nA) : null} />`);
+    }
   }
   return html`<div class="reading">
-    ${p}
-    ${loadingNull && html`<p class="small muted"><span class="spinner"></span> Testing against rewired networks; the figures above are final, the comparison fills in when it is done.</p>`}
-    ${nullError && html`<p class="small"><${Flag} level="error" /> Null model failed: ${nullError.message}</p>`}
-    ${(usable(nA) || usable(nE) || usable(nQ)) && html`<p class="basis">Basis: ${meta?.model || 'degree-preserving rewiring'}, ${meta?.reps ?? 200} replicates, seed ${meta?.seed ?? 1}; two-sided empirical p.</p>`}
+    ${out}
+    ${loadingNull && html`<p class="small muted"><span class="spinner"></span> Comparing with ${reps} random networks; the numbers above are final, the comparison fills in when it is done.</p>`}
+    ${nullError && html`<p class="small"><${Flag} level="error" /> Comparison with random networks failed: ${nullError.message}</p>`}
+    ${!isComm && html`<${HowToRead} means="E-I index: ties leaving a group minus ties inside it, over all its ties. Assortativity: how much more often ties join people with the same value than chance." scale="E-I runs from -1 (every tie inside) to +1 (every tie across); the random value is what groups of these sizes would show if ties ignored the groups." mistake="Calling a group siloed because its E-I is below zero. Big groups have more people to tie to inside; compare with the random value, and remember the number covers the whole period: if something changed partway, it mixes before and after." />`}
+  </div>`;
+}
+
+// When the Time view's shift scan finds a change, Groups says so before any
+// whole-period number: a silo that formed halfway hides in the average (J2).
+// One click compares the E-I index and crossing ties before and after.
+function ShiftBanner({ ds, by, isComm, name, attrs }) {
+  const timed = useMemo(() => Number.isFinite(timeExtent(ds)[0]), [ds]);
+  const dense = useMemo(() => (timed ? suggestTimeRange(ds) : null), [ds, timed]);
+  const range = dense ? { start: dense.start, end: dense.end } : { start: null, end: null };
+  const ap = useStore(s => s.applicability?.detectShifts);
+  const enabled = timed && ap?.level !== 'na';
+  const { series, shifts, groupAttr } = useTimeShifts(ds, { range, enabled });
+  const sh = groupShift(shifts.data?.shifts);
+  const attr = isComm ? (groupAttr && attrs.some(a => a.key === groupAttr) ? groupAttr : null) : by;
+  const [ran, setRan] = useState(null);
+  const q = useEngine('groups-ba', () => engine.beforeAfter(ran.date, { metrics: [], attr: ran.attr, start: range.start ?? undefined, end: range.end ?? undefined }), [ran?.date, ran?.attr, range.start, range.end], { enabled: !!ran, label: 'Comparing groups before and after' });
+  if (!enabled || !sh) return null;
+  const unit = shifts.data?.meta?.window || series.data?.meta?.window;
+  const what = sh.metric === 'crossGroupShare' ? `the share of ties crossing ${humanize(sh.label.replace(/^cross-| share of ties$/g, '')).toLowerCase()} lines` : humanize(sh.label).toLowerCase();
+  const mix = q.data?.mixing;
+  const fmtV = (v) => (sh.metric === 'crossGroupShare' ? fmtPct(v) : fmtNum(v));
+  const gName = attr ? attrLabel(ds, attr).toLowerCase() : name;
+  return html`<div class="notice-line gview__shift" role="note">
+    <${Flag} level="caution" />
+    <div class="grow">
+      <p><strong>The network changed partway through.</strong> Time found a ${sh.direction === 'up' ? 'rise' : 'drop'} in ${what} ${inWindow(sh.start, unit)}, from ${fmtV(sh.baseline)} to ${fmtV(sh.value)}${sh.heldToEnd ? ', and it stayed at the new level to the end of the data' : Number.isFinite(sh.held) ? `; it stayed nearer the new level in ${sh.held} of the ${sh.span} ${unit || 'window'}s from then on` : ''}. The numbers below cover the whole period, so they mix before and after.</p>
+      ${attr ? html`<p class="gview__shift-acts"><button type="button" class="tlink" disabled=${q.loading} onClick=${() => setRan({ date: sh.start, attr })}>Compare ${gName} mixing before and after ${fmtDate(sh.start)}</button>
+        <a class="tlink tlink--arrow" href="#time" onClick=${e => { e.preventDefault(); store.actions.setView('time'); }}>See it in Time</a></p>` : html`<p class="small"><a class="tlink tlink--arrow" href="#time" onClick=${e => { e.preventDefault(); store.actions.setView('time'); }}>See it in Time</a></p>`}
+      ${q.loading && html`<${Loading}>Building the networks before and after</${Loading}>`}<${ErrorLine} error=${q.error} />
+      ${mix && html`<div class="table-wrap"><table class="tbl gview__shift-tbl">
+          <thead><tr><th scope="col">By ${gName}</th><th scope="col" class="num">Before ${fmtDate(q.data.date)}</th><th scope="col" class="num">After</th></tr></thead>
+          <tbody>
+            <tr><td><${Term} k="eiIndex">E-I index</${Term}></td><td class="num">${fmtNum(mix.before.eiIndex)}</td><td class="num">${fmtNum(mix.after.eiIndex)}</td></tr>
+            <tr><td>Ties crossing groups</td><td class="num">${fmtPct(mix.before.crossShare)}</td><td class="num">${fmtPct(mix.after.crossShare)}</td></tr>
+            <tr><td>Ties with both ends in a group</td><td class="num">${fmtInt(mix.before.coded)}</td><td class="num">${fmtInt(mix.after.coded)}</td></tr>
+          </tbody></table></div>
+        <p class="small">${Number.isFinite(mix.p) && mix.p < 0.05 ? `Ties ${mix.diff < 0 ? 'turned inward' : 'turned outward'} after the date, unlikely by chance (${pShort(mix.p, mix.reps)}).` : `No clear change in mixing at this date${Number.isFinite(mix.p) ? ` (${pShort(mix.p, mix.reps)})` : ''}.`} Periods of ${Math.round(q.data.span / 86400000)} days either side; messages on the date count as after.</p>
+`}
+      ${attr && html`<p class="small text2">${snapshotNote(ds, attr, attrLabel(ds, attr))}</p>`}
+    </div>
   </div>`;
 }
 

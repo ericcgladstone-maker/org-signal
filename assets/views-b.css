@@ -26,6 +26,7 @@
 .tview__src-bar{position:absolute;top:0;bottom:0;background:var(--cat-1);min-width:2px}
 .tview__src-dates{color:var(--text-muted);font-variant-numeric:tabular-nums}
 .tview__verdict{font-size:var(--fs-body, 1rem);color:var(--text);max-width:66ch;margin:0 0 .75rem}
+.tview__verdict p{margin:0 0 .35rem}
 .tview__rowbtn{background:none;border:0;padding:.15rem 0;color:var(--text);font:inherit;text-align:left;cursor:pointer;border-bottom:1px solid var(--accent-dim);min-height:24px}
 .tview__rowbtn:hover{border-bottom-color:var(--accent)}
 .tview__rowbtn[aria-expanded='true']{font-weight:600}
@@ -48,7 +49,23 @@
 .gview__rowbtn[aria-expanded='true'] .gview__chev{transform:rotate(45deg)}
 .gview__rowbtn:hover{color:var(--accent)}
 .gview__detail td{padding-top:0}
-/* Mixing matrix as a real table: rotated column heads, colored cells. */
+/* "The network changed partway through" banner (J2). */
+.gview__shift{margin:.25rem 0 1rem;max-width:62rem}
+.gview__shift p{margin:0 0 .4rem;max-width:var(--measure)}
+.gview__shift strong{color:var(--text)}
+.gview__shift-acts{display:flex;flex-wrap:wrap;gap:.4rem 1.25rem}
+.gview__shift-tbl{max-width:30rem;margin:.25rem 0 .5rem}
+.gview__shift .tlink{white-space:normal;text-align:left}
+@media (max-width:640px){
+  .gview__shift{display:block}
+  .gview__shift > .flag{display:inline-flex;margin-bottom:.25rem}
+}
+.reading .verdict + .verdict{margin-top:.9rem}
+.reading .howto{margin-top:.75rem}
+/* Mixing matrix as a real table: rotated column heads, colored cells. The
+   wrapper is the containing block of the cells' visually hidden values, so
+   they scroll with it instead of widening the page on phones. */
+.mx-wrap{position:relative}
 .mx{border-collapse:separate;border-spacing:2px;font-size:.75rem;font-variant-numeric:tabular-nums}
 .mx th{font-family:var(--sans);font-weight:400;color:var(--text-2);text-transform:none;letter-spacing:0}
 .mx thead th{height:7.5rem;vertical-align:bottom;padding:0;width:2.9rem;min-width:2.9rem}
@@ -76,6 +93,8 @@
 .diff-card h3{font-size:1rem;font-weight:600;margin:0 0 .15rem}
 .diff-card .kv{margin-top:.35rem}
 .diff-card details{margin-top:.25rem}
+.diff-card__room{margin:.35rem 0 0;color:var(--text-2)}
+.cview__tabintro{margin:0 0 .8rem;max-width:var(--measure)}
 @media (max-width:640px){
   .bars{grid-template-columns:minmax(5rem,9rem) minmax(0,1fr) 3.25rem}
 }

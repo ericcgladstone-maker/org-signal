@@ -17,7 +17,7 @@ What was verified, against what, how often, how tightly, and what was found. The
 | content | VADER per message and aggregated, keyword counts and TF-IDF, tokenizer | 300 datasets | 414,205 | 0 |
 | recovery | generator + recoveryCheck over every context, medium and preset; shift false alarms and power | 1,858 generator runs | | see below |
 
-About 13 million comparisons in all, in 13 minutes. A second seed (`--seed 2`, after the fixes) of reference, invariance, construction, stats and consistency added 3,000 + 1,500 graphs, 6,000 construction settings, 1,275 statistical trials and 20 datasets: 8.35 million comparisons, 0 failures. Seed 1's reference, invariance and closed-form checks were rerun after the last fix: 0 failures. Seeds are part of every recorded case (`spec.seed`), so any failure replays exactly.
+About 13 million comparisons in all, in 13 minutes. A second seed (`--seed 2`, after the fixes) of reference, invariance, construction, stats and consistency added 3,000 + 1,500 graphs, 6,000 construction settings, 1,275 statistical trials and 20 datasets: 8.35 million comparisons, 0 failures. Seed 1's reference, invariance and closed-form checks were rerun after the last fix: 0 failures. Seeds are part of every recorded case (`spec.seed`), so any failure replays exactly. After the modularity-null change (section 5), the stats calibration and power parts at full size (600 + 60 graphs, seed 1) and a quick campaign of every check (`--scale 0.1`) gave 0 failures.
 
 ## Graph cases
 
@@ -189,8 +189,10 @@ The API doc and the betweenness glossary entry now say to request exact values b
 | reciprocity (300 directed) | 4.0% | 7.0% | 0.153 (discrete, conservative) | -0.07, 0.95 |
 | attribute assortativity | 5.5% | 10.3% | 0.048 | 0.00, 1.06 |
 | E-I index | 5.2% | 9.7% | 0.062 | 0.00, 1.06 |
-| modularity (fixed partition) | 4.5% | 8.8% | 0.047 | -0.03, 1.02 |
+| modularity (Louvain re-run per replicate, since 2026-10-03) | 5.2% | 10.3% | 0.048 | -0.02, 0.99 |
+| modularity, old fixed-partition null (replaced) | 4.5% | 8.8% | 0.047 | -0.03, 1.02 |
 
+- **Modularity null (Networks 101 round, N2).** The table's old row tested a fixed, arbitrary partition, which is calibrated for that partition but is not what the app tests: the views compare the partition Louvain found with rewired networks. Run that way, the old null (partition held fixed on rewired networks) put 300 of 300 null networks at p <= 0.05, because Louvain finds modularity 0.2-0.4 in any sparse random network while a fixed partition scores about 0 there. The replacement re-runs Louvain on every rewired network and on the observed ties (weights ignored on both sides): 5.2% at 0.05 over the 600 null draws above (unit weights, deciles of p 0.10 / 0.25 / 0.53 / 0.76 / 0.91), and 4.0% over 300 null draws with integer weights 1-5 (z mean -0.04). Scoring the weighted partition on unweighted ties instead put 84% of those weighted null networks at p <= 0.05, all below the null mean, which is why the observed side runs the same search. Power is unchanged (60 of 60 planted-block graphs). Cost: about 1.1-2x the rewiring alone (numbers in the API doc, Uncertainty). Regression tests: `test/accuracy/regressions.test.js` (random network typical of its null, old null more than 10 sd off; weighted null networks not "significantly low").
 - **Power.** Planted blocks (p_in 0.3, p_out 0.02) and planted reciprocity were detected at p <= 0.05 in 60 of 60 graphs for transitivity, attribute assortativity, modularity and reciprocity.
 
 **Bootstrap rank intervals** (`resampleRanks`, 200 replicates) on 100 simulated event datasets, where the true rates are known:
@@ -332,7 +334,8 @@ Each has a regression test in `test/accuracy/`.
    - Calibration is now 3.5-6% (`src/analysis/time.js`, `compareBeforeAfter`, `permutationP`).
 5. **Sampled values in time series and before/after were not labelled.** Windows above 3,000 people use pivots, and path lengths come from 200 sources above 200 people. Both are now listed in `meta`.
 6. **Keyword `overall.messages` counted bot messages** while `count` did not (`src/analysis/content/keywords.js`).
-7. **Docs corrected:**
+7. **Modularity null (2026-10-03, Networks 101 round).** The null kept the observed partition fixed on rewired networks, a straw man: every partition looked significant (100% of null networks at p <= 0.05 when tested as the app tests). Louvain is now re-run on every replicate and on the observed ties; calibration 5.2% (unit weights) and 4.0% (weighted) at 0.05 (section 5; `src/analysis/uncertainty.js`, `nullModel`). The null-model replicate count is now one value, 200, for every view, and results are cached per network so views quote one run.
+8. **Docs corrected:**
    - glossary: CUSUM h was given as 5 (it is 6; 9 for groups, 12 for people); `dz` described the old test; the eigenvector and betweenness approximation notes
    - API doc: time windows leave out isolates and undated events, approximation accuracy, shift-detection numbers, construction details above, the networkx constraint difference
 

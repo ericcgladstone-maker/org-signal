@@ -354,7 +354,31 @@ export function robustShifts(x, { threshold = 3.5, baseline = 8, minBaseline = 4
       else { run = { window: t, end: t, length: 1, value: x[t], baseline: med, z, peak: t, direction: dir }; out.push(run); }
     } else run = null;
   }
+  for (const r of out) Object.assign(r, persistence(x, r.window, r.end, r.baseline, r.direction));
   return out;
+}
+
+// How long a shift lasted, judged against the baseline before it rather than
+// against the rolling one: the rolling baseline absorbs a lasting step within
+// a few windows, so a run of flagged windows ("for 2 windows") understates a
+// level that never came back (J3). From the first flagged window to the end
+// of the series, each later window is assigned to whichever level it is
+// nearer: the pre-shift baseline or the level of the flagged run.
+// -> { level, held, span, heldToEnd, lastHeld }: held of span tested windows
+// sit nearer the new level; heldToEnd when every one of them does.
+export function persistence(x, first, last, baseline, direction) {
+  let lv = 0, k = 0;
+  for (let t = first; t <= last; t++) if (Number.isFinite(x[t])) { lv += x[t]; k++; }
+  const level = k ? lv / k : NaN;
+  const mid = (level + baseline) / 2;
+  let held = 0, span = 0, lastHeld = first, broken = false;
+  for (let t = first; t < x.length; t++) {
+    if (!Number.isFinite(x[t])) continue;
+    span++;
+    const near = direction === 'up' ? x[t] > mid : x[t] < mid;
+    if (near) { held++; if (!broken) lastHeld = t; } else broken = true;
+  }
+  return { level, held, span, heldToEnd: span > 0 && held === span, lastHeld };
 }
 
 // Two-sided tabular CUSUM on values standardised by the first `baseline`
@@ -378,6 +402,7 @@ export function cusumShifts(x, { baseline = 8, k = 0.5, h = 5, count = false, no
     if (hi > h) { out.push({ window: startHi, detected: t, direction: 'up', statistic: hi, baseline: med, value: x[t] }); hi = 0; }
     if (lo > h) { out.push({ window: startLo, detected: t, direction: 'down', statistic: lo, baseline: med, value: x[t] }); lo = 0; }
   }
+  for (const r of out) Object.assign(r, persistence(x, r.window, r.detected, r.baseline, r.direction));
   return out;
 }
 
@@ -432,7 +457,7 @@ export function detectShifts(series, opts = {}) {
     for (const [a, b] of segs) {
       if (b - a < 2) continue;
       for (const r of raw(m.slice(a, b), count, thr, noise)) {
-        for (const f of ['window', 'end', 'peak', 'detected']) if (r[f] != null) r[f] += a;
+        for (const f of ['window', 'end', 'peak', 'detected', 'lastHeld']) if (r[f] != null) r[f] += a;
         res.push(r);
       }
     }
@@ -485,7 +510,7 @@ export function detectShifts(series, opts = {}) {
     for (const i of top) push('node', i, opts.labels?.[i] ?? String(i), metric, findMasked(arrs.map(a => a[i]), COUNTS.has(metric), nodeThr, null, edgesOf(series.nodeSources?.[i] || [])));
   }
   out.sort((a, b) => Math.abs(b.z ?? b.statistic) - Math.abs(a.z ?? a.statistic));
-  return { shifts: out, meta: { method, threshold: opts.threshold ?? (method === 'cusum' ? 6 : 3.5), nodeThreshold: nodeThr, groupThreshold: groupThr, baseline: opts.baseline ?? 8, windows: W.length, seriesScanned: scanned, partialWindowsSkipped: partial.filter(Boolean).length,
+  return { shifts: out, meta: { method, window: series.meta?.window ?? null, threshold: opts.threshold ?? (method === 'cusum' ? 6 : 3.5), nodeThreshold: nodeThr, groupThreshold: groupThr, baseline: opts.baseline ?? 8, windows: W.length, seriesScanned: scanned, partialWindowsSkipped: partial.filter(Boolean).length,
     sourceEdges: (series.sources || []).filter(x => x.material).flatMap(x => [['starts', x.start], ['ends', x.end]].map(([kind, t]) => ({ source: x.id, label: x.label, kind, t, window: winOf(t) }))).filter(e => netEdges.includes(e.window)),
     sourceEdgeWindowsSkipped: suppressed } };
 }
@@ -570,9 +595,33 @@ export function compareBeforeAfter(ds, settings, date, opts = {}) {
     date, span, before: { start: date - span, end: date, nodes: before.n, ties: before.edges.count }, after: { start: date, end: date + span, nodes: after.n, ties: after.edges.count },
     node, network, cautions: cautions.filter(c => c.material),
     ties: { formed: ka.size - kept, dissolved: kb.size - kept, persisted: kept, jaccard: ka.size + kb.size - kept ? kept / (ka.size + kb.size - kept) : NaN },
-    meta: { test: 'randomisation test: each event of the two periods relabelled before or after at random, mean per-person difference recomputed', reps, metricReps: opts.metricReps ?? 199, effectSize: "Cohen's d_z = mean difference / sd of differences", approximate },
+    meta: { test: 'randomization test: each event of the two periods relabeled before or after at random, mean per-person difference recomputed', boundary: 'events on the date itself count as after', reps, metricReps: opts.metricReps ?? 199, effectSize: "Cohen's d_z = mean difference / sd of differences", approximate },
   };
   if (opts.attr) {
+    // Group mixing either side of the date: the E-I index and the share of
+    // ties that cross groups. A silo or a reorg changes who ties to whom more
+    // than how much, so this is the comparison Groups needs (J2). The
+    // attribute is one value per person (a snapshot), so if people moved
+    // groups at the date, their ties into the new group count as crossing.
+    const vals = new Map();
+    const code = Int32Array.from({ length: N }, (_, i) => {
+      const v = ds.nodes.attrs[i]?.[opts.attr];
+      if (v == null || v === '') return -1;
+      const key = String(v);
+      if (!vals.has(key)) vals.set(key, vals.size);
+      return vals.get(key);
+    });
+    const mixOf = (net) => {
+      let I = 0, E = 0;
+      for (let e = 0; e < net.edges.count; e++) {
+        const a = code[net.nodeIds[net.edges.src[e]]], b = code[net.nodeIds[net.edges.dst[e]]];
+        if (a < 0 || b < 0) continue;
+        if (a === b) I++; else E++;
+      }
+      return { within: I, across: E, coded: I + E, eiIndex: I + E ? (E - I) / (E + I) : NaN, crossShare: I + E ? E / (I + E) : NaN };
+    };
+    const mb = mixOf(before), ma = mixOf(after);
+    res.mixing = { attr: opts.attr, before: mb, after: ma, diff: ma.eiIndex - mb.eiIndex, snapshot: true, ...mixingP(ds, wSettings, evB, evA, code, mb, ma, { reps, rng }) };
     const groups = new Map();
     const countIn = (a0, a1) => { const c = new Map(); for (const i of eventsBetween(sorted, a0, a1)) { const v = ds.nodes.attrs[ds.events.actor[i]]?.[opts.attr]; if (v != null) c.set(String(v), (c.get(String(v)) || 0) + 1); } return c; };
     const cb = countIn(date - span, date), ca = countIn(date, date + span);
@@ -680,6 +729,34 @@ function permutationP(ds, s, evB, evA, metrics, node, { reps, metricReps, rng, a
   return out;
 }
 
+// Event-relabelling p for the change in the E-I index across the date, as
+// for the count metrics: evidence emitted once, ties re-summed per shuffle.
+// Turn-taking ties depend on message order, so with adjacency on there is no
+// test (p: null).
+function mixingP(ds, s, evB, evA, code, mb, ma, { reps, rng }) {
+  const obs = ma.eiIndex - mb.eiIndex;
+  if (s.rules.adjacency?.on || !Number.isFinite(obs)) return { p: null, reps: 0 };
+  const union = new Int32Array(evB.length + evA.length);
+  union.set(evB, 0); union.set(evA, evB.length);
+  const T = tieAggregator(ds, s, union, code);
+  const labels = new Uint8Array(union.length);
+  for (let k = 0; k < evB.length; k++) labels[k] = 1;
+  const ei = (i, e) => (i + e ? (e - i) / (i + e) : NaN);
+  const o = T.sums(labels);
+  // The observed split must reproduce the real networks' mixing.
+  if (o.iB !== mb.within || o.eB !== mb.across || o.iA !== ma.within || o.eA !== ma.across) return { p: null, reps: 0 };
+  let ext = 0, used = 0;
+  for (let r = 0; r < reps; r++) {
+    for (let k = 0; k < labels.length; k++) labels[k] = rng() < 0.5 ? 1 : 0;
+    const x = T.sums(labels);
+    const d = ei(x.iA, x.eA) - ei(x.iB, x.eB);
+    if (!Number.isFinite(d)) continue;
+    used++;
+    if (Math.abs(d) >= Math.abs(obs) - 1e-12) ext++;
+  }
+  return used ? { p: (ext + 1) / (used + 1), reps: used, test: 'event relabelling, two-sided, on the change in E-I' } : { p: null, reps: 0 };
+}
+
 // Sum over people of a count metric's difference (after - before), from the
 // per-period tie totals.
 function countStat(m, x, directed) {
@@ -695,7 +772,9 @@ function countStat(m, x, directed) {
 // Evidence of `events` emitted once, keyed to ties as buildNetwork keys them;
 // sums(labels) -> { mB, mA, wB, wA }: ties kept and their total weight per
 // period after minWeight and the weighting transform.
-function tieAggregator(ds, s, events) {
+// With code (group per dataset node), sums also counts kept ties inside and
+// across groups per period: iB, eB, iA, eA (ties with an uncoded end skipped).
+function tieAggregator(ds, s, events, code = null) {
   const pos = new Map();
   events.forEach((e, k) => pos.set(e, k));
   const N = ds.nodes.count, directed = !!s.directed;
@@ -714,6 +793,12 @@ function tieAggregator(ds, s, events) {
     else { add(a, b, x, k); if (sym) add(b, a, x, k); }
   }, { events });
   const M = tieOf.size;
+  // Per tie: -1 an end without a group, 0 inside one group, 1 across.
+  let tieCross = null;
+  if (code) {
+    tieCross = new Int8Array(M);
+    for (const [key, t] of tieOf) { const a = code[Math.floor(key / N)], b = code[key % N]; tieCross[t] = a < 0 || b < 0 ? -1 : a === b ? 0 : 1; }
+  }
   const rawB = new Float64Array(M), rawA = new Float64Array(M);
   const minW = Number(s.minWeight) || 0;
   const tf = s.weighting === 'log' ? (x) => Math.log1p(x) : s.weighting === 'binary' ? () => 1 : (x) => x;
@@ -721,12 +806,17 @@ function tieAggregator(ds, s, events) {
     sums(labels) {
       rawB.fill(0); rawA.fill(0);
       for (let q = 0; q < eTie.length; q++) (labels[eEv[q]] ? rawB : rawA)[eTie[q]] += eAmt[q];
-      let mB = 0, mA = 0, wB = 0, wA = 0;
+      let mB = 0, mA = 0, wB = 0, wA = 0, iB = 0, eB = 0, iA = 0, eA = 0;
       for (let t = 0; t < M; t++) {
-        if (rawB[t] > 0 && rawB[t] >= minW) { mB++; wB += tf(rawB[t]); }
-        if (rawA[t] > 0 && rawA[t] >= minW) { mA++; wA += tf(rawA[t]); }
+        const inB = rawB[t] > 0 && rawB[t] >= minW, inA = rawA[t] > 0 && rawA[t] >= minW;
+        if (inB) { mB++; wB += tf(rawB[t]); }
+        if (inA) { mA++; wA += tf(rawA[t]); }
+        if (tieCross && tieCross[t] >= 0) {
+          if (inB) { if (tieCross[t]) eB++; else iB++; }
+          if (inA) { if (tieCross[t]) eA++; else iA++; }
+        }
       }
-      return { mB, mA, wB, wA };
+      return { mB, mA, wB, wA, iB, eB, iA, eA };
     },
   };
 }

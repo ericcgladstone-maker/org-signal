@@ -11,10 +11,10 @@
 import { html, useState, useMemo, useRef } from '../../../vendor/preact.js';
 import { useStore } from '../store.js';
 import { engine } from '../services/engine.js';
-import { ViewHead, NeedsData, Loading, ErrorLine, Select, ConstructionButton, useEngine, Flag, applicabilityReason } from '../components/common.js';
+import { ViewHead, NeedsData, Loading, ErrorLine, Select, ConstructionButton, useEngine, Flag, applicabilityReason, Term, HowToRead, nullInWords } from '../components/common.js';
 import { tokens } from '../lib/palette.js';
 import { hasText, textCoverage, label as nodeLabel } from '../lib/dsutil.js';
-import { fmtNum, fmtInt, fmtPct, fmtP, fmtDate, humanize, columnFormat } from '../lib/format.js';
+import { fmtNum, fmtInt, fmtPct, fmtDate, humanize, columnFormat } from '../lib/format.js';
 import { suggestTimeRange } from '../../analysis/time.js';
 import { defaultGrouping } from '../../analysis/groups.js';
 import { TimeChart, cool, warm, fmtMonth } from './time.js';
@@ -34,7 +34,7 @@ export function ContentView() {
   return html`<${ContentInner} ds=${ds} />`;
 }
 
-const TABS = [['affect', 'Affect'], ['keywords', 'Keywords'], ['topics', 'Topics'], ['diffusion', 'Diffusion']];
+const TABS = [['affect', 'Tone'], ['keywords', 'Keywords'], ['topics', 'Topics'], ['diffusion', 'Diffusion']];
 
 function ContentInner({ ds }) {
   const [tab, setTab] = useState('affect');
@@ -54,7 +54,7 @@ function ContentInner({ ds }) {
     refs.current[TABS[j][0]]?.focus();
   };
   return html`<div class="view">
-    <${ViewHead} title="Content" intro=${`Measured from message text on this device; nothing is sent anywhere. ${fmtPct(coverage)} of messages carry text.`} actions=${html`<${ConstructionButton} />`} />
+    <${ViewHead} title="Content" intro=${`Tone, distinctive words, topics, and whether new words spread along ties. Measured from message text on this device; nothing is sent anywhere. ${fmtPct(coverage)} of messages carry text.`} actions=${html`<${ConstructionButton} />`} />
     <div class="tabs" role="tablist" aria-label="Content measures" onKeyDown=${onKey}>
       ${TABS.map(([id, l]) => html`<button type="button" role="tab" id=${`ct-tab-${id}`} aria-controls="ct-panel" aria-selected=${String(tab === id)} tabindex=${tab === id ? '0' : '-1'} ref=${el => { refs.current[id] = el; }} onClick=${() => setTab(id)}>${l}</button>`)}
     </div>
@@ -174,7 +174,7 @@ function Keywords({ ds }) {
   const units = q.data?.units || q.data?.groups || [];
   return html`<div>
     <div class="toolbar"><${Select} label="Distinctive words by" value=${by} onChange=${setBy} options=${byOptions(ds, { overall: false })} /></div>
-    <p class="small text2 cview__note">Words used more in one group than in the others (TF-IDF: how often a group uses a word, discounted when every group uses it).</p>
+    <p class="small text2 cview__note">Words one group uses much more than the others. Each word is scored by how often the group uses it, discounted when every group uses it too (<${Term} k="tfidf">TF-IDF</${Term}>), so everyday words drop out.</p>
     <${CleaningNote} c=${q.data?.meta?.cleaning} />
     ${q.loading && html`<${Loading}>Counting words</${Loading}>`}<${ErrorLine} error=${q.error} onRetry=${q.retry} />
     ${q.data && !units.length && html`<p class="small text2">Not enough text per group to find distinctive words.</p>`}
@@ -196,7 +196,7 @@ function Topics() {
   const top = Math.max(1e-9, ...(r?.topics || []).map(tp => tp.share));
   return html`<div>
     <div class="toolbar"><${Select} label="Number of topics" value=${String(k)} onChange=${v => setK(Number(v))} options=${[4, 6, 8, 10, 12].map(n => ({ value: String(n), label: String(n) }))} /></div>
-    <p class="small text2 cview__note">Word groups that tend to occur together (latent Dirichlet allocation)${r?.meta?.documents ? ` over ${fmtInt(r.meta.documents)} messages` : ''}, seed ${r?.meta?.seed ?? 1}. Topics are word clusters, not themes someone named; read the words before naming one. A different number of topics or seed gives a different split.</p>
+    <p class="small text2 cview__note">Groups of words that tend to appear in the same messages${r?.meta?.documents ? `, found in ${fmtInt(r.meta.documents)} messages` : ''} by a <${Term} k="topics">topic model</${Term}> (latent Dirichlet allocation, <${Term} k="randomSeed">random seed</${Term}> ${r?.meta?.seed ?? 1}). Topics are word clusters, not themes someone named; read the words before naming one. A different number of topics or random seed gives a different split.</p>
     <${CleaningNote} c=${r?.meta?.cleaning} />
     ${q.loading && html`<${Loading}>Fitting topics</${Loading}>`}<${ErrorLine} error=${q.error} onRetry=${q.retry} />
     ${r && html`<div style="max-width:52rem"><${Bars} title="Share of words by topic" sub="Bars are scaled to the largest topic."
@@ -208,20 +208,32 @@ function Topics() {
 // ---- diffusion --------------------------------------------------------------------------
 
 function verdictOf(ex) {
-  if (!ex || !Number.isFinite(ex.observed)) return { level: 'na', label: 'Too few adopters', text: 'Too few adopters to compare with the null.' };
-  if (ex.p < 0.05 && ex.observed > ex.mean) return { level: 'ok', label: 'Follows ties', text: 'Adopters had an earlier adopter among their contacts more often than chance timing gives. That fits spread along ties, though shared channels or outside events can produce the same pattern.' };
-  return { level: 'info', label: 'Not along ties', text: 'Exposure to earlier adopters is not clearly above the shuffled null, so the data do not show this term spreading along ties.' };
+  if (!ex || !Number.isFinite(ex.observed)) return { level: 'na', label: 'Too few adopters', text: 'Too few adopters to compare with shuffled timing.' };
+  if (ex.p < 0.05 && ex.observed > ex.mean) return { level: 'ok', label: 'Follows ties', text: 'Adopters had an earlier adopter among their contacts more often than shuffled timing gives. That fits spread along ties, though shared channels or outside events can produce the same pattern.' };
+  return { level: 'info', label: 'Not along ties', text: 'Adopters had an earlier adopter among their contacts no more often than shuffled timing gives, so the data do not show this word spreading along ties.' };
+}
+
+// N8: when most adopters would have an earlier-adopting contact anyway, the
+// test has little room. ceiling and zMax come from the engine; computed here
+// for results without them (the demo engine).
+function roomOf(ex) {
+  if (!ex || !Number.isFinite(ex.mean)) return null;
+  const zMax = Number.isFinite(ex.zMax) ? ex.zMax : ex.sd > 0 ? (1 - ex.mean) / ex.sd : NaN;
+  const ceiling = ex.ceiling ?? ex.mean >= 0.85;
+  return ceiling ? { zMax } : null;
 }
 
 function Diffusion({ ds }) {
   const [input, setInput] = useState('');
   const [terms, setTerms] = useState(null);
-  const [auto, setAuto] = useState(false);
+  // Opens on words found automatically: the beginner path needs no typing (L21).
+  const [auto, setAuto] = useState(true);
+  const gen = useStore(s => s.generated);
   const q = useEngine('diffusion', (ctl) => engine.diffusion({ ...(auto ? { auto: 8 } : { terms }), reps: 200, seed: 1, ...ctl }), [terms, auto], { enabled: auto || !!terms?.length, label: 'Tracing diffusion' });
   const t = tokens();
   const list = Array.isArray(q.data) ? q.data : q.data?.terms || [];
   const norm = (d) => {
-    const ex = d.exposure || (d.null ? { observed: d.exposedShare, mean: d.null.mean, sd: d.null.sd, z: d.null.z, p: d.null.pUpper, reps: d.null.reps } : null);
+    const ex = d.exposure || (d.null ? { observed: d.exposedShare, mean: d.null.mean, sd: d.null.sd, z: d.null.z, p: d.null.pUpper, reps: d.null.reps, zMax: d.null.zMax, ceiling: d.null.ceiling } : null);
     const timeline = d.timeline || (d.adoptions || []).map((a, i) => ({ t: a.t, cumulative: i + 1 }));
     const cascade = d.cascade && Array.isArray(d.cascade) ? d.cascade : (d.adoptions || []).filter(a => a.from != null).map(a => ({ from: a.from, to: a.node, t: a.t }));
     return { ...d, ex, timeline, cascade };
@@ -231,27 +243,34 @@ function Diffusion({ ds }) {
   const yMax = Math.max(1, ...items.map(d => d.adopters || 0));
   const xs = items.flatMap(d => d.timeline.map(p => p.t)).filter(Number.isFinite);
   const xDomain = xs.length ? [Math.min(...xs), Math.max(...xs)] : null;
+  const anyCeiling = items.some(d => roomOf(d.ex));
   return html`<div>
+    <p class="small text2 cview__tabintro">Did a new word spread from person to person? If it did, people who start using it will often have a contact who used it first. To check, the app shuffles who adopted the word when, among the same people, 200 times: if adopters had an earlier adopter among their contacts no more often than in the shuffled timelines, the network is not what spread it. ${auto ? 'Showing the newest words found automatically; trace your own below.' : ''}</p>
     <form class="toolbar" onSubmit=${e => { e.preventDefault(); const ts = input.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).slice(0, 6); if (ts.length) { setAuto(false); setTerms(ts); } }}>
-      <label class="field field--grow"><span>Terms to trace (comma separated)</span><input class="input" value=${input} onInput=${e => setInput(e.currentTarget.value)} placeholder="for example: roadmap, offsite" /></label>
+      <label class="field field--grow"><span>Words to trace (comma separated)</span><input class="input" value=${input} onInput=${e => setInput(e.currentTarget.value)} placeholder="for example: roadmap, offsite" /></label>
       <button class="btn btn--primary" type="submit">Trace</button>
-      <button class="tlink" type="button" onClick=${() => { setTerms(null); setAuto(true); }}>Find new words automatically</button>
+      <button class="tlink" type="button" aria-pressed=${String(auto)} onClick=${() => { setTerms(null); setAuto(true); }}>Find new words automatically</button>
     </form>
-    <p class="small text2 cview__note">When a term spreads along ties, new adopters will often have a contact who used it first. The null shuffles adoption times among the same adopters (200 replicates); only a share of exposed adopters clearly above that null suggests spread through the network rather than a shared outside cause. Names of people in the data are not traced.</p>
+    <p class="small muted cview__note">Names of people in the data are not traced.${gen ? ' Generated data: the recovery check under Generate scores spread on the true ties, of which only some show up in messages, so its verdict for a word can differ from this view, which uses the ties in the data.' : ''}</p>
     ${q.loading && html`<${Loading}>Tracing adoption</${Loading}>`}<${ErrorLine} error=${q.error} onRetry=${q.retry} />
-    ${items.length > 0 && html`<div class="diff-grid">${items.map(d => { const v = verdictOf(d.ex); return html`<section class="diff-card" aria-label=${`Diffusion of ${d.term}`}>
+    ${q.data && !items.length && html`<p class="small text2">No new word was used by enough people to trace.</p>`}
+    ${items.length > 0 && html`<div class="diff-grid">${items.map(d => { const v = verdictOf(d.ex); const room = roomOf(d.ex); return html`<section class="diff-card" aria-label=${`Diffusion of ${d.term}`}>
       <h3>"${d.term}"</h3>
-      ${!d.adopters ? html`<p class="small text2">Nobody in the data used this term.</p>` : html`
-        <p class="small"><${Flag} level=${v.level}>${v.label}</${Flag}> <span class="text2">z ${fmtNum(d.ex?.z, { digits: 2 })}, ${fmtP(d.ex?.p)} (one-sided)</span></p>
+      ${!d.adopters ? html`<p class="small text2">Nobody in the data used this word.</p>` : html`
+        <p class="small"><${Flag} level=${room && v.level === 'ok' ? 'caution' : v.level}>${v.label}${room ? ' (little room)' : ''}</${Flag}></p>
+        <p class="small text2">${fmtPct(d.ex?.observed)} of adopters had an earlier adopter among their contacts, against ${fmtPct(d.ex?.mean)} with shuffled timing; ${nullInWords(d.ex?.p, d.ex?.reps, { what: 'shuffled timelines' }).replace('came this close', 'came this high')}.</p>
+        ${room && html`<p class="small diff-card__room"><${Flag} level="caution" /> Little room to test: even with shuffled timing ${fmtPct(d.ex.mean)} of adopters have an earlier adopter among their contacts${Number.isFinite(room.zMax) ? `, so the strongest result possible, 100%, would be only z = ${fmtNum(room.zMax, { digits: 2 })}` : ''}. Treat this result as weak evidence either way.</p>`}
         <${TimeChart} series=${[{ id: d.term, label: 'Adopters', color: t.cat[0], values: d.timeline.map(p => ({ x: p.t, y: p.cumulative })) }]} height=${120} area=${true} yDomain=${[0, yMax]} xDomain=${xDomain} compact=${true} yFormat=${fmtInt} />
         <dl class="kv">
           <dt>Adopters</dt><dd>${fmtInt(d.adopters)}</dd>
           <dt>With an earlier adopter among contacts</dt><dd>${fmtPct(d.ex?.observed)}</dd>
           <dt>Same, adoption times shuffled</dt><dd>${fmtPct(d.ex?.mean)}</dd>
         </dl>
-        ${d.cascade.length > 0 && html`<details class="disclose"><summary>Cascade along ties (${fmtInt(d.cascade.length)} adoptions after a contact)</summary>
+        <p class="basis">z ${fmtNum(d.ex?.z, { digits: 2 })}, one-sided.</p>
+        ${d.cascade.length > 0 && html`<details class="disclose"><summary>Who adopted after a contact (${fmtInt(d.cascade.length)})</summary>
           <ol class="can-list small">${d.cascade.slice(0, 40).map(c => html`<li>${nodeLabel(ds, c.to)} after ${nodeLabel(ds, c.from)}, ${fmtDate(c.t)}</li>`)}</ol></details>`}`}
     </section>`; })}</div>
-    <p class="basis">Charts share one y-axis (cumulative adopters, 0 to ${fmtInt(yMax)}) and one time axis.</p>`}
+    <p class="basis">Charts share one y-axis (cumulative adopters, 0 to ${fmtInt(yMax)}) and one time axis.</p>
+    <${HowToRead} means="Exposed share: of the people who used the word after the first one, how many had a contact who used it earlier." scale="The shuffled share is what the network alone gives; only a share clearly above it suggests spread along ties." mistake=${`Reading a high exposed share as spread. In a dense network almost everyone has some earlier adopter nearby by chance${anyCeiling ? ', as here' : ''}; compare with the shuffled share.`} />`}
   </div>`;
 }

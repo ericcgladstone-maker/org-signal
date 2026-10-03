@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { nullModel, resampleRanks, createRewirer, ranks } from '../../src/analysis/uncertainty.js';
+import { nullModel, resampleRanks, createRewirer, ranks, NULL_REPS } from '../../src/analysis/uncertainty.js';
+import { groupMetrics } from '../../src/analysis/groups.js';
+import { createEngine } from '../../src/analysis/engine.js';
 import { createRng } from '../../src/analysis/rng.js';
 import { defaultSettings } from '../../src/analysis/construct.js';
 import { erdosRenyi, planted, messageDataset } from './helpers.js';
@@ -117,4 +119,67 @@ test('nullModel: a statistic undefined in every replicate gets no p-value', asyn
   assert.ok(s, 'statistic reported');
   assert.equal(s.p, null);
   assert.equal(s.replicates, 0);
+});
+
+test('null model: one replicate count (200) and one run per network, reused by every caller (N3)', async () => {
+  const { net, ds } = planted(80, 0.15, 0.02, { seed: 21 });
+  assert.equal(NULL_REPS, 200);
+  const peek = (stats, o = {}) => nullModel(net, { stats, reps: 30, seed: 1, cachedOnly: true, ...o }).meta.cached;
+  assert.deepEqual(peek(['transitivity', 'modularity']), []);
+  const a = nullModel(net, { stats: ['transitivity', 'modularity'], reps: 30, seed: 1 });
+  assert.equal(a.meta.reps, 30);
+  assert.equal(a.meta.cached, undefined, 'a normal call looks the same whether or not it was cached');
+  assert.deepEqual(peek(['transitivity', 'modularity', 'avgClustering']), ['transitivity', 'modularity']);
+  // Another view asks for modularity alone, then with other statistics: the
+  // same values, and the new statistic computed as if run together.
+  const b = nullModel(net, { stats: ['modularity'], reps: 30, seed: 1 });
+  assert.deepEqual(b.modularity, a.modularity);
+  const c = nullModel(net, { stats: ['avgClustering', 'transitivity'], reps: 30, seed: 1 });
+  assert.deepEqual(c.transitivity, a.transitivity);
+  const joint = nullModel(planted(80, 0.15, 0.02, { seed: 21 }).net, { stats: ['avgClustering', 'transitivity', 'modularity'], reps: 30, seed: 1 });
+  assert.deepEqual(c.avgClustering, joint.avgClustering);
+  assert.deepEqual(joint.modularity, a.modularity);
+  // cachedOnly never rewires; a different replicate count is a different run.
+  const d = nullModel(net, { stats: ['modularity', 'degreeAssortativity'], reps: 30, seed: 1, cachedOnly: true });
+  assert.deepEqual(Object.keys(d).filter(k => k !== 'meta'), ['modularity']);
+  assert.deepEqual(peek(['modularity'], { reps: 31 }), []);
+  // Attribute statistics are keyed by the attribute.
+  assert.deepEqual(peek(['eiIndex'], { ds, attr: 'team' }), []);
+  nullModel(net, { stats: ['eiIndex'], reps: 30, seed: 1, ds, attr: 'team' });
+  assert.deepEqual(peek(['eiIndex'], { ds, attr: 'team' }), ['eiIndex']);
+  // The default is the shared count.
+  assert.equal(nullModel(net, { stats: ['transitivity'], cachedOnly: true }).meta.reps, 200);
+});
+
+test('null model through the engine: Network and Groups get the same modularity result', async () => {
+  const ds = messageDataset(40, 800, { seed: 3 });
+  const engine = createEngine({ worker: false });
+  await engine.load(ds);
+  await engine.build(defaultSettings(ds));
+  const com = await engine.communities({ seed: 1 });
+  // Network asks for its four statistics; Groups then asks for modularity.
+  const net = await engine.nullModel({ stats: ['reciprocity', 'transitivity', 'avgClustering', 'modularity'], reps: 20, seed: 1, membership: com.membership });
+  assert.deepEqual((await engine.nullModel({ stats: ['modularity'], reps: 20, seed: 1, cachedOnly: true })).meta.cached, ['modularity']);
+  const grp = await engine.nullModel({ stats: ['modularity'], reps: 20, seed: 1, membership: com.membership });
+  assert.deepEqual(grp.modularity, net.modularity);
+  // A view can read what is there without starting a run.
+  const peek = await engine.nullModel({ stats: ['transitivity', 'degreeAssortativity'], reps: 20, seed: 1, cachedOnly: true });
+  assert.deepEqual(Object.keys(peek).filter(k => k !== 'meta'), ['transitivity']);
+  // A rebuild is a new network: nothing carries over.
+  await engine.build({ ...defaultSettings(ds), weighting: 'binary' });
+  assert.deepEqual((await engine.nullModel({ stats: ['modularity'], reps: 20, seed: 1, cachedOnly: true })).meta.cached, []);
+});
+
+test('null model: per-group E-I with its random expectation, matching the group table (J11)', () => {
+  const { net, ds } = planted(90, 0.15, 0.02, { groups: 3, seed: 6 });
+  const r = nullModel(net, { stats: ['eiIndex'], reps: 25, seed: 2, ds, attr: 'team' });
+  const gm = groupMetrics(net, ds, 'team');
+  assert.equal(r.eiIndex.groups.length, gm.groups.length);
+  r.eiIndex.groups.forEach((g, i) => {
+    assert.equal(g.value, gm.groups[i].value);
+    assert.ok(Math.abs(g.observed - gm.groups[i].eiIndex) < 1e-12);
+    assert.ok(g.mean > g.observed, 'planted groups are more inward than the rewired expectation');
+    assert.equal(g.replicates, 25);
+  });
+  assert.equal(r.meta.pFloor, 1 / 26);
 });

@@ -16,13 +16,14 @@
 
 import { html, useState, useMemo, useRef, useEffect } from '../../../vendor/preact.js';
 import * as d3 from '../../../vendor/d3.js';
-import { useStore } from '../store.js';
+import { store, useStore } from '../store.js';
 import { engine } from '../services/engine.js';
 import { gloss } from '../services/glossary.js';
-import { ViewHead, NeedsData, Loading, ErrorLine, ConstructionButton, useEngine, Flag, MetricName, Seg } from '../components/common.js';
+import { ViewHead, NeedsData, Loading, ErrorLine, ConstructionButton, useEngine, Flag, MetricName, Seg, Term, HowToRead, pShort } from '../components/common.js';
 import { tokens } from '../lib/palette.js';
+import { metricLabel } from '../lib/measures.js';
 import { timeExtent, label as nodeLabel } from '../lib/dsutil.js';
-import { fmtNum, fmtInt, fmtP, fmtPct, fmtDate, isoDay, humanize } from '../lib/format.js';
+import { fmtNum, fmtInt, fmtPct, fmtDate, isoDay, humanize } from '../lib/format.js';
 import { suggestTimeRange } from '../../analysis/time.js';
 import { defaultGrouping } from '../../analysis/groups.js';
 
@@ -47,6 +48,14 @@ export const warm = () => cssVar('--div-warm-1', tokens().div[3]);
 
 export function fmtMonth(t) { const d = new Date(t); return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`; }
 // A window's name in the house date style: "week of 6 Jan 2025", "Jan 2025", "6 Jan 2025".
+// A per-person measure's name as People shows it ("Contacts (degree)",
+// "Total ties (in + out)"; decision 4), for the network loaded now.
+const personMeasure = (k) => metricLabel(k, !!store.get().network?.directed);
+
+// "in the week of 6 Jan 2025", "in Jan 2025", "on 6 Jan 2025".
+export function inWindow(start, unit) {
+  return unit === 'week' || unit === 'month' ? `in ${unit === 'week' ? 'the ' : ''}${windowName(start, unit)}` : `on ${windowName(start, unit)}`;
+}
 export function windowName(start, unit) {
   if (!Number.isFinite(start)) return '';
   if (unit === 'week') return `week of ${fmtDate(start)}`;
@@ -174,6 +183,61 @@ export function TimeChart({ series, height = 170, title, sub, yFormat = fmtNum, 
   </figure>`;
 }
 
+// ---- shared with Groups: the windowed series, its shifts, attribute caveats ----
+
+// The windowed networks and the shifts found in them. Groups calls this with
+// the Time view's defaults (Auto window, the dense period), so both views
+// share one run through the useEngine cache. Shifts are keyed on the series
+// they were computed from and wait for it to finish: keyed on the controls
+// alone, a window change re-ran detection on the previous window's series
+// and kept that stale result (J4).
+export function useTimeShifts(ds, { win = 'auto', range = null, enabled = true } = {}) {
+  const groupAttr = useMemo(() => defaultGrouping(ds), [ds]);
+  const r = range || { start: null, end: null };
+  const series = useEngine('ts', () => engine.timeSeries({ window: win, purpose: 'Time view', metrics: ['degree', 'strength'], attr: groupAttr || undefined, start: r.start ?? undefined, end: r.end ?? undefined }), [win, r.start, r.end, groupAttr], { label: 'Building windowed networks', enabled });
+  const s = series.data;
+  const ready = enabled && !series.loading && !!s?.windows?.length;
+  const sKey = ready ? `${s.meta?.window}|${s.windows.length}|${s.windows[0].start}|${s.meta?.end}` : null;
+  const shifts = useEngine('shifts', () => engine.shifts(s, { labels: ds.nodes.labels }), [win, r.start, r.end, groupAttr, sKey], { enabled: ready });
+  return { series, shifts: ready ? shifts : { ...shifts, data: null }, groupAttr };
+}
+
+// Attributes are one value per person (a snapshot), not a history. When the
+// generator moved people, say when and that the value shown is the old one.
+export function snapshotNote(ds, attr, name = null) {
+  const label = (name || humanize(attr || 'group')).toLowerCase();
+  const gen = store.get().generated;
+  const reorg = (gen?.groundTruth?.events || []).find(e => e.type === 'reorg' && e.moved?.length);
+  const base = `Each person has one ${label} in this data, a snapshot, not a history.`;
+  if (reorg) return `${base} The generator moved ${reorg.moved.length} people to another ${label} on ${fmtDate(reorg.t)}; their ${label} here is the one before the move, so after that date their ties inside the new ${label} count as crossing. A rise in crossing ties after a reorganization can come from that alone.`;
+  return `${base} If people moved to another ${label} during the period, their ties inside the new one count as crossing, so a change in crossing ties can come from the moves alone.`;
+}
+
+// The same caveat in one clause, for a verdict sentence about crossing ties.
+export function snapshotClause(attr) {
+  const label = humanize(attr || 'group').toLowerCase();
+  const reorg = (store.get().generated?.groundTruth?.events || []).find(e => e.type === 'reorg' && e.moved?.length);
+  return reorg ? `but ${reorg.moved.length} people moved ${label} on ${fmtDate(reorg.t)} and each person's ${label} here is the one before the move, so this can be the move itself, not more crossing`
+    : `as long as nobody moved ${label}: each person's ${label} is one recorded value`;
+}
+
+// The shift Groups points to: a change in how much ties cross groups first,
+// then tie retention, then the strongest whole-network shift.
+export function groupShift(list) {
+  const net = (list || []).filter(x => x.target === 'network' && Number.isFinite(x.start));
+  return net.find(x => x.metric === 'crossGroupShare') || net.find(x => x.metric === 'tieRetention') || net[0] || null;
+}
+
+// "stayed nearer the new level ... to the end" or "for 3 of 9 windows", from
+// the shift's persistence against its pre-shift baseline (J3).
+export function persistWords(x, unit) {
+  if (!Number.isFinite(x?.held) || !x.span) return '';
+  const w = (k) => `${k} ${unit ? `${unit}${k === 1 ? '' : 's'}` : `window${k === 1 ? '' : 's'}`}`;
+  if (x.heldToEnd) return x.span === 1 ? 'in the last window of the period' : `and stayed there to the end of the period (${w(x.span)}, compared with the level before the change)`;
+  if (x.held <= 1) return `for ${w(1)}, then returned toward the level before`;
+  return `and stayed nearer the new level in ${x.held} of the ${w(x.span)} that followed (compared with the level before the change)`;
+}
+
 // ---- view -------------------------------------------------------------------------------
 
 const NET_SERIES = [
@@ -200,9 +264,7 @@ function TimeInner({ ds }) {
   const dense = useMemo(() => suggestTimeRange(ds), [ds]);
   const [range, setRange] = useState(() => (dense ? { start: dense.start, end: dense.end } : { start: null, end: null }));
   const [win, setWin] = useState('auto');
-  const groupAttr = useMemo(() => defaultGrouping(ds), [ds]);
-  const series = useEngine('ts', () => engine.timeSeries({ window: win, purpose: 'Time view', metrics: ['degree', 'strength'], attr: groupAttr || undefined, start: range.start ?? undefined, end: range.end ?? undefined }), [win, range.start, range.end, groupAttr], { label: 'Building windowed networks' });
-  const shifts = useEngine('shifts', () => engine.shifts(series.data, { labels: ds.nodes.labels }), [win, range.start, range.end, groupAttr, !!series.data], { enabled: !!series.data?.windows?.length });
+  const { series, shifts, groupAttr } = useTimeShifts(ds, { win, range });
   const t = tokens();
   const s = series.data;
   const unit = typeof s?.meta?.window === 'string' ? s.meta.window : null;
@@ -225,7 +287,7 @@ function TimeInner({ ds }) {
   const multiSource = (s?.sources || []).length > 1;
 
   return html`<div class="view">
-    <${ViewHead} title="Time" intro="Each window's network is built from that window's events with the current construction settings, so a tie in one week means the same as a tie in the whole network."
+    <${ViewHead} title="Time" intro="Each week (or day, or month) gets its own network, built with the current construction settings, so a tie in one week means the same as a tie in the whole network."
       actions=${html`<${ConstructionButton} />`} />
     <${RangeBar} range=${range} setRange=${setRange} dense=${dense} full=${[full0, full1]} win=${win} setWin=${setWin} meta=${s?.meta} />
     ${series.loading && html`<${Loading}>Building one network per ${unit || (win === 'auto' ? 'window' : win)}</${Loading}>`}
@@ -251,8 +313,8 @@ function TimeInner({ ds }) {
         <${TimeChart} sub="Formed: ties present in a window but not in the one before. Dissolved: present before, absent now. The first window is left out because every tie in it would count as new."
           series=${[{ id: 'f', label: 'Formed', color: cool(), values: pts(s.ties?.formed || []).slice(1) }, { id: 'd', label: 'Dissolved', color: warm(), values: pts(s.ties?.dissolved || []).slice(1) }]} height=${190} edges=${edges} xName=${xName} xDomain=${xDomain} />
       </section>
-      <${Shifts} ds=${ds} s=${s} shifts=${shifts} list=${shiftList} unit=${unit} xName=${xName} edges=${edges} xDomain=${xDomain} />
-      <${BeforeAfter} ds=${ds} range=${range} full=${[full0, full1]} netShifts=${netShifts.length ? netShifts : shiftList} />
+      <${Shifts} ds=${ds} s=${s} shifts=${shifts} list=${shiftList} unit=${unit} xName=${xName} edges=${edges} xDomain=${xDomain} groupAttr=${groupAttr} />
+      <${BeforeAfter} ds=${ds} range=${range} full=${[full0, full1]} netShifts=${netShifts.length ? netShifts : shiftList} groupAttr=${groupAttr} />
     `}
   </div>`;
 }
@@ -312,23 +374,23 @@ function SourceStrip({ sources, domain }) {
 // Plain explanation of one detected shift.
 function explainShift(ds, s, x, unit) {
   const who = x.target === 'node' ? nodeLabel(ds, x.id) : x.target === 'group' ? x.label : 'The whole network';
-  const what = x.target === 'node' ? humanize(x.metric).toLowerCase() : x.label === x.metric ? humanize(x.metric).toLowerCase() : x.label;
-  const when = windowName(x.start, unit);
-  const nW = x.length > 1 ? ` for ${x.length} windows` : '';
+  const what = x.target === 'node' ? personMeasure(x.metric).replace(/^./, c => c.toLowerCase()) : x.label === x.metric ? humanize(x.metric).toLowerCase() : x.label;
   const verb = x.direction === 'up' ? 'rose' : 'fell';
-  const lines = [`${who}: ${what} ${verb} to ${fmtNum(x.value)} in the ${when}${nW}, against a typical ${fmtNum(x.baseline)} over the windows before (robust z ${fmtNum(x.z ?? x.statistic, { digits: 2 })}).`];
+  const kept = persistWords(x, unit);
+  const lines = [`${who}: ${what} ${verb} from a typical ${fmtNum(x.baseline)} to ${fmtNum(x.value)} ${inWindow(x.start, unit)}${kept ? ` ${kept}` : ''}.`];
+  if (x.length > 1 || !x.heldToEnd) lines.push(`Flagged for ${x.length} ${unit || 'window'}${x.length === 1 ? '' : 's'}: each window is compared with the ${unit || 'window'}s just before it, so once a new level lasts a few windows it stops being flagged. That is not the change ending.`);
   if (x.target === 'node' && x.direction === 'down') {
     const act = s.activity?.node || [];
     let last = -1;
     for (let k = act.length - 1; k >= 0; k--) if (act[k]?.[x.id] > 0) { last = k; break; }
     const deact = ds.nodes.attrs[x.id]?.deactivated || ds.nodes.attrs[x.id]?.deleted;
-    if (last >= 0 && last <= x.window) lines.push(`Stopped appearing: no activity after the ${windowName(s.windows[last].start, unit)}${deact ? '; the account is marked deactivated in the export' : ''}.`);
+    if (last >= 0 && last <= x.window) lines.push(`Stopped appearing: no activity after ${unit === 'week' ? 'the ' : ''}${windowName(s.windows[last].start, unit)}${deact ? '; the account is marked deactivated in the export' : ''}.`);
     else if (deact) lines.push('The account is marked deactivated in the export.');
   }
   return lines;
 }
 
-function Shifts({ ds, s, shifts, list, unit, xName, edges, xDomain }) {
+function Shifts({ ds, s, shifts, list, unit, xName, edges, xDomain, groupAttr }) {
   const [open, setOpen] = useState(null);
   const t = tokens();
   const meta = shifts.data?.meta;
@@ -343,29 +405,37 @@ function Shifts({ ds, s, shifts, list, unit, xName, edges, xDomain }) {
     if (x.metric === 'tieRetention') return s.ties?.jaccard;
     return s.network?.[x.metric];
   };
-  const verdict = !shown.length ? null : `${list.length === 1 ? 'One series departs from its' : `${fmtInt(list.length)} series depart from their`} recent baseline. ${shown[0].target === 'node' ? nodeLabel(ds, shown[0].id) : shown[0].target === 'group' ? shown[0].label : 'The whole network'} shows the largest change (${shown[0].direction === 'up' ? 'a rise' : 'a drop'} in the ${windowName(shown[0].start, unit)}).`;
+  const unitName = meta?.window || unit;
+  const top = shown[0];
+  const verdict = !shown.length ? null : `${list.length === 1 ? 'One measure departs from its' : `${fmtInt(list.length)} measures depart from their`} recent level. The largest: ${top.target === 'node' ? nodeLabel(ds, top.id) : top.target === 'group' ? top.label : 'the whole network'}, ${top.direction === 'up' ? 'a rise' : 'a drop'} ${inWindow(top.start, unitName)}${top.heldToEnd ? ' that lasts to the end of the period' : ''}.`;
+  const groupRow = shown.some(x => x.metric === 'crossGroupShare' || x.target === 'group');
   return html`<section class="section" aria-labelledby="sh-h">
     <h2 id="sh-h" class="section__title">Detected shifts</h2>
     ${shifts.loading && html`<${Loading}>Scanning for shifts</${Loading}>`}<${ErrorLine} error=${shifts.error} />
     ${shifts.data && (shown.length ? html`
       <p class="tview__verdict">${verdict} Select a row for what changed.</p>
+      ${meta?.window && html`<p class="small text2">Computed with ${meta.window === 'day' ? 'daily' : meta.window === 'week' ? 'weekly' : 'monthly'} windows${meta.window === 'day' ? '; daily counts swing with weekends, so read day-level flags with care' : ''}.</p>`}
       <div class="table-wrap"><table class="tbl tview__shifts">
-        <thead><tr><th scope="col">What</th><th scope="col">Measure</th><th scope="col">From</th><th scope="col">Change</th><th scope="col" class="num">Value</th><th scope="col" class="num">Typical before</th><th scope="col" class="num">z</th></tr></thead>
+        <thead><tr><th scope="col">What</th><th scope="col">Measure</th><th scope="col">From</th><th scope="col">Change</th><th scope="col">Lasted</th><th scope="col" class="num">Typical before</th><th scope="col" class="num">New value</th><th scope="col" class="num">How unusual (<${Term} k="shiftZ">z</${Term}>)</th></tr></thead>
         <tbody>${shown.map((x, i) => { const k = keyOf(x, i); const isOpen = open === k; const v = isOpen ? seriesOf(x) : null; return html`<tr class=${isOpen ? 'is-open' : ''}>
           <td class="name"><button type="button" class="tview__rowbtn" aria-expanded=${String(isOpen)} onClick=${() => setOpen(isOpen ? null : k)}>${x.target === 'node' ? nodeLabel(ds, x.id) : x.target === 'group' ? x.label : 'Whole network'}</button></td>
-          <td>${x.target === 'network' && x.label !== x.metric ? humanize(x.label) : humanize(x.metric)}</td><td>${windowName(x.start, unit)}${x.length > 1 ? ` (${x.length} windows)` : ''}</td>
+          <td>${x.target === 'network' && x.label !== x.metric ? humanize(x.label) : x.target === 'node' ? personMeasure(x.metric) : humanize(x.metric)}${(x.metric === 'crossGroupShare' || x.target === 'group') && groupAttr ? html` <${Flag} level="caution" iconOnly=${true} reason=${snapshotNote(ds, groupAttr)} />` : ''}</td><td>${windowName(x.start, unitName)}</td>
           <td>${x.direction === 'up' ? 'Rise' : x.direction === 'down' ? 'Drop' : ''}</td>
-          <td class="num">${fmtNum(x.value)}</td><td class="num">${fmtNum(x.baseline)}</td><td class="num">${fmtNum(x.z ?? x.statistic, { digits: 2 })}</td>
-        </tr>${isOpen && html`<tr class="tview__detail"><td colspan="7">
-          ${explainShift(ds, s, x, unit).map(l => html`<p class="small">${l}</p>`)}
-          ${v && html`<div class="tview__detail-chart"><${TimeChart} series=${[{ id: 'v', label: humanize(x.metric), color: t.cat[0], values: s.windows.map((w, j) => ({ x: w.start, y: v[j] })) }]} height=${130} highlight=${{ x0: s.windows[x.window].start, x1: s.windows[Math.min(s.windows.length - 1, x.end ?? x.window)].end }} edges=${edges} xName=${xName} xDomain=${xDomain} compact=${true} /></div>`}
-        </td></tr>`}`; })}</tbody></table></div>`
-      : html`<p class="tview__verdict">No window departs from its recent baseline by more than the threshold.</p>`)}
-    ${meta && html`<p class="basis">Basis: ${meta.method === 'cusum' ? 'CUSUM' : 'robust z'} of each window against the median and MAD of the ${meta.baseline ?? 8} preceding windows, flagged at |z| ≥ ${meta.threshold ?? 3.5} (${meta.nodeThreshold ?? 5} for single people). ${fmtInt(meta.seriesScanned)} series were scanned, so expect some flags by chance; confirm with the before/after test below.${meta.sourceEdges?.length ? ` Not tested near source edges: ${meta.sourceEdges.slice(0, 4).map(e => `${e.label} ${e.kind} ${fmtDate(e.t)}`).join('; ')}${meta.sourceEdges.length > 4 ? `; and ${meta.sourceEdges.length - 4} more` : ''}.` : ''}</p>`}
+          <td>${Number.isFinite(x.held) ? (x.heldToEnd ? 'to the end' : `${x.held} of ${x.span} ${unitName || 'window'}s`) : `${x.length} ${unitName || 'window'}${x.length === 1 ? '' : 's'}`}</td>
+          <td class="num">${fmtNum(x.baseline)}</td><td class="num">${fmtNum(x.value)}</td>
+          <td class="num">${fmtNum(x.z ?? x.statistic, { digits: 2 })}</td>
+        </tr>${isOpen && html`<tr class="tview__detail"><td colspan="8">
+          ${explainShift(ds, s, x, unitName).map(l => html`<p class="small">${l}</p>`)}
+          ${v && html`<div class="tview__detail-chart"><${TimeChart} series=${[{ id: 'v', label: humanize(x.metric), color: t.cat[0], values: s.windows.map((w, j) => ({ x: w.start, y: v[j] })) }]} height=${130} highlight=${{ x0: s.windows[x.window].start, x1: s.windows[Math.min(s.windows.length - 1, x.lastHeld ?? x.end ?? x.window)].end }} edges=${edges} xName=${xName} xDomain=${xDomain} compact=${true} /></div>`}
+        </td></tr>`}`; })}</tbody></table></div>
+      ${groupRow && groupAttr && html`<p class="small text2"><${Flag} level="caution" /> ${snapshotNote(ds, groupAttr)}</p>`}
+      <${HowToRead} means="A shift is a window whose value is far from the windows just before it. Lasted compares every later window with the level before the change: nearer the new level, or back at the old one." scale="How unusual (z) counts typical week-to-week wobbles: 3.5 or more is flagged for the whole network, 5 or more for one person." mistake="Reading the flagged run as how long the change lasted. A step that never reverses stops being flagged after a few windows, because the windows just before it now share the new level; use the Lasted column." />`
+      : html`<p class="tview__verdict">No window departs from its recent level by more than the threshold.</p>`)}
+    ${meta && html`<p class="basis">Basis: each window compared with the ${meta.baseline ?? 8} windows before it (${meta.method === 'cusum' ? 'CUSUM' : 'robust z: distance from their median in units of their typical spread, the MAD'}); flagged at ${meta.threshold ?? 3.5} or more (${meta.nodeThreshold ?? 5} for single people). ${fmtInt(meta.seriesScanned)} measures were scanned, so expect some flags by chance; confirm with the before and after comparison below.${meta.sourceEdges?.length ? ` Not tested near source edges: ${meta.sourceEdges.slice(0, 4).map(e => `${e.label} ${e.kind} ${fmtDate(e.t)}`).join('; ')}${meta.sourceEdges.length > 4 ? `; and ${meta.sourceEdges.length - 4} more` : ''}.` : ''}</p>`}
   </section>`;
 }
 
-function BeforeAfter({ ds, range, full, netShifts }) {
+function BeforeAfter({ ds, range, full, netShifts, groupAttr }) {
   const t0 = range.start ?? full[0], t1 = (range.end ?? full[1] + 1) - 1;
   // Default date: the strongest whole-network shift, if any; else the middle of the period.
   const suggested = useMemo(() => {
@@ -378,15 +448,17 @@ function BeforeAfter({ ds, range, full, netShifts }) {
   useEffect(() => { if (!touched) setDate(isoDay(suggested)); }, [suggested]);
   const [ran, setRan] = useState(null);
   const ms = Date.parse(`${date}T00:00:00Z`);
-  const q = useEngine('ba', () => engine.beforeAfter(ran, { metrics: ['degree', 'strength', 'betweenness'], start: range.start ?? undefined, end: range.end ?? undefined }), [ran, range.start, range.end], { enabled: ran != null, label: 'Comparing before and after' });
+  const q = useEngine('ba', () => engine.beforeAfter(ran, { metrics: ['degree', 'strength', 'betweenness'], attr: groupAttr || undefined, start: range.start ?? undefined, end: range.end ?? undefined }), [ran, range.start, range.end, groupAttr], { enabled: ran != null, label: 'Comparing before and after' });
   const r = q.data;
   const netKeys = ['nodes', 'ties', 'density', 'reciprocity', 'transitivity', 'avgClustering', 'components', 'largestComponentShare'];
   const netFmt = (k, v) => (k === 'largestComponentShare' ? fmtPct(v) : fmtNum(v));
   const netName = { nodes: 'People with ties', ties: 'Ties', components: 'Components', largestComponentShare: 'Largest component (share of people)' };
   const fromShift = netShifts.some(x => isoDay(x.start) === date);
+  const mix = r?.mixing;
+  const gName = groupAttr ? humanize(groupAttr).toLowerCase() : 'group';
   return html`<section class="section" aria-labelledby="ba-h">
     <h2 id="ba-h" class="section__title">Before and after a date</h2>
-    <p class="small text2" style="margin-bottom:.6rem">Compares two periods of equal length either side of the date, such as a reorganization or a move to remote work. Changes per person are tested with a paired sign-flip permutation test.</p>
+    <p class="small text2" style="margin-bottom:.6rem">Compares two periods of equal length either side of a date, such as a reorganization or a move to remote work. To test whether people's numbers really changed, every message in the two periods is reassigned to before or after at random, many times; a change is real when few of those random splits change things as much.</p>
     <form class="toolbar" onSubmit=${e => { e.preventDefault(); if (Number.isFinite(ms)) setRan(ms); }}>
       <label class="field"><span>Date</span><input class="input" type="date" value=${date} min=${isoDay(t0)} max=${isoDay(t1)} onInput=${e => { setTouched(true); setDate(e.currentTarget.value); }} /></label>
       <button class="btn btn--primary" type="submit">Compare</button>
@@ -395,39 +467,52 @@ function BeforeAfter({ ds, range, full, netShifts }) {
     ${q.loading && html`<${Loading}>Building both networks</${Loading}>`}<${ErrorLine} error=${q.error} />
     ${r && html`
       ${(r.cautions || []).length > 0 && html`<div class="notice-line tview__caution"><${Flag} level="caution" /><span class="grow">${r.cautions.map(c => `${c.label} ${c.kind} on ${fmtDate(c.t)}, inside the ${c.period} period.`).join(' ')} Changes for people seen mostly in ${r.cautions.length === 1 ? 'that source' : 'those sources'} reflect the export, not behavior; they are marked below.</span></div>`}
-      <${BaVerdict} r=${r} />
+      <${BaVerdict} r=${r} gName=${gName} />
       <div class="grid-2">
       <div>
-        <p class="label">${fmtDate(r.before?.start)} to ${fmtDate(r.date)} vs ${fmtDate(r.date)} to ${fmtDate(r.after?.end)}</p>
+        <p class="label">${fmtDate(r.before?.start)} to ${fmtDate(r.date - DAY)} vs ${fmtDate(r.date)} to ${fmtDate(r.after?.end - DAY)}</p>
         <div class="table-wrap"><table class="tbl">
           <thead><tr><th scope="col">Whole network</th><th scope="col" class="num">Before</th><th scope="col" class="num">After</th></tr></thead>
-          <tbody>${netKeys.filter(k => r.network?.[k]).map(k => html`<tr><td>${netName[k] || (gloss(k).label === humanize(k) ? humanize(k) : html`<${MetricName} metric=${k} showFlag=${false} />`)}</td><td class="num">${netFmt(k, r.network[k].before)}</td><td class="num">${netFmt(k, r.network[k].after)}</td></tr>`)}</tbody>
+          <tbody>${netKeys.filter(k => r.network?.[k]).map(k => html`<tr><td>${netName[k] || (gloss(k).label === humanize(k) ? humanize(k) : html`<${MetricName} metric=${k} showFlag=${false} />`)}</td><td class="num">${netFmt(k, r.network[k].before)}</td><td class="num">${netFmt(k, r.network[k].after)}</td></tr>`)}
+          ${mix && html`<tr><td><${Term} k="eiIndex">E-I index</${Term}> by ${gName}</td><td class="num">${fmtNum(mix.before.eiIndex)}</td><td class="num">${fmtNum(mix.after.eiIndex)}</td></tr>
+            <tr><td>Ties crossing ${gName} lines</td><td class="num">${fmtPct(mix.before.crossShare)}</td><td class="num">${fmtPct(mix.after.crossShare)}</td></tr>`}</tbody>
         </table></div>
         ${r.ties && html`<p class="small text2" style="margin-top:.5rem">${fmtInt(r.ties.persisted)} ties persisted, ${fmtInt(r.ties.formed)} formed and ${fmtInt(r.ties.dissolved)} dissolved (overlap ${fmtNum(r.ties.jaccard, { digits: 2 })}).</p>`}
-        <p class="basis">Whole-network differences have no test attached; read them as description.</p>
+        ${mix && html`<p class="small text2"><${Flag} level="caution" /> ${snapshotNote(ds, mix.attr)}</p>`}
+        <p class="basis">Whole-network rows other than the E-I index are description, with no test attached. Messages on the date itself count as after, so someone who left on that day still appears after it.${mix && Number.isFinite(mix.p) ? ` E-I change: ${pShort(mix.p, mix.reps)} (${fmtInt(mix.reps)} random splits).` : ''}</p>
       </div>
       <div>
         <div class="table-wrap"><table class="tbl">
-          <thead><tr><th scope="col">Per person</th><th scope="col" class="num">Mean before</th><th scope="col" class="num">Mean after</th><th scope="col" class="num">Size (d<sub>z</sub>)</th><th scope="col" class="num">p</th></tr></thead>
-          <tbody>${Object.entries(r.node || {}).filter(([, x]) => x?.n).map(([k, x]) => html`<tr><td><${MetricName} metric=${k} showFlag=${false} /></td><td class="num">${fmtNum(x.meanBefore)}</td><td class="num">${fmtNum(x.meanAfter)}</td><td class="num">${fmtNum(x.dz, { digits: 2 })}</td><td class="num">${fmtP(x.p).replace('p = ', '').replace('p ', '')}</td></tr>`)}</tbody>
+          <thead><tr><th scope="col">Per person</th><th scope="col" class="num">Mean before</th><th scope="col" class="num">Mean after</th><th scope="col" class="num">Effect size (<${Term} k="dz">d<sub>z</sub></${Term}>)</th><th scope="col" class="num"><${Term} k="nullP">p</${Term}></th></tr></thead>
+          <tbody>${Object.entries(r.node || {}).filter(([, x]) => x?.n).map(([k, x]) => html`<tr><td><${MetricName} metric=${k} label=${personMeasure(k)} showFlag=${false} /></td><td class="num">${fmtNum(x.meanBefore)}</td><td class="num">${fmtNum(x.meanAfter)}</td><td class="num">${fmtNum(x.dz, { digits: 2 })}</td><td class="num">${pShort(x.p, x.reps).replace(/^p\s*/, '').replace(/^= /, '')}</td></tr>`)}</tbody>
         </table></div>
-        <p class="basis">${r.meta?.test || 'Paired permutation test'}, ${fmtInt(r.meta?.reps)} permutations. ${r.meta?.effectSize || ''}</p>
-        ${['topIncreases', 'topDecreases'].map(which => { const l = r.node?.degree?.[which] || []; return l.length > 0 && html`<p class="small text2" style="margin-top:.5rem">Largest ${which === 'topIncreases' ? 'increases' : 'decreases'} in ${gloss('degree').label.toLowerCase()}: ${l.slice(0, 5).map((p, i) => html`${i ? ', ' : ''}${p.label ?? nodeLabel(ds, p.node)} (${p.diff > 0 ? '+' : ''}${fmtNum(p.diff)}${p.sourceEdge ? html`; <span class="tview__edge-note">${p.sourceEdge} export edge</span>` : ''})`)}.</p>`; })}
+        <p class="basis">Randomization test: each message of the two periods reassigned to before or after at random, ${fmtInt(r.meta?.reps)} times (${fmtInt(r.meta?.metricReps)} for measures that need the networks rebuilt), and the mean change per person recomputed. Effect size d<sub>z</sub>: mean change divided by its spread across people (0.2 small, 0.5 moderate, 0.8 large).</p>
+        ${['topIncreases', 'topDecreases'].map(which => { const l = r.node?.degree?.[which] || []; return l.length > 0 && html`<p class="small text2" style="margin-top:.5rem">Largest ${which === 'topIncreases' ? 'increases' : 'decreases'} in ${personMeasure('degree').replace(/^./, c => c.toLowerCase())}: ${l.slice(0, 5).map((p, i) => html`${i ? ', ' : ''}${p.label ?? nodeLabel(ds, p.node)} (${p.diff > 0 ? '+' : ''}${fmtNum(p.diff)}${p.sourceEdge ? html`; <span class="tview__edge-note">${p.sourceEdge} export edge</span>` : ''})`)}.</p>`; })}
       </div>
     </div>`}
   </section>`;
 }
 
-// The plain reading first, numbers after (decision 3).
-function BaVerdict({ r }) {
+// The plain reading first, numbers after (decision 5): "rose ... a large
+// change, unlikely by chance (p < 0.001)" (J10).
+function BaVerdict({ r, gName }) {
   const parts = [];
   for (const [k, x] of Object.entries(r.node || {})) {
     if (!x?.n) continue;
-    const name = gloss(k).label.toLowerCase();
+    const name = personMeasure(k).replace(/^./, c => c.toLowerCase());
     const size = Math.abs(x.dz) < 0.2 ? 'a small change' : Math.abs(x.dz) < 0.5 ? 'a moderate change' : 'a large change';
-    if (Number.isFinite(x.p) && x.p < 0.05) parts.push(`${name} ${x.meanDiff > 0 ? 'rose' : 'fell'} on average from ${fmtNum(x.meanBefore)} to ${fmtNum(x.meanAfter)} per person, ${size} but more than chance would give`);
-    else parts.push(`${name} did not change clearly (${fmtNum(x.meanBefore)} to ${fmtNum(x.meanAfter)})`);
+    const pw = pShort(x.p, x.reps);
+    if (Number.isFinite(x.p) && x.p < 0.05) parts.push(`${name} ${x.meanDiff > 0 ? 'rose' : 'fell'} on average from ${fmtNum(x.meanBefore)} to ${fmtNum(x.meanAfter)} per person, ${size}, unlikely by chance (${pw})`);
+    else parts.push(`${name} did not change clearly (${fmtNum(x.meanBefore)} to ${fmtNum(x.meanAfter)}; ${pw})`);
+  }
+  const mix = r.mixing;
+  if (mix && Number.isFinite(mix.diff)) {
+    const clear = Number.isFinite(mix.p) && mix.p < 0.05;
+    parts.push(clear
+      ? `ties ${mix.diff < 0 ? 'stayed inside' : 'crossed'} ${gName} lines more after the date (E-I ${fmtNum(mix.before.eiIndex)} to ${fmtNum(mix.after.eiIndex)}, crossing ties ${fmtPct(mix.before.crossShare)} to ${fmtPct(mix.after.crossShare)}, unlikely by chance, ${pShort(mix.p, mix.reps)}), ${snapshotClause(mix.attr)}`
+      : `the share of ties crossing ${gName} lines did not change clearly (${fmtPct(mix.before.crossShare)} to ${fmtPct(mix.after.crossShare)})`);
   }
   if (!parts.length) return null;
-  return html`<p class="tview__verdict">${parts.join('; ').replace(/^./, c => c.toUpperCase())}.${r.cautions?.length ? ' Some of this is a source starting or ending (see the caution above).' : ''}</p>`;
+  const cap = (x) => x.replace(/^./, c => c.toUpperCase());
+  return html`<div class="tview__verdict">${parts.map(x => html`<p>${cap(x)}.</p>`)}${r.cautions?.length ? html`<p>Some of this is a source starting or ending (see the caution above).</p>` : ''}</div>`;
 }

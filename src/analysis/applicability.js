@@ -61,7 +61,19 @@ export function applicability(ds, net) {
     flag(globalMetrics, 'caution', "Some sources are one person's export; their owners look more central than they are.");
     flag(['groups', 'nullModel'], 'caution', "Some sources are one person's export: ties among that person's contacts are only partly visible, so group mixing partly describes what the owner saw.");
   }
-  if (only([VIEWS.CHAT])) {
+  // Many conversations from one person's phone or account (a WhatsApp or
+  // Telegram export of every chat, an iMessage database): the owner is in
+  // every one of them, so the owner joins the conversations by construction
+  // and other people are seen only where they shared a chat with the owner.
+  const personal = sources.length > 1 && sources.every(s => s.family === 'personal' || s.context === 'personal') && only([VIEWS.CHAT, VIEWS.EGO]) && has(VIEWS.CHAT);
+  if (personal) {
+    const k = sources.length;
+    flag(pathMetrics, 'na', `${k} conversations from one person's export: its owner is in all of them and connects them by construction, so path measures describe the export, not anyone's position. Use ego measures (size, effective size, constraint) for the owner instead.`);
+    flag(['eigenvector', 'pagerank', 'degreeCentralization', 'avgPathLength', 'coreNumber'], 'caution', `In ${k} conversations from one person's export, everyone else is seen only through the chats they shared with the owner.`);
+    flag(['constraint', 'effectiveSize'], 'caution', `In one person's export the owner's contacts are tied to each other only when they shared a chat with the owner, so the owner's constraint is low and effective size high largely by construction: compare them across people's own exports, not with whole-network studies. For anyone but the owner they describe only the chats the owner was in.`);
+    flag(['egoDensity', 'clustering', 'density', 'transitivity', 'avgClustering', 'communities'], 'caution', `Ties are seen only inside the chats of one person's export; group chats make cliques, and contacts who never shared a chat with the owner look unconnected.`);
+    flag(['groups', 'nullModel'], 'caution', "In one person's export, everyone is tied to the owner and group chats make cliques; rewired comparison networks ignore both, so read z and p as rough.");
+  } else if (only([VIEWS.CHAT])) {
     flag(pathMetrics, 'caution', 'A single conversation: everyone hears everyone, so differences in path position are small and mostly reflect who spoke when.');
     flag(['communities'], 'caution', 'A single conversation rarely contains separate communities.');
   }

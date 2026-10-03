@@ -86,3 +86,30 @@ test('ego exports caution group comparisons', () => {
   assert.equal(ap.groups.level, 'caution');
   assert.match(ap.groups.reason, /what the owner saw/);
 });
+
+test('many chats from one person\'s export: the owner bridges by construction; constraint and effective size carry the reason (C3)', () => {
+  const b = new DatasetBuilder({ source: { format: 'whatsapp', family: 'personal', view: VIEWS.CHAT, context: 'personal', egoKey: 'w:me' } });
+  const me = b.node('w:me');
+  const t0 = Date.UTC(2026, 0, 1);
+  let k = 0;
+  for (let c = 0; c < 4; c++) {
+    if (c) b.beginSource({ format: 'whatsapp', family: 'personal', view: VIEWS.CHAT, context: 'personal', egoKey: 'w:me' });
+    const ps = Array.from({ length: 3 }, (_, i) => b.node(`w:${c}-${i}`));
+    for (const p of ps) { b.event({ actor: p, t: t0 + (k++) * 60000, targets: [[me, 'dm']] }); b.event({ actor: me, t: t0 + (k++) * 60000, targets: [[p, 'dm']] }); }
+  }
+  const ds = b.build();
+  const ap = applicability(ds, buildNetwork(ds, defaultSettings(ds)));
+  assert.equal(ap.betweenness.level, 'na');
+  assert.match(ap.betweenness.reason, /4 conversations from one person's export/);
+  assert.doesNotMatch(ap.betweenness.reason, /single conversation/i);
+  for (const m of ['constraint', 'effectiveSize']) {
+    assert.equal(ap[m].level, 'caution', m);
+    assert.match(ap[m].reason, /by construction/);
+  }
+  // One chat alone keeps the single-conversation wording.
+  const one = new DatasetBuilder({ source: { format: 'whatsapp', family: 'personal', view: VIEWS.CHAT, context: 'personal' } });
+  const q = Array.from({ length: 4 }, (_, i) => one.node('o:' + i));
+  for (let i = 0; i < 12; i++) one.event({ actor: q[i % 4], t: t0 + i * 60000, targets: [[q[(i + 1) % 4], 'dm']] });
+  const ds1 = one.build();
+  assert.match(applicability(ds1, buildNetwork(ds1, defaultSettings(ds1))).betweenness.reason, /single conversation/i);
+});

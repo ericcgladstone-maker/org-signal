@@ -12,6 +12,10 @@ import { corpus, tokenize } from './corpus.js';
 import { graphOf } from '../graph.js';
 import { createRng } from '../rng.js';
 
+// A shuffled baseline at or above this share of exposed adopters leaves the
+// test little room (see null.ceiling below).
+export const CEILING = 0.85;
+
 // opts: { terms: [...], auto = 8 (terms to pick when none given), minAdopters = 5,
 //         window (ms), reps = 200, seed = 1, maxAdoptions = 500 }
 export function diffusion(ds, net, opts = {}) {
@@ -119,7 +123,12 @@ export function diffusion(ds, net, opts = {}) {
       outsideNetwork: m.size - nodes.length,
       first: Math.min(...times), last: Math.max(...times),
       exposedShare: obs.share, exposed: obs.exposed, eligible: obs.eligible,
-      null: { mean, sd, z: sd > 0 ? (obs.share - mean) / sd : NaN, pUpper: (ge + 1) / (reps + 1), reps },
+      // room: how far above the shuffled baseline any result could go. When
+      // most adopters would have an earlier-adopting contact anyway (dense
+      // networks, popular terms), even 100% exposure is barely above the
+      // null and the test cannot show much either way (N8): ceiling marks
+      // a baseline of 85% or more, zMax the z of a 100% exposed share.
+      null: { mean, sd, z: sd > 0 ? (obs.share - mean) / sd : NaN, pUpper: (ge + 1) / (reps + 1), reps, room: 1 - mean, zMax: sd > 0 ? (1 - mean) / sd : NaN, ceiling: mean >= CEILING },
       cascade: { roots, maxDepth, largest: Math.max(0, ...size.values()) },
       adoptions,
     });

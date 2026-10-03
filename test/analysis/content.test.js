@@ -170,3 +170,26 @@ test('names in the data, weekdays and months are not keywords or topic words', (
   assert.equal(a.coverage.quotedRemoved, 40);
   assert.deepEqual(a.groups.map(g => g.label), ['Email']);
 });
+
+test('diffusion: a shuffled baseline near 100% is flagged as leaving little room (N8)', () => {
+  // Everyone tied to everyone: any adopter after the first has an earlier
+  // adopter among their contacts, shuffled or not.
+  const b = new DatasetBuilder({ source: { format: 't', view: VIEWS.FULL } });
+  const ps = Array.from({ length: 12 }, (_, i) => b.node('t:' + i));
+  const ch = b.context('c', { kind: 'channel', visibility: 'public' });
+  for (let i = 0; i < 12; i++) for (let j = 0; j < 12; j++) if (i !== j) b.event({ actor: ps[i], t: T0 + i, targets: [[ps[j], 'dm']] });
+  ps.forEach((p, k) => b.event({ actor: p, t: T0 + (5 + k) * 24 * H, context: ch, text: 'the quillfeather rollout' }));
+  const ds = b.build();
+  const s = defaultSettings(ds);
+  s.rules.adjacency.on = false;
+  const r = diffusion(ds, buildNetwork(ds, s), { terms: ['quillfeather'], reps: 100, seed: 1 }).terms[0];
+  assert.equal(r.null.mean, 1);
+  assert.equal(r.null.ceiling, true);
+  assert.equal(r.null.room, 0);
+  const ring = diffusionDataset({ alongTies: true });
+  const s2 = defaultSettings(ring);
+  s2.rules.adjacency.on = false;
+  const r2 = diffusion(ring, buildNetwork(ring, s2), { terms: ['zorblax'], reps: 100, seed: 2 }).terms[0];
+  assert.equal(r2.null.ceiling, false);
+  assert.ok(r2.null.zMax > 3);
+});
