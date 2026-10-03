@@ -74,3 +74,48 @@
 .vt-name{display:flex;align-items:center;gap:.4rem;min-width:0;max-width:100%}
 .vt-name__text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vt-name>:not(.vt-name__text){flex:none}
+
+/* ---------- Network: who stands out, verdicts, fragility (round 2) ---------- */
+.standout{margin:0 0 1rem;padding:.7rem 0 .8rem;border-block:1px solid var(--rule)}
+.standout .label{margin:0 0 .45rem}
+.standout__list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:.6rem 2rem}
+.standout__item{display:flex;flex-direction:column;gap:.1rem;min-width:0}
+.standout__q{font-size:.8125rem;color:var(--text-2)}
+.standout__a{font-size:1rem;font-weight:600;color:var(--text);overflow-wrap:anywhere}
+.standout__name{font-weight:600}
+.standout__v{font-weight:400;color:var(--text-2);font-variant-numeric:tabular-nums;margin-left:.25rem}
+.standout__sub{font-size:.75rem;color:var(--text-muted)}
+.standout__sub .tlink{font-size:.75rem}
+.metric-row .net-verdict{grid-column:1 / -1;margin-top:.3rem}
+.net-verdict .verdict__claim,.net-frag .verdict__claim{font-size:.8125rem;color:var(--text);margin:0}
+.net-verdict .verdict__plain,.net-frag .verdict__plain{font-size:.8125rem;color:var(--text-2);margin:.15rem 0 0}
+.net-verdict .verdict__details{margin:.15rem 0 0}
+.net-frag .label{margin-top:0}
+.net-frag .verdict{margin:.6rem 0 .4rem}
+.net-frag__table{width:100%;border-collapse:collapse;margin:.6rem 0 .3rem;font-size:.8125rem}
+.net-frag__table caption{text-align:left;margin-bottom:.3rem}
+.net-frag__table th,.net-frag__table td{padding:.3rem .4rem .3rem 0;border-bottom:1px solid var(--rule);text-align:right;font-variant-numeric:tabular-nums}
+.net-frag__table th[scope=row],.net-frag__table thead th:first-child{text-align:left;font-weight:400;color:var(--text-2)}
+.net-frag__table thead th{font-weight:600;color:var(--text-2);font-size:.75rem}
+
+/* ---------- People: dot key, stability readings, phone list (round 2) ---------- */
+.people-sorted{margin:0 0 .5rem}
+.dot-key{color:var(--text-muted)}
+.dot-key .nowrap{margin-left:.35rem}
+.dot-key .swatch{margin-right:.25rem}
+.stab__verdict .verdict__claim{font-size:.875rem;color:var(--text);margin:.5rem 0 0}
+.stab__verdict .verdict__plain{font-size:.8125rem;color:var(--text-2);margin:.2rem 0 0}
+.stab__row{row-gap:0}
+.stab__read{grid-column:1 / -1;font-size:.75rem;color:var(--text-muted);margin:-.1rem 0 .3rem}
+.stab__row--after .name,.stab__row--after .tnum{color:var(--text-muted)}
+.stab__row .name .flag{margin-left:.3rem}
+.profile-note{display:inline-block;margin-top:.25rem;color:var(--text-muted);font-size:.75rem;line-height:1.45}
+/* The name column stays in place while the measures scroll sideways (M15). */
+.people-table .vt__head > :first-child,.people-table .vt__row > :first-child{position:sticky;left:0;z-index:1;background:var(--bg)}
+.people-table .vt__head > :first-child{z-index:3}
+.people-table .vt__row.is-selected > :first-child{background:linear-gradient(rgba(111,216,190,.08),rgba(111,216,190,.08)),var(--bg)}
+.people-list .field{max-width:20rem}
+.people-list__items{list-style:none;margin:.6rem 0 .4rem;padding:0;border-top:1px solid var(--rule)}
+.people-list__row{display:grid;grid-template-columns:2rem minmax(0,1fr) auto;gap:.5rem;align-items:center;width:100%;min-height:2.75rem;padding:.35rem 0;background:none;border:0;border-bottom:1px solid var(--rule);color:var(--text);font:inherit;font-size:.875rem;text-align:left;cursor:pointer}
+.people-list__rank{color:var(--text-muted);font-size:.75rem}
+.people-list__val{color:var(--text-2)}

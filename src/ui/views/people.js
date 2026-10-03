@@ -10,7 +10,7 @@ import { html, useState, useMemo, useEffect, useRef } from '../../../vendor/prea
 import { store, useStore } from '../store.js';
 import { engine } from '../services/engine.js';
 import { gloss, NODE_METRICS } from '../services/glossary.js';
-import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, MetricInfo, Flag, Swatch, ConstructionButton, useEngine, download, applicabilityReason } from '../components/common.js';
+import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, MetricInfo, Flag, Swatch, ConstructionButton, useEngine, download, applicabilityReason, HowToRead, Verdict, useExplain, useDetailsDismiss } from '../components/common.js';
 import { VirtualTable } from '../components/vtable.js';
 import { Spark } from '../components/charts.js';
 import { Evidence } from './network.js';
@@ -18,8 +18,12 @@ import { tokens } from '../lib/palette.js';
 import { preferredAttributes, isBookkeeping, numericAttributes, label as nodeLabel, RULE_LABEL } from '../lib/dsutil.js';
 import { cachedRender, getRender, tiesOf } from '../lib/render-cache.js';
 import { fmtNum, fmtInt, fmtDate, fmtPct, fmtAttr, columnFormat, humanize, plural } from '../lib/format.js';
-import { withContacts, metricLabel, rankInfo, fmtRank, RESAMPLABLE, displayKey, isDeactivated, sparkSeries } from '../lib/measures.js';
+import { withContacts, metricLabel, rankInfo, fmtRank, RESAMPLABLE, displayKey, isDeactivated, sparkSeries, distinctMeasures, measureFormat, measureNote } from '../lib/measures.js';
 import { communityScale } from '../lib/communities.js';
+import { nodeColoring, getColorBy } from '../lib/coloring.js';
+import { departures, hasTimes } from '../lib/departures.js';
+import { stabilityReading, stabilitySummary, resamplingCaveat, TOP_CHOICES } from '../lib/stability.js';
+import { peopleSort, rememberPeopleSort, rememberColumn, applyColumnChoices } from '../lib/viewprefs.js';
 import { EVENT_TYPES } from '../../core/model.js';
 
 const DEFAULT_METRICS = ['contacts', 'strength', 'betweenness', 'closeness', 'pagerank'];
@@ -33,7 +37,7 @@ let prefs = { ds: null };
 export function PeopleView() {
   const ds = useStore(s => s.dataset);
   const net = useStore(s => s.network);
-  if (!ds || !net) return html`<${NeedsData} title="People" />`;
+  if (!ds || !net) return html`<${NeedsData} title="People" purpose="People answers: where does each person sit in the network, and how sure can we be of their place?" shows=${['every person ranked by contacts, betweenness, closeness and more', 'how stable the top of a ranking is', "a profile with each person's ties and the events behind them"]} />`;
   return html`<${PeopleInner} ds=${ds} net=${net} />`;
 }
 
@@ -64,26 +68,42 @@ function PeopleInner({ ds, net }) {
   const attrs = useMemo(() => preferredAttributes(ds), [ds]);
   // Ordinal attributes are both groupable and numeric; show each one once.
   const numAttrs = useMemo(() => numericAttributes(ds).filter(a => !attrs.some(g => g.key === a.key)), [ds, attrs]);
+  const metricKeys = distinctMeasures(ORDER.filter(k => node?.[k]), net.directed);
+  const naKeys = metricKeys.filter(k => ap[k]?.level === 'na');
   if (prefs.ds !== ds) {
+    // Measures that do not apply start hidden (C12); the reader's own column
+    // and sort choices carry over from the last network (M11, J15).
     const visibleAttrs = attrs.filter(a => !isBookkeeping(a)).slice(0, 2).map(a => `attr:${a.key}`);
-    prefs = { ds, sort: { key: 'm:contacts', dir: 'desc' }, cols: new Set(['community', ...visibleAttrs, ...DEFAULT_METRICS.map(k => `m:${k}`)]), q: '' };
+    const available = new Set(metricKeys.map(k => `m:${k}`));
+    const unweighted = sameValues(node?.strength, node?.contacts);
+    const base = new Set(['community', ...visibleAttrs, ...DEFAULT_METRICS.filter(k => available.has(`m:${k}`) && ap[k]?.level !== 'na' && !(k === 'strength' && unweighted)).map(k => `m:${k}`)]);
+    const has = key => key === 'name' || available.has(key) || base.has(key);
+    prefs = { ds, sort: peopleSort(has) || { key: 'm:contacts', dir: 'desc' }, cols: applyColumnChoices(base, available), q: '' };
+  } else {
+    const pending = peopleSort(key => key.startsWith('m:') && !!node?.[key.slice(2)]);
+    if (pending) prefs.sort = pending;
   }
-  const [q, setQ0] = useState(prefs.q);
-  const [sort, setSort0] = useState(prefs.sort);
-  const [cols, setCols0] = useState(prefs.cols);
-  const setQ = v => { prefs.q = v; setQ0(v); };
-  const setSort = f => setSort0(s => { const n = typeof f === 'function' ? f(s) : f; prefs.sort = n; return n; });
-  const setCols = c => { prefs.cols = c; setCols0(c); };
+  // Read from prefs on every render: the view stays mounted when a new
+  // dataset loads, so component state would keep the old choices.
+  const [, redraw] = useState(0);
+  const { q, sort, cols } = prefs;
+  const setQ = v => { prefs.q = v; redraw(x => x + 1); };
+  const setSort = f => { const n = typeof f === 'function' ? f(prefs.sort) : f; prefs.sort = n; rememberPeopleSort(n); redraw(x => x + 1); };
+  const setCols = (c, key, on) => { prefs.cols = c; if (key) rememberColumn(key, on); redraw(x => x + 1); };
   const [filterAttr, setFilterAttr] = useState('');
   const [filterVal, setFilterVal] = useState('');
   const [stabBusy, setStabBusy] = useState(false);
+  const [showTable, setShowTable] = useState(false);
+  const phone = usePhone();
   const ids = net.nodeIds;
-  const comm = useMemo(() => communityScale(communities), [communities]);
+  const left = departures(ds);
 
-  const metricKeys = ORDER.filter(k => node?.[k]);
-  const naKeys = metricKeys.filter(k => ap[k]?.level === 'na');
+  // Dots follow what the Network map is colored by (L6, N21).
+  const colorBy = getColorBy(ds, communities, attrs);
+  const dots = useMemo(() => nodeColoring({ ds, net, communities, colorBy, attrs, nodeMetrics: node, label: k => metricLabel(k, net.directed) }), [ds, net, communities, colorBy, node]);
+
   const mlabel = k => metricLabel(k, net.directed);
-  const formats = useMemo(() => Object.fromEntries(Object.keys(node || {}).map(k => [k, columnFormat(node[k])])), [node]);
+  const formats = useMemo(() => Object.fromEntries(Object.keys(node || {}).map(k => [k, measureFormat(k, node[k])])), [node]);
   const sortMetric = sort.key.startsWith('m:') ? sort.key.slice(2) : null;
 
   // Every column that can be shown; `cols` decides which are.
@@ -91,15 +111,18 @@ function PeopleInner({ ds, net }) {
     ...(communities ? [{ key: 'community', title: 'Community', width: 'minmax(5.5rem,.7fr)', min: 96, group: 'People' }] : []),
     ...attrs.map(a => ({ key: `attr:${a.key}`, title: a.label, width: 'minmax(7rem,1fr)', min: 110, group: isBookkeeping(a) ? 'Data-collection fields' : 'Attributes' })),
     ...numAttrs.map(a => ({ key: `num:${a.key}`, title: a.label, num: true, width: 'minmax(5.5rem,.8fr)', min: 90, group: 'Attributes' })),
-    ...metricKeys.map(k => ({ key: `m:${k}`, title: mlabel(k), header: k === 'degree' ? mlabel(k) : mlabel(k).split(' (')[0], info: html`<${MetricInfo} metric=${k} label=${mlabel(k)} />`, num: true, width: 'minmax(8.5rem,.9fr)', min: 136, group: ap[k]?.level === 'na' ? 'Measures that do not apply to this data' : 'Measures' })),
+    ...metricKeys.map(k => ({ key: `m:${k}`, title: mlabel(k), info: html`<${MetricInfo} metric=${k} label=${mlabel(k)} note=${measureNote(k, { n: net.n, directed: net.directed })} />`, num: true, width: 'minmax(8.5rem,.9fr)', min: 136, group: ap[k]?.level === 'na' ? 'Measures that do not apply to this data' : 'Measures' })),
   ];
   const stabCols = Object.keys(stability).filter(m => cols.has(`m:${m}`)).flatMap(m => [
-    { key: `iv:${m}`, title: `${mlabel(m).split(' (')[0]} rank interval`, num: true, sortable: false, width: 'minmax(7rem,.9fr)', min: 112, after: `m:${m}` },
-    { key: `top:${m}`, title: `In top ${TOP}`, num: true, width: 'minmax(5.5rem,.7fr)', min: 90, after: `m:${m}` },
+    { key: `iv:${m}`, title: `${mlabel(m).split(' (')[0]} rank range`, num: true, sortable: false, width: 'minmax(7rem,.9fr)', min: 112, after: `m:${m}` },
+    { key: `top:${m}`, title: `In top ${stability[m].top ?? TOP}`, num: true, width: 'minmax(5.5rem,.7fr)', min: 90, after: `m:${m}` },
   ]);
-  // Badges (bot, deactivated) sit after the name, so give the column room for both.
-  const badged = useMemo(() => { for (let i = 0; i < ds.nodes.count; i++) if (ds.nodes.isBot[i] || isDeactivated(ds, i)) return true; return false; }, [ds]);
-  const columns = [{ key: 'name', title: 'Name', width: badged ? 'minmax(17rem,2fr)' : 'minmax(11rem,1.6fr)', min: badged ? 272 : 170, name: true }];
+  // Badges (bot, deactivated, left) sit after the name, so give the column room for both.
+  const badged = useMemo(() => { for (let i = 0; i < ds.nodes.count; i++) if (ds.nodes.isBot[i] || left.has(i)) return true; return false; }, [ds, left]);
+  // On a phone the name column stays put while the rest scrolls, so it
+  // must leave room for the measures.
+  const columns = [phone ? { key: 'name', title: 'Name', width: 'minmax(9rem,1fr)', min: 144, name: true }
+    : { key: 'name', title: 'Name', width: badged ? 'minmax(17rem,2fr)' : 'minmax(11rem,1.6fr)', min: badged ? 272 : 170, name: true }];
   for (const c of allColumns) {
     if (!cols.has(c.key)) continue;
     columns.push(c);
@@ -143,11 +166,16 @@ function PeopleInner({ ds, net }) {
     // into view (the page's scroll padding keeps it clear of the header).
     if (window.innerWidth <= 1060) setTimeout(() => document.querySelector('.split__side')?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' }), 50);
   };
+  const badges = (i) => {
+    const d = left.get(i);
+    return html`${ds.nodes.isBot[i] ? html`<span class="meta">bot</span>` : ''}${d?.kind === 'deactivated' ? html`<${Flag} level="caution">deactivated</${Flag}>` : d?.kind === 'silent' ? html`<span title=${`No activity after ${fmtDate(d.last)}`}><${Flag} level="caution">left?</${Flag}></span>` : ''}`;
+  };
+  const dot = v => (dots.kind === 'none' ? '' : html`<${Swatch} color=${dots.of(v)} />`);
   const cell = (v, c) => {
     const i = ids[v];
     // The name truncates, never the badges after it: a cut-off "deactivated"
     // flag is how a departed person passed for a current broker in testing.
-    if (c.key === 'name') return html`<span class="vt-name">${comm ? html`<${Swatch} color=${comm.color(String(communities.membership[v]))} />` : ''}<span class="vt-name__text">${nodeLabel(ds, i)}</span>${ds.nodes.isBot[i] ? html`<span class="meta">bot</span>` : ''}${isDeactivated(ds, i) ? html`<${Flag} level="caution">deactivated</${Flag}>` : ''}</span>`;
+    if (c.key === 'name') return html`<span class="vt-name">${dot(v)}<span class="vt-name__text">${nodeLabel(ds, i)}</span>${badges(i)}</span>`;
     if (c.key === 'community') return String(communities.membership[v] + 1);
     if (c.key.startsWith('attr:')) { const x = ds.nodes.attrs[i][c.key.slice(5)]; return x == null || x === '' ? html`<span class="muted">–</span>` : fmtAttr(c.key.slice(5), x); }
     if (c.key.startsWith('num:')) { const k = c.key.slice(4); const x = ds.nodes.attrs[i][k]; return x == null || x === '' ? html`<span class="muted">–</span>` : fmtAttr(k, Number.isFinite(Number(x)) && !/offset/i.test(k) ? fmtNum(Number(x)) : x); }
@@ -184,9 +212,13 @@ function PeopleInner({ ds, net }) {
   const filterValues = filterAttr ? (attrs.find(a => a.key === filterAttr)?.values || []) : [];
   const canStab = sortMetric && RESAMPLABLE.includes(sortMetric) && ap[sortMetric]?.level !== 'na';
   const profileHidden = profile != null && !rows.some(v => ids[v] === profile);
+  const hiddenNa = naKeys.filter(k => !cols.has(`m:${k}`));
+  const sortCol = [...allColumns, { key: 'name', title: 'Name' }].find(c => c.key === sort.key);
+  const sortedBy = sortCol ? `Sorted by ${sortCol.title}, ${sort.dir === 'asc' ? (sort.key === 'name' || sort.key.startsWith('attr:') ? 'A to Z' : 'lowest first') : (sort.key === 'name' ? 'Z to A' : 'highest first')}.` : '';
+  const listMetric = sortMetric && node?.[sortMetric] ? sortMetric : 'contacts';
 
   return html`<div class="view">
-    <${ViewHead} title="People" intro="Each person's position in the network. Select a measure's name for what it means and how far to trust it; select a person for their profile."
+    <${ViewHead} title="People" intro="Each person's position in the network. Select a column name to sort by it; the (i) beside a measure says what it means and how far to trust it. Select a person for their profile."
       actions=${html`<div class="tlinks"><${ConstructionButton} /><button type="button" class="tlink tlink--down" onClick=${exportCSV}>Export table</button></div>`} />
     <div class="toolbar">
       <label class="field field--grow"><span>Search</span><input class="input" type="search" placeholder="Name or id" value=${q} onInput=${e => setQ(e.currentTarget.value)} /></label>
@@ -198,14 +230,20 @@ function PeopleInner({ ds, net }) {
         <div class="row row--between" style="margin-bottom:.4rem;gap:.5rem 1.5rem">
           <p class="meta" style="margin:0">${fmtInt(rows.length)} of ${fmtInt(ids.length)} people</p>
           <div class="tlinks">
-            ${canStab && !stability[sortMetric] && html`<button type="button" class="tlink" onClick=${runStability} disabled=${stabBusy}>${stabBusy ? 'Resampling' : `Check how stable the ${mlabel(sortMetric).toLowerCase()} ranking is`}</button>`}
-            <${ColumnChooser} columns=${allColumns} cols=${cols} setCols=${setCols} />
+            ${canStab && !stability[sortMetric] && html`<button type="button" class="tlink" onClick=${runStability} disabled=${stabBusy}>${stabBusy ? 'Resampling' : `Check how stable the ${mlabel(sortMetric).split(' (')[0].toLowerCase()} ranking is`}</button>`}
+            ${!(phone && !showTable) && html`<${ColumnChooser} columns=${allColumns} cols=${cols} setCols=${setCols} />`}
           </div>
         </div>
-        ${sortMetric && stability[sortMetric] && html`<${TopStability} ds=${ds} metric=${sortMetric} label=${mlabel(sortMetric)} result=${stability[sortMetric]} n=${ids.length} />`}
-        <${VirtualTable} label="People and their measures" columns=${columns} rows=${rows} rowKey=${v => v} cell=${cell} onActivate=${open}
-          selected=${selSet} sort=${sort} onSort=${onSort} empty="Nobody matches the search or filter." />
-        ${naKeys.some(k => !cols.has(`m:${k}`)) && html`<p class="basis">Hidden because they do not apply to this data (add them under Columns): ${naKeys.map(k => mlabel(k)).join(', ')}. ${applicabilityReason(ap[naKeys[0]])}</p>`}
+        <p class="small text2 people-sorted">${sortedBy} <${DotKey} coloring=${dots} /></p>
+        ${sortMetric && stability[sortMetric] && html`<${TopStability} ds=${ds} metric=${sortMetric} label=${mlabel(sortMetric)} result=${stability[sortMetric]} n=${ids.length} values=${node[sortMetric]} fmt=${formats[sortMetric]} net=${net} left=${left} />`}
+        ${phone && !showTable ? html`<${RankedList} ds=${ds} ids=${ids} node=${node} rows=${rows} metric=${listMetric} keys=${metricKeys.filter(k => ap[k]?.level !== 'na')} label=${mlabel} fmt=${formats} dot=${dot} badges=${badges}
+              onMetric=${k => setSort({ key: `m:${k}`, dir: 'desc' })} onOpen=${open} />
+            <button type="button" class="tlink" style="margin-top:.6rem" onClick=${() => setShowTable(true)}>Show the full table (scrolls sideways)</button>`
+          : html`<div class="people-table"><${VirtualTable} label="People and their measures" columns=${columns} rows=${rows} rowKey=${v => v} cell=${cell} onActivate=${open}
+            selected=${selSet} sort=${sort} onSort=${onSort} empty="Nobody matches the search or filter." /></div>
+            ${phone && html`<button type="button" class="tlink" style="margin-top:.6rem" onClick=${() => setShowTable(false)}>Back to the ranked list</button>`}`}
+        ${hiddenNa.length > 0 && html`<p class="basis">Hidden because they do not apply to this data (add them under Columns): ${hiddenNa.map(k => mlabel(k)).join(', ')}. ${applicabilityReason(ap[hiddenNa[0]])}</p>`}
+        <${RankingHowTo} ds=${ds} net=${net} node=${node} metric=${listMetric} label=${mlabel(listMetric)} fmt=${formats[listMetric]} />
       </div>
       <aside class="split__side" aria-label="Profile">
         ${profile != null ? html`<${Profile} key=${profile} ds=${ds} net=${net} i=${profile} hidden=${profileHidden} />` : html`<h2 class="label">Profile</h2><p class="small text2">Select a person in the table (click, or focus the table and press Enter) to see their profile.</p>`}
@@ -214,10 +252,83 @@ function PeopleInner({ ds, net }) {
   </div>`;
 }
 
+// Strength equals contacts for everyone when ties carry no weight.
+function sameValues(a, b) {
+  if (!a || !b) return false;
+  for (let x = 0; x < a.length; x++) if (Number.isFinite(a[x]) && a[x] !== b[x]) return false;
+  return true;
+}
+
+// Phones (below 600px): a measure picker and a ranked list of name and
+// value, so "who has the most ties?" is answered without sideways scrolling
+// (L7, M15). The full table stays one tap away.
+function usePhone() {
+  const q = typeof matchMedia === 'function' ? matchMedia('(max-width: 599px)') : null;
+  const [phone, setPhone] = useState(!!q?.matches);
+  useEffect(() => {
+    if (!q) return;
+    const on = () => setPhone(q.matches);
+    q.addEventListener?.('change', on);
+    return () => q.removeEventListener?.('change', on);
+  }, []);
+  return phone;
+}
+
+const LIST_PAGE = 50;
+
+function RankedList({ ds, ids, node, rows, metric, keys, label, fmt, dot, badges, onMetric, onOpen }) {
+  const [more, setMore] = useState(false);
+  const arr = node[metric];
+  const order = rows.filter(v => Number.isFinite(arr[v])).sort((a, b) => arr[b] - arr[a] || a - b);
+  const shown = more ? order : order.slice(0, LIST_PAGE);
+  // Competition ranks at the precision shown: equal values share a rank.
+  const ranks = [];
+  order.forEach((v, x) => { ranks.push(x > 0 && fmt[metric](arr[v]) === fmt[metric](arr[order[x - 1]]) ? ranks[x - 1] : x + 1); });
+  return html`<div class="people-list">
+    <${Select} label="Measure" value=${metric} onChange=${onMetric} options=${keys.map(k => ({ value: k, label: label(k) }))} />
+    <ol class="people-list__items">
+      ${shown.map((v, x) => { const i = ids[v]; return html`<li><button type="button" class="people-list__row" onClick=${e => onOpen(v, e)}>
+        <span class="people-list__rank tnum">${ranks[x]}${(ranks[x + 1] === ranks[x] || (x > 0 && ranks[x - 1] === ranks[x])) ? '=' : ''}</span><span class="vt-name">${dot(v)}<span class="vt-name__text">${nodeLabel(ds, i)}</span>${badges(i)}</span><span class="tnum people-list__val">${fmt[metric](arr[v])}</span>
+      </button></li>`; })}
+    </ol>
+    ${order.length > LIST_PAGE && html`<button type="button" class="tlink" onClick=${() => setMore(m => !m)}>${more ? `Show the top ${LIST_PAGE}` : `Show all ${fmtInt(order.length)}`}</button>`}
+    <p class="basis">People with the same value at the precision shown share a rank (marked =).</p>
+  </div>`;
+}
+
+// One line saying what the dots mean, with the colors (L6, N21, J15).
+function DotKey({ coloring }) {
+  if (!coloring || coloring.kind === 'none') return null;
+  if (coloring.kind === 'seq') return html`<span class="dot-key">Dots: ${coloring.title}, darker is lower (as on the Network map).</span>`;
+  const gc = coloring.gc;
+  return html`<span class="dot-key">Dots: ${coloring.title.replace(' (found by Louvain)', '')}, as on the Network map${gc.colored.length ? ':' : '.'}
+    ${gc.colored.map(e => html` <span class="nowrap"><${Swatch} color=${e.color} />${e.label}</span>`)}${gc.many ? html` <span class="nowrap"><${Swatch} color=${gc.otherColor} />other groups</span>` : ''}${gc.missing ? html` <span class="nowrap"><${Swatch} color=${gc.missingColor} />not recorded</span>` : ''}</span>`;
+}
+
+// How to read the ranking (decision 1): what the sorted measure means, what
+// counts as big, the live top of the list, and the mistake to avoid.
+function RankingHowTo({ ds, net, node, metric, label, fmt }) {
+  const arr = node?.[metric];
+  if (!arr) return null;
+  const order = Array.from(arr.keys()).filter(v => Number.isFinite(arr[v])).sort((a, b) => arr[b] - arr[a] || a - b);
+  if (!order.length) return null;
+  const top = order[0];
+  const tied = order.filter(v => fmt(arr[v]) === fmt(arr[top]));
+  const who = tied.length > 1 ? `${tied.slice(0, 3).map(v => nodeLabel(ds, net.nodeIds[v])).join(', ')}${tied.length > 3 ? ` and ${tied.length - 3} more` : ''} share the top value (${fmt(arr[top])})` : `${nodeLabel(ds, net.nodeIds[top])} is first with ${fmt(arr[top])}${order[1] != null ? `, then ${nodeLabel(ds, net.nodeIds[order[1]])} with ${fmt(arr[order[1]])}` : ''}`;
+  return html`<${HowToRead} title=${`How to read the ranking by ${label}`}
+    means=${measureNote(metric, { n: net.n, directed: net.directed }) || gloss(metric).meaning}
+    scale="Read the order, not the size of the number: values depend on the size of the network, so 0.2 can be high in one network and low in another. A gap between neighbors in the list matters more than the value itself."
+    example=${`${who}.`}
+    mistake="Calling the person at the top the most important without checking how stable the ranking is: two people a few thousandths apart are tied for any reading." />`;
+}
+
 function ColumnChooser({ columns, cols, setCols }) {
+  // Closes on an outside click or Escape like any menu (M10).
+  const ref = useRef(null);
+  useDetailsDismiss(ref);
   const groups = [...new Set(columns.map(c => c.group))];
-  const toggle = (k, on) => { const n = new Set(cols); if (on) n.add(k); else n.delete(k); setCols(n); };
-  return html`<details class="people-cols">
+  const toggle = (k, on) => { const n = new Set(cols); if (on) n.add(k); else n.delete(k); setCols(n, k, on); };
+  return html`<details class="people-cols" ref=${ref}>
     <summary>Columns (${columns.filter(c => cols.has(c.key)).length} of ${columns.length})</summary>
     <div class="people-cols__panel">
       ${groups.map(g => html`<fieldset><legend class="field__label">${g}</legend>
@@ -227,27 +338,44 @@ function ColumnChooser({ columns, cols, setCols }) {
   </details>`;
 }
 
-// The top of a ranking with each person's 95% resampling interval of rank:
-// a dot at the observed rank and a line across the interval, on one shared
-// rank axis, so a reader sees at once which of the top places are settled.
-function TopStability({ ds, metric, label, result, n }) {
-  const rows = [...result.map.values()].sort((a, b) => a.rank - b.rank || a.node - b.node).slice(0, TOP);
-  const maxRank = Math.max(TOP, ...rows.map(r => r.hi));
+// The top of a ranking with each person's 95% resampling range of rank:
+// a dot at the observed rank and a line across the range, on one shared
+// rank axis, with a plain reading per person for the top k the reader picks
+// (decision 5, L10, J6): settled, in the top k, or could drop out; people
+// whose values are equal at the precision shown are flagged as tied; people
+// who left during the data are marked (J7).
+function TopStability({ ds, metric, label, result, n, values, fmt, net, left }) {
+  const [k, setK] = useState(5);
+  const valueOf = r => { const v = Array.prototype.indexOf.call(net.nodeIds, r.node); return v >= 0 ? values[v] : r.value; };
+  const all = [...result.map.values()].sort((a, b) => a.rank - b.rank || a.node - b.node).map(r => ({ ...r, value: valueOf(r) }));
+  const sum = stabilitySummary(all, k, fmt);
+  const rows = all.slice(0, Math.max(k, Math.min(all.length, sum.groups.reduce((m, g) => Math.max(m, g.to), 0))));
+  const maxRank = Math.max(k, ...rows.map(r => r.hi));
   const x = r => `${((r - 1) / Math.max(1, maxRank - 1)) * 100}%`;
-  const settled = rows.filter(r => r.hi <= TOP).length;
+  const gone = sum.top.filter(r => left.has(r.node));
+  const tieText = g => `Ranks ${g.from} to ${g.to} have the same value at the precision shown (${g.text}): their order is not a finding.`;
   return html`<details class="stab" open>
-    <summary><h2 class="label" style="margin:0;display:inline">Top ${TOP} by ${label}: how stable</h2></summary>
-    <p class="small text2" style="margin:.3rem 0 0">${settled === rows.length ? `All ${rows.length} stay in the top ${TOP} across resamples' 95% range.` : `${settled} of ${rows.length} stay in the top ${TOP} across the resamples' 95% range; the rest could fall out, so their place is not a finding.`}</p>
+    <summary><h2 class="label" style="margin:0;display:inline">How stable is the top of the ${label.split(' (')[0].toLowerCase()} ranking?</h2></summary>
+    <div class="row" style="gap:.4rem 1rem;align-items:flex-end;margin-top:.4rem">
+      <${Select} label="Read the top" value=${String(k)} onChange=${v => setK(Number(v))} options=${TOP_CHOICES.filter(c => c <= all.length).map(c => ({ value: String(c), label: String(c) }))} />
+    </div>
+    <${Verdict} className="stab__verdict" verdict=${sum.verdict} plain=${[...sum.groups.map(tieText), gone.length ? `${gone.map(r => nodeLabel(ds, r.node)).join(', ')} left during the data (marked below); a whole-period rank mixes the time before and after, and resampling cannot show that.` : ''].filter(Boolean).join(' ')} />
     <ol class="stab__list">
-      ${rows.map(r => html`<li class="stab__row">
-        <span class="name">${r.rank}. ${nodeLabel(ds, r.node)}</span>
-        <span class="stab__bar" role="img" aria-label=${`rank ${r.rank}, interval ${r.lo} to ${r.hi}`}>
+      ${rows.map(r => { const rd = stabilityReading(r, k); const tied = sum.tiedNodes.has(r.node); const d = left.get(r.node); return html`<li class=${`stab__row${r.rank > k ? ' stab__row--after' : ''}`}>
+        <span class="name">${r.rank}. ${nodeLabel(ds, r.node)}${d ? html` <${Flag} level="caution">${d.kind === 'deactivated' ? 'deactivated' : 'left?'}</${Flag}>` : ''}</span>
+        <span class="stab__bar" role="img" aria-label=${`rank ${r.rank}, range ${r.lo} to ${r.hi}`}>
           <span class="axis"></span><span class="span" style=${`left:${x(r.lo)};width:calc(${x(r.hi)} - ${x(r.lo)})`}></span><span class="dot" style=${`left:${x(r.rank)}`}></span>
         </span>
-        <span class="tnum">${r.lo === r.hi ? fmtInt(r.lo) : `${fmtInt(r.lo)}–${fmtInt(r.hi)}`}</span>
-      </li>`)}
+        <span class="tnum">${fmt(r.value)}</span>
+        <span class="stab__read">${tied ? `Tied at the precision shown (${fmtNum(r.value, { digits: 4 })} to 4 digits); ` : ''}${tied ? rd.text.charAt(0).toLowerCase() + rd.text.slice(1) : rd.text}</span>
+      </li>`; })}
     </ol>
-    <p class="basis">Rank 1 at the left, ${fmtInt(maxRank)} at the right. Events resampled with replacement and the network rebuilt ${result.reps} times with the same settings, out of ${plural(n, 'person', 'people')}. The interval and "In top ${TOP}" columns are in the table.</p>
+    <p class="basis">Rank 1 at the left, ${fmtInt(maxRank)} at the right; the line is the range of ranks in 95% of ${fmtInt(result.reps)} resamples of the events (each rebuilt with the same settings), out of ${plural(n, 'person', 'people')}. ${resamplingCaveat(metric, sum.allPoint)} The range and "In top ${result.top ?? TOP}" columns are in the table.</p>
+    <${HowToRead} title="How to read rank stability"
+      means="The app redraws the messages behind the network many times, rebuilds it each time and ranks everyone again. A place that stays put across these redraws does not depend on which messages happened to be recorded."
+      scale=${`"Settled" means the same rank every time. "In the top ${k}" means the person stays in the top ${k} but their exact place moves. "Could drop out" means that place is not a finding.`}
+      example=${sum.top.length ? `${nodeLabel(ds, sum.top[0].node)}: ${stabilityReading(sum.top[0], k).text.toLowerCase()}.` : null}
+      mistake="Reading a one-rank range as certainty. Resampling cannot remove whole ties or add missing ones, so it says nothing about people or ties the data did not record, or about someone who left halfway." />
   </details>`;
 }
 
@@ -263,12 +391,27 @@ function Profile({ ds, net, i, hidden }) {
   const [busy, setBusy] = useState(false);
   const [edge, setEdge] = useState(null);
   const head = useRef(null);
-  const egoAttr = useMemo(() => preferredAttributes(ds).find(a => !isBookkeeping(a) && ds.nodes.attrs[i][a.key] != null)?.key, [ds, i]);
+  // The attribute for ego diversity: one this person has and shares with
+  // someone else. A field only the respondent holds (kind = ego in an
+  // interview) gives "diversity 0, same kind 0%", which means nothing (C15).
+  const egoAttr = useMemo(() => preferredAttributes(ds).find(a => {
+    if (isBookkeeping(a)) return false;
+    const x = ds.nodes.attrs[i][a.key];
+    if (x == null || x === '') return false;
+    for (let j = 0; j < ds.nodes.count; j++) if (j !== i && String(ds.nodes.attrs[j]?.[a.key]) === String(x)) return true;
+    return false;
+  })?.key, [ds, i]);
   const ego = useEngine('ego', () => engine.ego(i, { attr: egoAttr }), [i, egoAttr], { enabled: v >= 0 });
-  const series = useEngine('ts-month', () => engine.timeSeries({ window: 'month', purpose: 'person profiles', metrics: ['degree', 'strength', 'betweenness'] }), []);
+  const series = useEngine('ts-month', () => engine.timeSeries({ window: 'month', purpose: 'person profiles', metrics: ['degree', 'strength', 'betweenness'] }), [], { enabled: hasTimes(ds) });
   const ties = useTies(net, i, v);
   const activity = useMemo(() => activityOf(ds, i), [ds, i]);
-  const shown = ORDER.filter(k => node?.[k] && ap[k]?.level !== 'na' && !(k === 'degree' && !net.directed));
+  // Strength equals contacts for everyone when ties carry no weight (surveys,
+  // drawings, present-or-absent weighting): no interaction volume to show (C15).
+  const unweighted = useMemo(() => sameValues(node?.strength, node?.contacts), [node]);
+  const shown = distinctMeasures(ORDER.filter(k => node?.[k] && ap[k]?.level !== 'na' && !(k === 'strength' && unweighted)), net.directed);
+  const explain = useExplain();
+  const dep = departures(ds).get(i);
+  const timed = useMemo(() => hasTimes(ds), [ds]);
   const comm = communityScale(communities);
   const key = displayKey(ds.nodes.keys[i]);
   const toCheck = ['degree', 'betweenness', 'closeness', 'strength'].filter(k => shown.includes(k) && ap[k]?.level !== 'na' && !stability[k]);
@@ -287,7 +430,8 @@ function Profile({ ds, net, i, hidden }) {
     <h2 class="label">Profile</h2>
     <p class="profile-head" tabindex="-1" ref=${head}>${nodeLabel(ds, i)}</p>
     <p class="meta" style="margin:.2rem 0 .6rem">${[key, ds.nodes.isBot[i] ? 'bot' : null].filter(Boolean).join(' · ')}${communities && v >= 0 ? html`${key || ds.nodes.isBot[i] ? ' · ' : ''}<${Swatch} color=${comm.color(String(communities.membership[v]))} /> Community ${communities.membership[v] + 1}` : ''}</p>
-    ${isDeactivated(ds, i) && html`<p class="small"><${Flag} level="caution">Deactivated account</${Flag}> <span class="text2">This account was deactivated in the source; its ties end when the person left.</span></p>`}
+    ${isDeactivated(ds, i) && html`<p class="small"><${Flag} level="caution">Deactivated account</${Flag}> <span class="text2">This account was deactivated in the source; its ties end when the person left${dep?.last != null ? ` (last active ${fmtDate(dep.last)})` : ''}. Whole-period measures mix the time before and after, and rank stability cannot show that.</span></p>`}
+    ${dep?.kind === 'silent' && html`<p class="small"><${Flag} level="caution">Left?</${Flag}> <span class="text2">No activity after ${fmtDate(dep.last)}: silent for the last ${fmtInt(dep.quietDays)} days of the data. Whole-period measures mix the time before and after, and rank stability cannot show that; compare before and after in Time.</span></p>`}
     ${hidden && html`<p class="small text2"><${Flag} level="info">Not in the table</${Flag}> The current search or filter hides this person.</p>`}
     ${v < 0 && html`<p class="small text2">This person is in the data but not in the current network (filtered out by the construction settings, or without ties).</p>`}
     ${v >= 0 && html`<nav class="profile-skip" aria-label="Profile sections">
@@ -316,16 +460,17 @@ function Profile({ ds, net, i, hidden }) {
         const iv = stability[k]?.map.get(i);
         const level = ap[k]?.level;
         return html`<div class="metric-row">
-          <span><${MetricName} metric=${k} label=${metricLabel(k, net.directed)} gloss=${true} /></span>
-          <span class="metric-row__val">${fmtNum(arr[v])}</span>
+          <span><${MetricName} metric=${k} label=${metricLabel(k, net.directed)} note=${measureNote(k, { n: net.n, directed: net.directed })} gloss=${true} /></span>
+          <span class="metric-row__val">${measureFormat(k, arr)(arr[v])}</span>
           <span class="metric-row__sub">
             ${fmtRank(rk)}
-            ${iv && html` · <span style="color:var(--text-2)">95% resampling interval ${iv.lo === iv.hi ? `rank ${fmtInt(iv.lo)}` : `ranks ${fmtInt(iv.lo)} to ${fmtInt(iv.hi)}`}; in the top ${TOP} in ${fmtPct(iv.topShare)} of resamples</span>`}
+            ${iv && html` · <span style="color:var(--text-2)">${stabilityReading(iv, stability[k].top ?? TOP).text}; in the top ${stability[k].top ?? TOP} in ${fmtPct(iv.topShare)} of resamples</span>`}
+            ${explain && (k === 'closeness' || k === 'betweenness') && html`<br /><span class="profile-note">${measureNote(k, { n: net.n, directed: net.directed })}</span>`}
             ${level === 'caution' && html`<br/><${Flag} level="caution" /> ${applicabilityReason(ap[k])}`}
           </span>
         </div>`;
       })}
-      <p class="basis">${Object.keys(stability).length ? `Intervals: events resampled with replacement and the network rebuilt ${Object.values(stability)[0].reps} times with the same settings. A rank whose interval is wide is not a finding.` : 'Rank stability resamples the events and rebuilds the network to show how far each rank could move.'}</p>
+      <p class="basis">${Object.keys(stability).length ? `Rank ranges: the events redrawn and the network rebuilt ${Object.values(stability)[0].reps} times with the same settings; the range covers 95% of them. A wide range is not a finding. Redrawing cannot remove whole ties, so it cannot test whether a tie exists.` : 'Rank stability redraws the events and rebuilds the network to show how far each rank could move.'}</p>
     </div>`}
 
     ${attrs.length > 0 && html`<div class="section">
@@ -342,8 +487,8 @@ function Profile({ ds, net, i, hidden }) {
         <dt><${MetricName} metric="egoDensity" showFlag=${false} /></dt><dd>${fmtNum(ego.data.density)}</dd>
         <dt><${MetricName} metric="effectiveSize" showFlag=${false} /></dt><dd>${fmtNum(ego.data.effectiveSize)}</dd>
         <dt><${MetricName} metric="constraint" showFlag=${false} /></dt><dd>${fmtNum(ego.data.constraint)}</dd>
-        ${ego.data.diversity != null && Number.isFinite(ego.data.diversity) && html`<dt>Diversity of contacts (${humanize(ego.data.attr)})</dt><dd>${fmtNum(ego.data.diversity)}</dd>`}
-        ${ego.data.homophily != null && Number.isFinite(ego.data.homophily) && html`<dt>Contacts with the same ${humanize(ego.data.attr).toLowerCase()}</dt><dd>${fmtPct(ego.data.homophily)}</dd>`}
+        ${ego.data.diversity != null && Number.isFinite(ego.data.diversity) && (ego.data.altersWithValue ?? 2) >= 2 && html`<dt>Diversity of contacts (${humanize(ego.data.attr)})</dt><dd>${fmtNum(ego.data.diversity)}</dd>`}
+        ${ego.data.homophily != null && Number.isFinite(ego.data.homophily) && (ego.data.altersWithValue ?? 2) >= 2 && html`<dt>Contacts with the same ${humanize(ego.data.attr).toLowerCase()}</dt><dd>${fmtPct(ego.data.homophily)}</dd>`}
       </dl>`}
     </div>`}
 
@@ -352,14 +497,14 @@ function Profile({ ds, net, i, hidden }) {
       <dl class="kv">
         <dt>Events by this person</dt><dd>${fmtInt(activity.total)}</dd>
         ${Object.entries(activity.byType).map(([k, n]) => html`<dt class="small">${humanize(k)}</dt><dd class="small">${fmtInt(n)}</dd>`)}
-        <dt>Messages with text</dt><dd>${fmtInt(activity.withText)}</dd>
-        <dt>First and last seen</dt><dd>${fmtDate(activity.first)} – ${fmtDate(activity.last)}</dd>
+        ${activity.messages > 0 && html`<dt>Messages with text</dt><dd>${fmtInt(activity.withText)} of ${fmtInt(activity.messages)}</dd>`}
+        ${timed && !activity.declaredOnly && html`<dt>First and last seen</dt><dd>${fmtDate(activity.first)} – ${fmtDate(activity.last)}</dd>`}
       </dl>
       ${activity.contexts.length > 0 && html`<p class="small text2" style="margin-top:.5rem">Most active in ${activity.contexts.map(([c, n]) => `${c} (${fmtInt(n)})`).join(', ')}.</p>`}
       ${activity.terms.length > 0 && html`<p class="small text2" style="margin-top:.3rem">Frequent words: ${activity.terms.join(', ')}.</p>`}
     </div>
 
-    ${v >= 0 && html`<div class="section">
+    ${v >= 0 && timed && html`<div class="section">
       <h3 class="label">Position over time</h3>
       ${series.loading && html`<${Loading} />`}<${ErrorLine} error=${series.error} />
       ${sv && sv.windows.length > 1 && html`<div class="sm-grid">
@@ -388,7 +533,7 @@ const STOP = new Set('the a an and or of to in on for with at by from is are was
 function activityOf(ds, i) {
   const e = ds.events;
   const byType = {}; const ctx = new Map(); const words = new Map();
-  let total = 0, withText = 0, first = Infinity, last = -Infinity;
+  let total = 0, withText = 0, messages = 0, first = Infinity, last = -Infinity;
   for (let k = 0; k < e.count; k++) {
     if (e.actor[k] !== i) continue;
     total++;
@@ -398,8 +543,11 @@ function activityOf(ds, i) {
     if (t === t) { if (t < first) first = t; if (t > last) last = t; }
     const c = e.context[k];
     if (c >= 0) ctx.set(ds.contexts.names[c], (ctx.get(ds.contexts.names[c]) || 0) + 1);
+    // Only messages count as messages with text (N9): a reaction carries
+    // the text of the message it reacts to, a repost the text it reposts.
     const tx = e.text[k];
-    if (tx) { withText++; for (const w of String(tx).toLowerCase().match(/[a-z][a-z'-]{2,}/g) || []) if (!STOP.has(w)) words.set(w, (words.get(w) || 0) + 1); }
+    if (ty === 'message') { messages++; if (tx) withText++; }
+    if (tx && ty === 'message') { for (const w of String(tx).toLowerCase().match(/[a-z][a-z'-]{2,}/g) || []) if (!STOP.has(w)) words.set(w, (words.get(w) || 0) + 1); }
   }
-  return { total, byType, withText, first, last, contexts: [...ctx.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3), terms: [...words.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(x => x[0]) };
+  return { total, byType, withText, messages, declaredOnly: total > 0 && byType.declared === total, first, last, contexts: [...ctx.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3), terms: [...words.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(x => x[0]) };
 }

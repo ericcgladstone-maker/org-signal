@@ -83,3 +83,35 @@ export function groupAnchors(x, y, keyOf, { grid = 24 } = {}) {
   return [...groups.entries()].map(([key, g]) => { const b = best.get(key); return { key, x: b.sx / b.m, y: b.sy / b.m, n: g.n }; })
     .sort((a, b) => b.n - a.n || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
+
+// Small or hand-drawn maps (L5): every person keeps their name, so a group's
+// name (or community number) goes on the edge of the group, not on a member.
+// members: [{ x, y, r }] in viewport pixels for one group. Returns the
+// candidate spots for a w x h label in order of preference: centered above
+// the group's top member, below its bottom member, left of its leftmost and
+// right of its rightmost. The caller takes the first that fits.
+export function hullEdgeSpots(members, w, h, gap = 6) {
+  if (!members.length) return [];
+  let top = members[0], bottom = members[0], left = members[0], right = members[0];
+  let cx = 0, cy = 0;
+  for (const m of members) {
+    cx += m.x; cy += m.y;
+    if (m.y - m.r < top.y - top.r) top = m;
+    if (m.y + m.r > bottom.y + bottom.r) bottom = m;
+    if (m.x - m.r < left.x - left.r) left = m;
+    if (m.x + m.r > right.x + right.r) right = m;
+  }
+  cx /= members.length; cy /= members.length;
+  return [
+    { x: cx - w / 2, y: top.y - top.r - gap - h, w, h },
+    { x: cx - w / 2, y: bottom.y + bottom.r + gap, w, h },
+    { x: left.x - left.r - gap - w, y: cy - h / 2, w, h },
+    { x: right.x + right.r + gap, y: cy - h / 2, w, h },
+  ];
+}
+
+// When people's names win over group names: the map labels everyone (30 or
+// fewer people) or the layout is as drawn.
+export function namesFirst(n, drawn) {
+  return !!drawn || n <= 30;
+}

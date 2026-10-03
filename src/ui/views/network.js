@@ -24,15 +24,19 @@ import { Graph } from '../../../vendor/graphology.js';
 import { store, useStore } from '../store.js';
 import { engine } from '../services/engine.js';
 import { gloss } from '../services/glossary.js';
-import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, Flag, Swatch, ConstructionButton, useEngine, download, Icon } from '../components/common.js';
+import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, Flag, Swatch, ConstructionButton, useEngine, download, Icon, HowToRead, Verdict, Term, nullInWords, chanceWords } from '../components/common.js';
 import { RampLegend } from '../components/charts.js';
-import { sequentialScale, tokens, dim, mixTo } from '../lib/palette.js';
-import { preferredAttributes, isBookkeeping, orderedValues, defaultGroupAttr, label as nodeLabel, RULE_LABEL, VISIBILITY_LABEL } from '../lib/dsutil.js';
+import { tokens, dim, mixTo } from '../lib/palette.js';
+import { preferredAttributes, isBookkeeping, label as nodeLabel, RULE_LABEL, VISIBILITY_LABEL } from '../lib/dsutil.js';
 import { groupColoring, groupLabelMin, OTHER, MISSING } from '../lib/grouping.js';
 import { fmtNum, fmtInt, fmtDateTime, fmtP, fmtAttr, humanize, plural } from '../lib/format.js';
-import { withContacts, metricLabel, displayKey, isDeactivated } from '../lib/measures.js';
+import { withContacts, metricLabel, displayKey, isDeactivated, distinctMeasures, measureNote, measureFormat, standouts } from '../lib/measures.js';
+import { nodeColoring, getColorBy, setColorBy as shareColorBy } from '../lib/coloring.js';
+import { departures } from '../lib/departures.js';
+import { topShare, whatIf } from '../lib/fragility.js';
+import { requestPeopleSort } from '../lib/viewprefs.js';
 import { communityScale } from '../lib/communities.js';
-import { orientLayout, labelBudget, overlaps, groupAnchors } from '../lib/labels.js';
+import { orientLayout, labelBudget, overlaps, groupAnchors, hullEdgeSpots, namesFirst } from '../lib/labels.js';
 import { VISIBILITY } from '../../core/model.js';
 import { cachedRender, getRender, clearRender, tiesOf } from '../lib/render-cache.js';
 
@@ -59,7 +63,7 @@ function openRecovery() {
 export function NetworkView() {
   const ds = useStore(s => s.dataset);
   const net = useStore(s => s.network);
-  if (!ds || !net) return html`<${NeedsData} title="Network" />`;
+  if (!ds || !net) return html`<${NeedsData} title="Network" purpose="Network answers: what does the whole web of ties look like, and who sits where in it?" shows=${['the map of people and ties, colored by group', 'who stands out: most contacts, most often between others, closest to everyone', 'whole-network measures compared with random networks']} />`;
   return html`<${NetworkInner} ds=${ds} net=${net} />`;
 }
 
@@ -84,17 +88,6 @@ function drawnPositions(ds) {
   return Array.isArray(p) && p.length === ds.nodes.count ? p : null;
 }
 
-// The same default as People and Groups (defaultGroupAttr): a coarse
-// department-like attribute, else the communities.
-function defaultColor(ds, communities, attrs) {
-  const key = defaultGroupAttr(ds, { communities });
-  if (key && attrs.some(a => a.key === key)) return `attr:${key}`;
-  if (communities) return 'community';
-  const plain = attrs.filter(x => !isBookkeeping(x));
-  const a = plain.find(x => (x.values?.length ?? 0) <= 8) || plain[0];
-  return a ? `attr:${a.key}` : 'none';
-}
-
 function NetworkInner({ ds, net }) {
   const r = useRender(net);
   const rawMetrics = useStore(s => s.metrics);
@@ -104,13 +97,16 @@ function NetworkInner({ ds, net }) {
   const attrs = useMemo(() => preferredAttributes(ds), [ds]);
   const nodeMetrics = useMemo(() => withContacts(rawMetrics?.node, net.directed), [rawMetrics, net.directed]);
   const positions = drawnPositions(ds);
-  if (prefs.ds !== ds) prefs = { ds, colorBy: defaultColor(ds, communities, attrs), sizeBy: 'contacts', layout: positions ? 'drawn' : 'force' };
-  const [colorBy, setColorBy0] = useState(prefs.colorBy);
-  const [sizeBy, setSizeBy0] = useState(prefs.sizeBy);
-  const [layout, setLayout0] = useState(prefs.layout);
-  const setColorBy = v => { prefs.colorBy = v; setColorBy0(v); };
-  const setSizeBy = v => { prefs.sizeBy = v; setSizeBy0(v); };
-  const setLayout = v => { prefs.layout = v; setLayout0(v); };
+  if (prefs.ds !== ds) prefs = { ds, sizeBy: 'contacts', layout: positions ? 'drawn' : 'force' };
+  // Color by is shared with the People swatches (lib/coloring.js).
+  // Read from the shared choices on every render: the view stays mounted
+  // when a new dataset loads, so component state would keep the old one.
+  const [, redraw] = useState(0);
+  const colorBy = getColorBy(ds, communities, attrs);
+  const { sizeBy, layout } = prefs;
+  const setColorBy = v => { shareColorBy(ds, v); redraw(x => x + 1); };
+  const setSizeBy = v => { prefs.sizeBy = v; redraw(x => x + 1); };
+  const setLayout = v => { prefs.layout = v; redraw(x => x + 1); };
   const [rulesOff, setRulesOff] = useState(new Set());
   const [visOff, setVisOff] = useState(new Set());
   // The legend row chosen (click or Enter) and the one under the pointer or
@@ -122,49 +118,16 @@ function NetworkInner({ ds, net }) {
   const sigmaRef = useRef(null);
   const sideRef = useRef(null);
 
-  const nodeMetricKeys = Object.keys(nodeMetrics || {}).filter(k => applicability?.[k]?.level !== 'na');
+  const nodeMetricKeys = distinctMeasures(Object.keys(nodeMetrics || {}).filter(k => applicability?.[k]?.level !== 'na'), net.directed);
   const mlabel = k => metricLabel(k, net.directed);
 
-  // Color assignment, decided over the whole network so filters never repaint.
+  // Color assignment, decided over the whole network so filters never repaint
+  // (lib/coloring.js, shared with People); the map reads it by render index.
   const coloring = useMemo(() => {
-    const t = tokens();
     if (!r.data) return null;
-    const ids = r.data.nodeIds;
     const ni = r.data.netIndex;
-    if (colorBy === 'community' && communities?.membership) {
-      const k = communities.count ?? 0;
-      const sizes = communities.sizes || Array.from({ length: k }, (_, i) => communities.membership.filter(m => m === i).length);
-      const key = v => String(communities.membership[ni[v]]);
-      const gc = groupColoring(Array.from({ length: k }, (_, c) => ({ value: String(c), label: `Community ${c + 1}`, count: sizes[c] })));
-      return { kind: 'cat', community: true, gc, of: v => gc.color(key(v)), key, title: 'Community (found by Louvain)' };
-    }
-    if (colorBy.startsWith('attr:')) {
-      const key = colorBy.slice(5);
-      const ov = orderedValues(ds, key);
-      const a = attrs.find(x => x.key === key);
-      // Color order comes from the whole dataset (so colors never shift); the
-      // counts shown are the people actually in this network, so an excluded
-      // bot or filtered-out person is not listed as "Not recorded".
-      const members = net.nodeIds || ids;
-      const inNet = new Map();
-      let missing = 0;
-      for (const d of members) {
-        const x = ds.nodes.attrs[d]?.[key];
-        if (x == null || x === '') missing++; else inNet.set(String(x), (inNet.get(String(x)) || 0) + 1);
-      }
-      const gc = groupColoring(ov.map(o => ({ value: o.value, label: fmtAttr(key, o.value), count: inNet.get(String(o.value)) || 0 })), { missing });
-      const keyOf = v => { const x = ds.nodes.attrs[ids[v]][key]; return x == null || x === '' ? '' : String(x); };
-      return { kind: 'cat', gc, of: v => gc.color(keyOf(v)), key: keyOf, title: a?.label || humanize(key) };
-    }
-    if (colorBy.startsWith('metric:')) {
-      const m = colorBy.slice(7);
-      const arr = nodeMetrics?.[m];
-      if (!arr) return null;
-      const fin = Array.from(arr).filter(Number.isFinite);
-      const sc = sequentialScale(Math.min(...fin), Math.max(...fin));
-      return { kind: 'seq', of: v => sc(arr[ni[v]]), scale: sc, title: mlabel(m), metric: m };
-    }
-    return { kind: 'none', of: () => t.node, title: null };
+    const c = nodeColoring({ ds, net, communities, colorBy, attrs, nodeMetrics, label: mlabel });
+    return { ...c, of: v => c.of(ni[v]), key: c.key ? v => c.key(ni[v]) : undefined };
   }, [r.data, colorBy, communities, nodeMetrics, ds]);
 
   const sizes = useMemo(() => {
@@ -216,6 +179,7 @@ function NetworkInner({ ds, net }) {
     <${ViewHead} title="Network" intro=${`${fmtInt(net.n)} people and ${fmtInt(net.edgeCount)} ties${net.directed ? ' (directed: a two-way tie counts as two)' : ''}. ${touch ? 'Tap' : 'Click'} a person to see their neighborhood, or a tie to see the events behind it.`}
       actions=${html`<div class="tlinks"><${ConstructionButton} /><${ExportMenu} sigmaRef=${sigmaRef} data=${r.data} coloring=${coloring} ds=${ds} /></div>`} />
     <${RecoveryBanner} ds=${ds} />
+    <${Standouts} ds=${ds} net=${net} metrics=${nodeMetrics} applicability=${applicability} onPick=${(i) => { selectNode(i); sigmaRef.current?.focusNode(i); }} />
     <div class="toolbar" role="group" aria-label="Network display">
       <${Select} label="Color by" value=${colorBy} onChange=${v => { setColorBy(v); setPinCat(null); setHoverCat(null); }} options=${colorOptions} />
       <${Select} label="Size by" value=${sizeBy} onChange=${setSizeBy} options=${sizeOptions} />
@@ -240,13 +204,15 @@ function NetworkInner({ ds, net }) {
       </div>
       <aside class="split__side" aria-label="Details" ref=${sideRef}>
         <div class="section net-legend">
-          <${Legend} coloring=${coloring} pinCat=${pinCat} setPinCat=${setPinCat} setHoverCat=${setHoverCat} sizeBy=${sizeBy} directed=${net.directed} />
+          <${Legend} coloring=${coloring} pinCat=${pinCat} setPinCat=${setPinCat} setHoverCat=${setHoverCat} sizeBy=${sizeBy} directed=${net.directed} small=${namesFirst(net.n, layout === 'drawn' && !!positions)} />
         </div>
         <div class="section">
           ${edgeSel ? html`<${Evidence} ds=${ds} a=${edgeSel.a} b=${edgeSel.b} onClose=${() => setEdgeSel(null)} />`
             : selection.length ? html`<${SelectionPanel} ds=${ds} selection=${selection} data=${r.data} metrics=${nodeMetrics} onEdge=${setEdgeSel} />`
             : html`<${NetworkSummary} />`}
         </div>
+        ${(selection.length > 0 || edgeSel) && html`<div class="section"><${NetworkSummary} open=${false} /></div>`}
+        ${!selection.length && !edgeSel && r.data && html`<div class="section"><${Fragility} ds=${ds} net=${net} data=${r.data} metrics=${nodeMetrics} coloring=${coloring} applicability=${applicability} /></div>`}
         ${(rulesPresent.length > 1 || visPresent.length > 1) && html`<div class="section stack">
           <h2 class="label" style="margin:0">Show ties</h2>
           ${rulesPresent.length > 1 && html`<${Filter} label="From these rules" items=${rulesPresent} names=${RULE_LABEL} off=${rulesOff} setOff=${setRulesOff} />`}
@@ -507,8 +473,9 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
     renderer.createCanvasContext('f2labels', { afterLayer: 'labels' });
     const placed = { labels: [], badges: [], groups: [] };
     const centres = groupCentres(g, state);
+    const small = namesFirst(n, !!positions);
     renderer.on('afterRender', () => {
-      try { drawLabels(renderer, g, data, state.current, focus.current, hoverRef.current, centres, placed); } catch { /* killed mid-frame */ }
+      try { drawLabels(renderer, g, data, state.current, focus.current, hoverRef.current, centres, placed, small); } catch { /* killed mid-frame */ }
     });
     renderer.refresh();
 
@@ -621,7 +588,13 @@ function groupCentres(g, state) {
 // size. Each label goes right of its node, or left near the right edge, and
 // is skipped if it would overlap a label or badge already placed or leave
 // the canvas. Small networks label everyone who fits.
-function drawLabels(renderer, g, data, s, focus, hovered, centres, placed) {
+//
+// Group names and community numbers are the non-color cue for groups. On a
+// large map they go where most of each group sits, before the people. On a
+// small or hand-drawn map (L5) people's names come first and the group cue
+// goes on the edge of the group (lib/labels.js hullEdgeSpots), so it never
+// covers a person.
+function drawLabels(renderer, g, data, s, focus, hovered, centres, placed, small) {
   const ctx = renderer.canvasContexts?.f2labels;
   if (!ctx) return;
   const { width: W, height: H } = renderer.getDimensions();
@@ -642,96 +615,142 @@ function drawLabels(renderer, g, data, s, focus, hovered, centres, placed) {
   const gc = s.coloring?.gc;
   const shownKey = k => s.focusCat == null || gc.matches(k, s.focusCat);
   const inside = b => b.x >= 2 && b.y >= 2 && b.x + b.w <= W - 2 && b.y + b.h <= H - 2;
+  const fits = b => inside(b) && !overlaps(b, rects);
 
-  // Community numbers first: they are the non-color cue for communities.
-  const cs = centres();
-  if (cs && !focus.set && s.coloring.community) {
-    ctx.font = `600 11px ${LABEL_FONT}`;
-    for (const c of cs) {
-      if (c.n < 3 || !shownKey(c.key)) continue;
-      const p = renderer.graphToViewport({ x: c.x, y: c.y });
-      const text = String(Number(c.key) + 1);
-      const rad = 9;
-      const box = { x: p.x - rad, y: p.y - rad, w: rad * 2, h: rad * 2 };
-      if (!inside(box) || overlaps(box, rects)) continue;
-      const color = gc.many && s.focusCat != null ? t.accent : gc.color(c.key);
-      ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
-      ctx.fillStyle = t.bgDeep; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
-      ctx.fillStyle = t.text; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(text, p.x, p.y + 0.5);
-      rects.push(box);
-      placed.badges.push({ x: p.x, y: p.y, r: rad, text, color });
+  // Every drawn person's disc, so no label is placed over one.
+  const discs = [];
+  const members = new Map();
+  g.forEachNode((key) => {
+    const d = renderer.getNodeDisplayData(key);
+    if (!d || d.hidden) return;
+    const p = renderer.framedGraphToViewport({ x: d.x, y: d.y });
+    const r = renderer.scaleSize(d.size);
+    if (small) discs.push({ x: p.x - r, y: p.y - r, w: 2 * r, h: 2 * r });
+    if (small && gc && s.coloring.key) {
+      const k = s.coloring.key(+key);
+      if (k != null && k !== '') { if (!members.has(k)) members.set(k, []); members.get(k).push({ x: p.x, y: p.y, r }); }
     }
+  });
+  rects.push(...discs);
+
+  const drawBadge = (box, text, color) => {
+    const cx = box.x + box.w / 2, cy = box.y + box.h / 2, rad = box.w / 2;
+    ctx.font = `600 11px ${LABEL_FONT}`;
+    ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    ctx.fillStyle = t.bgDeep; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
+    ctx.fillStyle = t.text; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, cx, cy + 0.5);
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  } else if (cs && !focus.set) {
-    // Attribute groups above the size threshold are named where most of
-    // each sits, so no group relies on color alone (a dot in its color, the
-    // name in ink with a halo),
-    // largest first, skipping any name that would collide or leave the map.
-    const min = groupLabelMin(g.order);
-    const byKey = new Map(gc.entries.map(e => [e.value, e]));
+    rects.push(box);
+    placed.badges.push({ x: cx, y: cy, r: rad, text, color });
+  };
+  const drawGroupName = (box, label, color) => {
+    const y = box.y + box.h / 2;
     ctx.font = `600 13px ${LABEL_FONT}`;
     ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.arc(box.x + 4, y, 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = t.bgDeep; ctx.stroke();
+    ctx.lineWidth = 4; ctx.strokeStyle = t.bgDeep;
+    ctx.strokeText(label, box.x + 12, y + 4);
+    ctx.fillStyle = t.text;
+    ctx.fillText(label, box.x + 12, y + 4);
+    rects.push(box);
+    placed.groups.push({ x: box.x, y, text: label, color });
+  };
+
+  const placeGroups = () => {
+    const cs = centres();
+    if (!cs || focus.set) return;
+    if (s.coloring.community) {
+      for (const c of cs) {
+        if ((c.n < 3 && !small) || !shownKey(c.key)) continue;
+        const text = String(Number(c.key) + 1);
+        const color = gc.many && s.focusCat != null ? t.accent : gc.color(c.key);
+        const rad = 9;
+        let box;
+        if (small) box = hullEdgeSpots(members.get(c.key) || [], rad * 2, rad * 2).find(fits);
+        else {
+          const p = renderer.graphToViewport({ x: c.x, y: c.y });
+          box = { x: p.x - rad, y: p.y - rad, w: rad * 2, h: rad * 2 };
+          if (!fits(box)) box = null;
+        }
+        if (box) drawBadge(box, text, color);
+      }
+      return;
+    }
+    // Attribute groups above the size threshold are named (a dot in the
+    // group's color, the name in ink with a halo), largest first, skipping
+    // any name that would collide or leave the map.
+    const min = small ? 1 : groupLabelMin(g.order);
+    const byKey = new Map(gc.entries.map(e => [e.value, e]));
+    ctx.font = `600 13px ${LABEL_FONT}`;
     for (const c of cs) {
       const e = byKey.get(c.key);
       if (!e || !shownKey(c.key) || (c.n < min && s.focusCat == null)) continue;
-      const p = renderer.graphToViewport({ x: c.x, y: c.y });
       const w = ctx.measureText(e.label).width + 12, h = 17;
-      const box = { x: p.x - w / 2, y: p.y - h / 2, w, h };
-      if (!inside(box) || overlaps(box, rects)) continue;
-      const color = s.focusCat != null && gc.many ? t.accent : e.color;
-      ctx.beginPath(); ctx.arc(box.x + 4, p.y, 4.5, 0, Math.PI * 2);
-      ctx.fillStyle = color; ctx.fill();
-      ctx.lineWidth = 1.5; ctx.strokeStyle = t.bgDeep; ctx.stroke();
-      ctx.lineWidth = 4; ctx.strokeStyle = t.bgDeep;
-      ctx.strokeText(e.label, box.x + 12, p.y + 4);
-      ctx.fillStyle = t.text;
-      ctx.fillText(e.label, box.x + 12, p.y + 4);
-      rects.push(box);
-      placed.groups.push({ x: box.x, y: p.y, text: e.label, color });
+      let box;
+      if (small) box = hullEdgeSpots(members.get(c.key) || [], w, h).find(fits);
+      else {
+        const p = renderer.graphToViewport({ x: c.x, y: c.y });
+        box = { x: p.x - w / 2, y: p.y - h / 2, w, h };
+        if (!fits(box)) box = null;
+      }
+      if (box) drawGroupName(box, e.label, s.focusCat != null && gc.many ? t.accent : e.color);
+      ctx.font = `600 13px ${LABEL_FONT}`;
     }
-  }
+  };
 
-  const n = g.order;
-  const cand = [];
-  g.forEachNode((key, attr) => {
-    const d = renderer.getNodeDisplayData(key);
-    if (!d || d.hidden || d.dimmed || !attr.label) return;
-    const p = renderer.framedGraphToViewport({ x: d.x, y: d.y });
-    if (p.x < -10 || p.y < -10 || p.x > W + 10 || p.y > H + 10) return;
-    const v = +key;
-    const forced = d.forceLabel || (focus.core && focus.core.has(v));
-    const pri = forced ? 0 : key === hovered ? 1 : focus.set?.has(v) ? 2 : 3;
-    cand.push({ key, label: attr.label, x: p.x, y: p.y, r: renderer.scaleSize(d.size), pri, size: d.size });
-  });
-  cand.sort((a, b) => a.pri - b.pri || b.size - a.size || a.key - b.key);
-  const budget = labelBudget({ n, width: W, ratio, focus: !!focus.set });
-  ctx.lineJoin = 'round';
-  let count = 0;
-  for (const c of cand) {
-    if (count >= budget && c.pri > 1) break;
-    const strong = c.pri === 0;
-    ctx.font = `${strong ? 600 : 500} 12px ${LABEL_FONT}`;
-    const w = ctx.measureText(c.label).width, h = 14;
-    const y = c.y - h / 2;
-    let box = { x: c.x + c.r + 4, y, w, h };
-    if (box.x + w > W - 4 || overlaps(box, rects)) {
-      const left = { x: c.x - c.r - 4 - w, y, w, h };
-      if (left.x >= 4 && !overlaps(left, rects)) box = left;
-      else if (strong) box = { x: Math.max(4, Math.min(box.x, W - 4 - w)), y, w, h };
-      else continue;
+  const placePeople = () => {
+    const n = g.order;
+    const cand = [];
+    g.forEachNode((key, attr) => {
+      const d = renderer.getNodeDisplayData(key);
+      if (!d || d.hidden || d.dimmed || !attr.label) return;
+      const p = renderer.framedGraphToViewport({ x: d.x, y: d.y });
+      if (p.x < -10 || p.y < -10 || p.x > W + 10 || p.y > H + 10) return;
+      const v = +key;
+      const forced = d.forceLabel || (focus.core && focus.core.has(v));
+      const pri = forced ? 0 : key === hovered ? 1 : focus.set?.has(v) ? 2 : 3;
+      cand.push({ key, label: attr.label, x: p.x, y: p.y, r: renderer.scaleSize(d.size), pri, size: d.size });
+    });
+    cand.sort((a, b) => a.pri - b.pri || b.size - a.size || a.key - b.key);
+    const budget = labelBudget({ n, width: W, ratio, focus: !!focus.set });
+    ctx.lineJoin = 'round';
+    let count = 0;
+    for (const c of cand) {
+      if (count >= budget && c.pri > 1) break;
+      const strong = c.pri === 0;
+      ctx.font = `${strong ? 600 : 500} 12px ${LABEL_FONT}`;
+      const w = ctx.measureText(c.label).width, h = 14;
+      const y = c.y - h / 2;
+      // A person's own disc is not an obstacle to their own label.
+      const own = { x: c.x - c.r, y: c.y - c.r, w: 2 * c.r, h: 2 * c.r };
+      const others = small ? rects.filter(b => !(b.x === own.x && b.y === own.y && b.w === own.w)) : rects;
+      let box = { x: c.x + c.r + 4, y, w, h };
+      if (box.x + w > W - 4 || overlaps(box, others)) {
+        const left = { x: c.x - c.r - 4 - w, y, w, h };
+        const above = { x: c.x - w / 2, y: c.y - c.r - 3 - h, w, h };
+        const below = { x: c.x - w / 2, y: c.y + c.r + 3, w, h };
+        const alt = [left, ...(small ? [above, below] : [])].find(b => b.x >= 4 && b.x + w <= W - 4 && b.y >= 2 && b.y + h <= H - 2 && !overlaps(b, others));
+        if (alt) box = alt;
+        else if (strong || small) box = { x: Math.max(4, Math.min(box.x, W - 4 - w)), y, w, h };
+        else continue;
+      }
+      if (box.y < 2 || box.y + h > H - 2) { if (!strong && !small) continue; box.y = Math.max(2, Math.min(box.y, H - h - 2)); }
+      // Halo in the canvas ground, then the text.
+      ctx.lineWidth = 4; ctx.strokeStyle = t.bgDeep;
+      ctx.strokeText(c.label, box.x, box.y + 11);
+      ctx.fillStyle = strong ? t.text : t.text2;
+      ctx.fillText(c.label, box.x, box.y + 11);
+      rects.push(box);
+      placed.labels.push({ x: box.x, y: box.y + 11, text: c.label, strong });
+      count++;
     }
-    if (box.y < 2 || box.y + h > H - 2) { if (!strong) continue; box.y = Math.max(2, Math.min(box.y, H - h - 2)); }
-    // Halo in the canvas ground, then the text.
-    ctx.lineWidth = 4; ctx.strokeStyle = t.bgDeep;
-    ctx.strokeText(c.label, box.x, box.y + 11);
-    ctx.fillStyle = strong ? t.text : t.text2;
-    ctx.fillText(c.label, box.x, box.y + 11);
-    rects.push(box);
-    placed.labels.push({ x: box.x, y: box.y + 11, text: c.label, strong });
-    count++;
-  }
+  };
+
+  if (small) { placePeople(); placeGroups(); } else { placeGroups(); placePeople(); }
 }
 
 // ---- side panel -----------------------------------------------------------------
@@ -742,7 +761,7 @@ function drawLabels(renderer, g, data, s, focus, hovered, centres, placed) {
 // and the "Other groups" row; "Not recorded" always has its own row.
 const LEGEND_MAX = 200;
 
-function Legend({ coloring, pinCat, setPinCat, setHoverCat, sizeBy, directed }) {
+function Legend({ coloring, pinCat, setPinCat, setHoverCat, sizeBy, directed, small = false }) {
   if (!coloring) return null;
   const gc = coloring.gc;
   const row = (value, color, label, count, { sub = false, missing = false, title } = {}) => html`<button type="button" class=${`legend__item${sub ? ' legend__item--sub' : ''}`} aria-pressed=${String(pinCat === value)} title=${title}
@@ -769,7 +788,9 @@ function Legend({ coloring, pinCat, setPinCat, setHoverCat, sizeBy, directed }) 
         ${unlisted.length > 0 && html`<p class="legend__more small muted">and ${plural(unlisted.length, coloring.community ? 'smaller community' : 'smaller group', coloring.community ? 'smaller communities' : 'smaller groups')} (${plural(unlisted.reduce((a, e) => a + e.count, 0), 'person', 'people')})</p>`}
         ${gc.missing > 0 && row(MISSING, gc.missingColor, gc.missingLabel, gc.missing, { missing: true, title: `No ${coloring.title.toLowerCase()} in the data` })}
       </div>
-      <p class="basis">${coloring.community
+      <p class="basis">${small
+        ? `Everyone is named on the map; ${coloring.community ? 'community numbers' : 'group names'} sit at the edge of each group.${gc.many ? '' : ' Hover or select a group to pick it out.'}`
+        : coloring.community
         ? `Numbers on the map mark each community of three or more people.${gc.many ? ' Communities after the eighth share gray; choose one to light it up.' : ' Hover or select a community to pick it out.'}`
         : `Groups of 1% of the people or more are named on the map where most of their members sit.${gc.many ? '' : ' Hover or select a group to pick it out.'}`}${gc.missing > 0 ? ` Not recorded: people with no ${coloring.title.toLowerCase()} in the data, not a group.` : ''} Colors stay fixed while you filter.</p>`}
     ${coloring.kind === 'seq' && html`<${RampLegend} scale=${coloring.scale} label=${`Color: ${coloring.title}`} />`}
@@ -778,36 +799,152 @@ function Legend({ coloring, pinCat, setPinCat, setHoverCat, sizeBy, directed }) 
 }
 
 const SUMMARY_KEYS = ['density', 'reciprocity', 'transitivity', 'avgClustering', 'components', 'largestComponentShare', 'avgPathLength', 'degreeCentralization', 'strengthGini'];
+const NULL_STATS = ['reciprocity', 'transitivity', 'avgClustering', 'modularity'];
+// The verdict sentence per statistic: subject, and the words for more / less.
+const NULL_WORDS = {
+  transitivity: ['Friends of friends are tied', 'more often', 'less often', 'about as often as chance gives'],
+  avgClustering: ['People\'s contacts know each other', 'more often', 'less often', 'about as often as chance gives'],
+  reciprocity: ['Ties are returned', 'more often', 'less often', 'about as often as chance gives'],
+  modularity: ['The network splits into communities', 'more cleanly', 'less cleanly', 'about as cleanly as chance gives'],
+};
 
-function NetworkSummary() {
+// One comparison with random networks, verdict first (decision 5): the plain
+// sentence, the number in plain words, then the details.
+function NullVerdict({ stat, x, reps }) {
+  const [subject, more, less, same] = NULL_WORDS[stat] || ['This value is', 'higher', 'lower', 'about what chance gives'];
+  const flat = !(x.sd > 0);
+  const near = flat ? x.observed === x.mean : !(x.p < 0.05) || !(Math.abs(x.z) >= 2);
+  const verdict = `${subject} ${near ? same : chanceWords(x.z, { more, less })}.`;
+  const plain = `Here ${fmtNum(x.observed)}; random networks where everyone keeps their number of ties average ${fmtNum(x.mean)}${Number.isFinite(x.lo) && Number.isFinite(x.hi) ? ` (95% of them between ${fmtNum(x.lo)} and ${fmtNum(x.hi)})` : ''}.`;
+  const details = `${nullInWords(x.p, reps)}${Number.isFinite(x.z) ? `; z ${fmtNum(x.z, { digits: 2 })}` : ''}.${stat === 'modularity' ? ' Communities are found again in each random network.' : ''}`;
+  return html`<${Verdict} className="net-verdict" verdict=${verdict} plain=${plain} details=${details} />`;
+}
+
+function NetworkSummary({ open = null }) {
   const m = useStore(s => s.metrics?.network);
+  const net = useStore(s => s.network);
   const communities = useStore(s => s.communities);
   const [nm, setNm] = useState(null);
   const [busy, setBusy] = useState(false);
   if (!m) return null;
   const keys = SUMMARY_KEYS.filter(k => Number.isFinite(m[k]));
+  // One run per network, shared with Groups and the reports: the engine
+  // caches each statistic's random networks (analysis NULL_REPS).
   const runNull = async () => {
     setBusy(true);
     try {
-      const r = await store.actions.runJob('Comparing with random networks', (signal, progress) => engine.nullModel({ stats: ['reciprocity', 'transitivity', 'avgClustering', 'modularity'], reps: 100, seed: 1, membership: communities?.membership, signal, onProgress: progress }));
+      const r = await store.actions.runJob('Comparing with random networks', (signal, progress) => engine.nullModel({ stats: NULL_STATS, seed: 1, membership: communities?.membership, signal, onProgress: progress }));
       setNm(r);
     } catch (e) { if (e.name !== 'AbortError') store.actions.notify('error', e.message); } finally { setBusy(false); }
   };
-  const nullLine = (x) => {
-    const above = x.observed > x.mean;
-    const clear = x.p < 0.05;
-    return `${clear ? (above ? 'Higher than' : 'Lower than') : 'Not clearly different from'} random networks with the same degrees (random ${fmtNum(x.mean)}, sd ${fmtNum(x.sd)}; z ${fmtNum(x.z, { digits: 2 })}, ${fmtP(x.p)}).`;
-  };
-  return html`<details class="net-summary" open=${!narrow()}>
+  const reps = nm?.meta?.reps;
+  const tiny = communities && net && net.n <= 15 && communities.count > 1;
+  const tr = nm?.transitivity;
+  // Closed under a selection (N22: the whole-network numbers stay one click
+  // away instead of disappearing).
+  return html`<details class="net-summary" open=${open ?? !narrow()}>
     <summary><h2 class="label" style="display:inline;margin:0">Whole network</h2></summary>
     ${communities && html`<div class="metric-row"><span><${MetricName} metric="modularity" gloss=${true} /></span><span class="metric-row__val">${fmtNum(communities.modularity)}</span>
-      <span class="metric-row__sub">${plural(communities.count, 'community', 'communities')}${communities.nontrivial != null ? `, ${fmtInt(communities.nontrivial)} with more than one person` : ''}.${nm?.modularity ? ` ${nullLine(nm.modularity)}` : ''}</span></div>`}
+      <span class="metric-row__sub">${plural(communities.count, 'community', 'communities')}${communities.nontrivial != null && communities.nontrivial !== communities.count ? `, ${fmtInt(communities.nontrivial)} with more than one person` : ''}.
+        ${tiny && html`<br />With only ${fmtInt(net.n)} people, community detection still splits the network into pieces (a chain of 6 becomes three pairs). Treat these communities as a suggestion, not groups, until modularity beats random networks.`}</span>
+      ${nm?.modularity && html`<${NullVerdict} stat="modularity" x=${nm.modularity} reps=${reps} />`}</div>`}
     ${keys.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k === 'reciprocity' ? 'reciprocityNetwork' : k} gloss=${true} /></span><span class="metric-row__val">${k === 'largestComponentShare' ? `${Math.round(m[k] * 100)}%` : fmtNum(m[k])}</span>
-      ${nm?.[k] && html`<span class="metric-row__sub">${nullLine(nm[k])}</span>`}</div>`)}
+      ${nm?.[k] && html`<${NullVerdict} stat=${k} x=${nm[k]} reps=${reps} />`}</div>`)}
     ${!nm ? html`<div style="margin-top:.8rem"><button type="button" class="tlink" onClick=${runNull} disabled=${busy}>${busy ? 'Comparing' : 'Compare with random networks'}</button>
-      <p class="basis">Clustering, reciprocity and modularity are only notable if they exceed what random networks with the same degrees produce.</p></div>`
-      : html`<p class="basis">Null model: ${nm.meta?.model || 'degree-preserving rewiring'}, ${nm.meta?.reps ?? 100} replicates, seed ${nm.meta?.seed ?? 1}. Two-sided empirical p.</p>`}
+      <p class="basis">Clustering, reciprocity and modularity are only notable if they beat random networks where everyone keeps their number of ties.</p></div>`
+      : html`<p class="basis">Random networks: ${nm.meta?.model || 'degree-preserving rewiring'}, ${fmtInt(reps)} networks, seed ${nm.meta?.seed ?? 1}; two-sided empirical p. The same run is quoted in Groups and the reports.</p>`}
+    <${HowToRead} title="How to read the comparison with random networks"
+      means="Each random network keeps everyone's number of ties but connects them at random. Whatever those networks also show comes from the numbers of ties alone; what this network has beyond them is structure."
+      scale="Compare with the random average, not with zero: random networks have some clustering and modularity too. Far above the random range means real structure; inside it means nothing beyond the degrees."
+      example=${tr ? `Transitivity here is ${fmtNum(tr.observed)} against about ${fmtNum(tr.mean)} in random networks, so ${tr.observed > tr.hi ? 'friends of friends are tied far more often than the degrees alone would give' : 'the clustering is about what the degrees alone would give'}.`
+        : m.transitivity != null ? `Transitivity here is ${fmtNum(m.transitivity)}. Compare with random networks to see whether that is more than the degrees alone would give.` : null}
+      mistake="Reading a value as high because it is far from 0, or a small p as a large effect. The size of the gap to the random average is the finding." />
   </details>`;
+}
+
+// "Who stands out" (decision 1, L8): the direct answers to "who has the
+// most ties, who connects the groups, who is closest to everyone", each with
+// its value, the runner-up when it is close, and a link to the full ranking
+// in People. People tied at the precision shown are named together.
+const STANDOUT_WORDS = {
+  contacts: ['Most contacts', 'contacts'],
+  betweenness: ['Most often on the route between others', 'betweenness'],
+  closeness: ['Closest to everyone', 'closeness'],
+};
+
+function Standouts({ ds, net, metrics, applicability, onPick }) {
+  const keys = ['contacts', 'betweenness', 'closeness'].filter(k => metrics?.[k] && applicability?.[k]?.level !== 'na');
+  const rows = useMemo(() => standouts(metrics, keys), [metrics, keys.join()]);
+  if (!rows.length || net.n < 3) return null;
+  const who = v => net.nodeIds[v];
+  const name = v => html`<button type="button" class="linkish standout__name" onClick=${() => onPick(who(v))}>${nodeLabel(ds, who(v))}</button>`;
+  const glue = list => list.map((v, i) => html`${i ? (i === list.length - 1 ? ' and ' : ', ') : ''}${name(v)}`);
+  return html`<section class="standout" aria-labelledby="standout-h">
+    <h2 class="label" id="standout-h">Who stands out</h2>
+    <ul class="standout__list">
+      ${rows.map(r => html`<li class="standout__item">
+        <span class="standout__q"><${Term} k=${r.key}>${STANDOUT_WORDS[r.key][0]}</${Term}></span>
+        <span class="standout__a">${r.allSame ? html`<span class="text2">Everyone has the same value (${r.value})</span>`
+          : html`${glue(r.top)}${r.tied > r.top.length ? ` and ${fmtInt(r.tied - r.top.length)} more` : ''} <span class="standout__v">${r.value}${r.tied > 1 ? ' each' : ''}</span>`}</span>
+        <span class="standout__sub">${metricLabel(r.key, net.directed)}${r.tied > 1 ? ' · tied at the precision shown' : r.next ? ` · next: ${nodeLabel(ds, who(r.next.v))} ${r.next.value}` : ''}
+${' · '}<button type="button" class="tlink tlink--arrow" onClick=${() => { requestPeopleSort(r.key); store.actions.setView('people'); }}>Full ranking</button></span>
+      </li>`)}
+    </ul>
+  </section>`;
+}
+
+// Fragility evidence (J8): how much of the brokerage a few people hold, and
+// what the network looks like without them.
+const FRAGILITY_K = [3, 5, 10];
+
+function Fragility({ ds, net, data, metrics, coloring, applicability }) {
+  const [k0, setK] = useState(5);
+  const [res, setRes] = useState(null);
+  const btw = metrics?.betweenness;
+  // A top k is a few people only in a network several times larger.
+  const choices = FRAGILITY_K.filter(x => x <= net.n / 4);
+  if (!btw || applicability?.betweenness?.level === 'na' || !choices.length) return null;
+  const k = choices.includes(k0) ? k0 : choices[choices.length - 1];
+  const share = topShare(btw, k);
+  const run = () => {
+    const inv = new Map();
+    for (let v = 0; v < data.netIndex.length; v++) inv.set(data.netIndex[v], v);
+    const removed = share.people.map(v => inv.get(v)).filter(v => v != null);
+    const groupOf = coloring?.kind === 'cat' && coloring.key ? coloring.key : null;
+    setRes({ k, people: share.people, groupTitle: groupOf ? coloring.short : null, ...whatIf(data.x.length, data.src, data.dst, removed, { groupOf }) });
+  };
+  const truncated = data?.truncated && (data.truncated.nodes || data.truncated.edges);
+  const names = list => list.map(v => nodeLabel(ds, net.nodeIds[v])).join(', ');
+  const row = (label, a, b, f) => html`<tr><th scope="row">${label}</th><td>${f(a)}</td><td>${f(b)}</td></tr>`;
+  const pct = x => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '–');
+  const conc = share.share / (share.even || 1);
+  return html`<div class="net-frag">
+    <h2 class="label">How much depends on a few people</h2>
+    <div class="row" style="gap:.4rem 1rem;align-items:flex-end">
+      <${Select} label="Top" value=${String(k)} onChange=${v => { setK(Number(v)); setRes(null); }} options=${choices.map(x => ({ value: String(x), label: `${x} by betweenness` }))} />
+    </div>
+    <${Verdict} verdict=${`The top ${share.k} people hold ${pct(share.share)} of all betweenness${conc >= 3 ? ', so routes between parts of the network depend on a few people' : conc >= 1.8 ? ', more than an even share' : ', close to an even share'}.`}
+      plain=${`If brokerage were spread evenly they would hold ${pct(share.even)}. They are ${names(share.people)}.`} />
+    ${truncated ? html`<p class="basis">The map is simplified for this network, so the what-if is not available.</p>`
+      : html`<button type="button" class="tlink" onClick=${run}>What if these ${share.k} people left?</button>`}
+    ${res && res.k === k && html`<table class="net-frag__table">
+      <caption class="small text2">Without ${names(res.people)} and their ties</caption>
+      <thead><tr><th scope="col"></th><th scope="col">Now</th><th scope="col">Without them</th></tr></thead>
+      <tbody>
+        ${row('Ties', res.before.ties, res.after.ties, fmtInt)}
+        ${res.groupTitle && row(`Ties across ${res.groupTitle} groups`, res.before.cross, res.after.cross, fmtInt)}
+        ${row('Separate pieces', res.before.pieces, res.after.pieces, fmtInt)}
+        ${row('People in the largest piece', res.before.largestShare, res.after.largestShare, pct)}
+        ${row('Average steps between people', res.before.avgSteps, res.after.avgSteps, x => fmtNum(x))}
+      </tbody>
+    </table>
+    <p class="basis">Direction ignored; steps averaged over the people who can still reach each other${res.after.sampled ? ' (sampled)' : ''}. Removing people is a what-if on this network, not a forecast: others may take over their ties.</p>`}
+    <${HowToRead} title="How to read this"
+      means="Betweenness counts how often a person sits on the shortest route between two others. When a few people hold most of it, many routes between parts of the network run through them."
+      scale=${`An even spread gives the top ${share.k} about ${pct(share.even)}. Two or three times that is concentrated; five times or more means the network leans on them.`}
+      example=${res ? `Without them, ${res.groupTitle ? `ties across ${res.groupTitle} groups go from ${fmtInt(res.before.cross)} to ${fmtInt(res.after.cross)} and ` : ''}the average number of steps between people goes from ${fmtNum(res.before.avgSteps)} to ${fmtNum(res.after.avgSteps)}.` : null}
+      mistake="Concluding a network is robust because it stays in one piece after someone leaves. Fragility shows in longer routes and lost ties across groups, not only in the network falling apart." />
+  </div>`;
 }
 
 const PANEL_METRICS = ['contacts', 'degree', 'strength', 'betweenness', 'closeness', 'pagerank', 'clustering', 'constraint'];
@@ -825,13 +962,18 @@ function SelectionPanel({ ds, selection, data, metrics, onEdge }) {
   const sc = communities ? communityScale(communities) : null;
   const key = displayKey(ds.nodes.keys[i]);
   const attrs = Object.entries(ds.nodes.attrs[i]).filter(([k]) => k !== 'deactivated');
+  const dep = departures(ds).get(i);
   return html`<div>
-    <h2 class="label">${selection.length > 1 ? `${selection.length} selected` : 'Selected'}</h2>
+    <div class="row row--between" style="gap:.3rem 1rem">
+      <h2 class="label" style="margin:0">${selection.length > 1 ? `${selection.length} selected` : 'Selected'}</h2>
+      <button type="button" class="tlink tlink--quiet" onClick=${() => store.actions.select([])}>Back to the whole network</button>
+    </div>
     <p class="net-sel__name">${nodeLabel(ds, i)}</p>
     <p class="meta" style="margin:.2rem 0 .6rem">${key || ''}${ds.nodes.isBot[i] ? `${key ? ' · ' : ''}bot` : ''}${isDeactivated(ds, i) ? html` <${Flag} level="caution">Deactivated account</${Flag}>` : ''}</p>
+    ${dep && dep.kind === 'silent' && html`<p class="small"><${Flag} level="caution">Left?</${Flag}> <span class="text2">No activity after ${fmtDateTime(dep.last).split(',')[0]} (the last ${fmtInt(dep.quietDays)} days of the data). Whole-period measures mix the time before and after.</span></p>`}
     ${v < 0 ? html`<p class="small text2">Not in the current network (filtered out or without ties).</p>` : html`
       ${communities && html`<div class="metric-row"><span>Community</span><span class="metric-row__val"><${Swatch} color=${sc.color(String(communities.membership[v]))} /> ${communities.membership[v] + 1}</span></div>`}
-      ${show.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k} label=${metricLabel(k, net.directed)} gloss=${true} /></span><span class="metric-row__val">${fmtNum(metrics[k][v])}</span></div>`)}
+      ${show.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k} label=${metricLabel(k, net.directed)} note=${measureNote(k, { n: net.n, directed: net.directed })} gloss=${true} /></span><span class="metric-row__val">${measureFormat(k, metrics[k])(metrics[k][v])}</span></div>`)}
     `}
     ${v >= 0 && html`<h3 class="label" style="margin-top:1.1rem">Ties (${fmtInt(ties.length)})</h3>
       ${ties.length ? html`<ul class="net-ties">

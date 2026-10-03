@@ -20,8 +20,10 @@ export function fmtNum(v, { digits = 3 } = {}) {
 // One formatter for a whole table column, with the same number of decimals on
 // every row so values line up (0.174 / 0.088 / 0.007, not 0.174 / 0.0878 /
 // 0.00692). Decimals follow the largest magnitude in the column; a nonzero
-// value that rounds to zero shows as ~0.
-export function columnFormat(values) {
+// value that rounds to zero shows as ~0. `digits` fixes the decimals instead
+// (measures on a 0-1 scale always show three, so a star's center reads 1.000
+// beside a path's 0.400 rather than "1" in one table and "0.400" in another).
+export function columnFormat(values, { digits: fixed = null } = {}) {
   let mx = 0, allInt = true, any = false;
   for (const v of values) {
     if (!Number.isFinite(v)) continue;
@@ -30,7 +32,7 @@ export function columnFormat(values) {
     if (a > mx) mx = a;
     if (allInt && !Number.isInteger(v)) allInt = false;
   }
-  const digits = !any || allInt || mx >= 100 ? 0 : mx >= 10 ? 1 : mx >= 1 ? 2 : 3;
+  const digits = fixed != null ? fixed : !any || allInt || mx >= 100 ? 0 : mx >= 10 ? 1 : mx >= 1 ? 2 : 3;
   const fmt = (v) => {
     if (v == null || Number.isNaN(v)) return '–';
     if (!Number.isFinite(v)) return v > 0 ? '∞' : '-∞';
