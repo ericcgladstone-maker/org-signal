@@ -12,7 +12,9 @@ let choice = { ds: null, value: null };
 
 // The same default as Groups (defaultGroupAttr): a coarse department-like
 // attribute, else the communities.
-export function defaultColor(ds, communities, attrs) {
+export function defaultColor(ds, communities, attrs, net = null) {
+  // Two-mode view: which kind of node each one is comes first.
+  if (net?.twoMode?.view === 'two-mode' && net.twoMode.mode) return 'mode';
   const key = defaultGroupAttr(ds, { communities });
   if (key && attrs.some(a => a.key === key)) return `attr:${key}`;
   if (communities) return 'community';
@@ -21,12 +23,17 @@ export function defaultColor(ds, communities, attrs) {
   return a ? `attr:${a.key}` : 'none';
 }
 
-export function getColorBy(ds, communities, attrs) {
-  if (choice.ds !== ds || choice.value == null) choice = { ds, value: defaultColor(ds, communities, attrs) };
+// net (optional): the current network, so a two-mode view starts colored by
+// mode and a choice of 'mode' falls back once the view has one mode only.
+export function getColorBy(ds, communities, attrs, net = null) {
+  const modeGone = choice.value === 'mode' && !(net?.twoMode?.view === 'two-mode' && net.twoMode.mode);
+  const modeNew = net?.twoMode?.view === 'two-mode' && choice.view !== 'two-mode';
+  if (choice.ds !== ds || choice.value == null || modeGone || modeNew) choice = { ds, value: defaultColor(ds, communities, attrs, net) };
+  choice.view = net?.twoMode?.view ?? null;
   return choice.value;
 }
 
-export function setColorBy(ds, value) { choice = { ds, value }; }
+export function setColorBy(ds, value) { choice = { ...choice, ds, value }; }
 
 // Coloring over network indices (0..net.n-1).
 //   { kind: 'cat' | 'seq' | 'none', gc, of(v), key(v), title, community, scale, metric }
@@ -34,6 +41,15 @@ export function setColorBy(ds, value) { choice = { ds, value }; }
 export function nodeColoring({ ds, net, communities, colorBy, attrs = [], nodeMetrics = null, label = k => k }) {
   const t = tokens();
   const dsOf = v => (net.nodeIds ? net.nodeIds[v] : v);
+  if (colorBy === 'mode' && net?.twoMode?.mode) {
+    // Two-mode networks: the two kinds of node (women and events), named.
+    const tm = net.twoMode;
+    const counts = [0, 0];
+    for (let v = 0; v < net.n; v++) counts[tm.mode[v]]++;
+    const gc = groupColoring([0, 1].map(m => ({ value: String(m), label: tm.labels[m], count: counts[m] })));
+    const key = v => String(tm.mode[v]);
+    return { kind: 'cat', mode: true, gc, of: v => gc.color(key(v)), key, title: 'Kind of node (two-mode)', short: 'kind of node', labels: tm.labels };
+  }
   if (colorBy === 'community' && communities?.membership) {
     const k = communities.count ?? 0;
     const sizes = communities.sizes || Array.from({ length: k }, (_, i) => communities.membership.filter(m => m === i).length);

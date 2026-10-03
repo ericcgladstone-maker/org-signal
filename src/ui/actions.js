@@ -20,7 +20,7 @@
 import { store, writeExplainPref } from './store.js';
 import { engine, engineStatus } from './services/engine.js';
 import { mergeDatasets, importReport } from './services/pipeline.js';
-import { NODE_METRICS } from './services/glossary.js';
+import { NODE_METRICS, TWO_MODE_METRICS } from './services/glossary.js';
 
 // Navigation in workflow order (decision 2): get a network, explore it,
 // report on it, and Learn. `desc` is the one line shown under the label in
@@ -326,7 +326,7 @@ import { rebuildSummary } from './lib/rebuild.js';
 
 async function computeAll(signal, progress, prevCommunities = null, nodeIds = null) {
   progress(0.35, 'Centrality and local structure');
-  const node = await engine.nodeMetrics({ which: NODE_METRICS, signal, onProgress: (f, m) => progress(0.35 + 0.35 * (f || 0), m) });
+  const node = await engine.nodeMetrics({ which: [...NODE_METRICS, ...TWO_MODE_METRICS], signal, onProgress: (f, m) => progress(0.35 + 0.35 * (f || 0), m) });
   if (signal.aborted) throw abortError();
   progress(0.72, 'Whole-network measures');
   const network = await engine.networkMetrics({ signal });

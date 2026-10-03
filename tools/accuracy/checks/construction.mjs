@@ -223,20 +223,25 @@ export function naiveNetwork(rec, s, opts = {}) {
       else if (ADDRESS.has(role)) rule = broadcast ? null : role;
       else if (role === 'declared') rule = 'declared';
       else if (role === 'subject') rule = SUBJECT_RULE[e.type] || null;
-      if (rule && on(rule)) found.set(rule + ',' + x, [rule, x]);
+      // Affiliation (two-mode data): a member target on a declared event is a
+      // declared tie with no direction.
+      else if (role === 'member' && e.type === 'declared') rule = 'declared';
+      // The same rule and target once per event: the first role listed decides
+      // whether it is symmetric (as the engine's per-event dedup does).
+      if (rule && on(rule)) { const k = rule + ',' + x; if (!found.has(k)) found.set(k, [rule, x, role === 'member']); }
     }
     const p = parentOf(e);
     const given = (role) => targets.some(([x, r]) => r === role && (!opts.excludedTargetNotGiven || ok(x)));
     let fallback = null;
     if (e.type === 'message' && !given('reply')) fallback = 'reply';
     else if (['repost', 'like', 'follow', 'reaction'].includes(e.type) && !given('subject')) fallback = e.type;
-    else if ((opts.declaredParentFallback || opts.declaredFallbackDoubleCount) && e.type === 'declared' && !given('subject') && !given('declared')) fallback = 'declared';
+    else if ((opts.declaredParentFallback || opts.declaredFallbackDoubleCount) && e.type === 'declared' && !given('subject') && !given('declared') && !given('member')) fallback = 'declared';
     if (fallback && p >= 0 && on(fallback)) {
       const x = evs[p].actor;
       const key = fallback + ',' + x + (opts.declaredFallbackDoubleCount && fallback === 'declared' ? ',parent' : '');
       if (x !== e.actor && ok(x)) found.set(key, [fallback, x]);
     }
-    for (const [rule, x] of found.values()) emit(e.actor, x, rule, amt, vis, sym);
+    for (const [rule, x, member] of found.values()) emit(e.actor, x, rule, amt, vis, sym || !!member);
     if (on('adjacency') && e.type === 'message' && ctx && !NO_ADJ.has(ctx.kind) && Number.isFinite(e.t)) seq.push({ i, untargeted: targets.length === 0, m, vis, sym });
   }
   // Turn-taking per context in time order (event order breaks ties).

@@ -175,7 +175,20 @@ const ROLE_SETS = {
   events: [['actor', 'Who acted (sender)'], ['targets', 'Directed at (recipients)'], ['timestamp', 'When'], ['context', 'Where (channel, thread)'], ['text', 'Message text'], ['weight', 'Weight'], ['type', 'Kind of event'], ['ignore', 'Ignore']],
   edges: [['actor', 'Source'], ['targets', 'Target'], ['weight', 'Weight'], ['type', 'Tie type'], ['directed', 'Directed flag'], ['ignore', 'Ignore']],
   nodes: [['id', 'Person id'], ['label', 'Name'], ['attr', 'Attribute'], ['ignore', 'Ignore']],
+  // Two-mode (affiliation) tables: people and the events or groups they belong to.
+  affiliations: [['actor', 'Person'], ['targets', 'Event or group'], ['weight', 'Weight'], ['timestamp', 'When'], ['ignore', 'Ignore']],
+  incidence: [['actor', 'Row name'], ['event', 'Event column'], ['attr', 'Row attribute'], ['ignore', 'Ignore']],
 };
+const KIND_OPTIONS = [
+  { value: 'events', label: 'An event (message, meeting...)' },
+  { value: 'edges', label: 'A tie between two people' },
+  { value: 'nodes', label: 'A person (attributes)' },
+  { value: 'affiliations', label: 'A person and an event or group (two-mode list)' },
+  { value: 'incidence', label: 'A person, one column per event or group (two-mode matrix)' },
+];
+const TWO_MODE = new Set(['affiliations', 'incidence']);
+// What an unmapped column becomes for each kind.
+const fallbackRole = k => (k === 'nodes' ? 'attr' : k === 'incidence' ? 'event' : 'ignore');
 // Roles one column at most can play; attributes and ignored columns can repeat.
 const SINGLE = new Set(['actor', 'targets', 'timestamp', 'context', 'text', 'weight', 'type', 'directed', 'id', 'label']);
 
@@ -191,9 +204,12 @@ export function ColumnMapper({ file, value, onChange }) {
         const s = await suggestMapping(headers, rows);
         const kind = value.kind || s.kind || 'events';
         const roles = {};
-        for (const h of headers) roles[h] = kind === 'nodes' ? 'attr' : 'ignore';
+        for (const h of headers) roles[h] = fallbackRole(kind);
         for (const [role, col] of Object.entries(s.mapping || {})) if (typeof col === 'string' && headers.includes(col) && ROLE_SETS[kind].some(([r]) => r === role)) roles[col] = role;
-        if (live) setState({ headers, rows, kind, roles, notes: s.notes || [], extra: { timeFormat: s.mapping?.timeFormat, timezone: s.mapping?.timezone, targetSeparator: s.mapping?.targetSeparator } });
+        // Incidence matrix: the suggestion lists event columns and row attributes.
+        if (kind === 'incidence' && kind === s.kind) for (const h of s.mapping?.attrs || []) if (headers.includes(h)) roles[h] = 'attr';
+        const modeLabels = s.mapping?.modeLabels || ['People', 'Events'];
+        if (live) setState({ headers, rows, kind, roles, notes: s.notes || [], extra: { timeFormat: s.mapping?.timeFormat, timezone: s.mapping?.timezone, targetSeparator: s.mapping?.targetSeparator, modeLabels } });
       } catch (e) { if (live) setErr(e); }
     })();
     return () => { live = false; };
@@ -208,19 +224,23 @@ export function ColumnMapper({ file, value, onChange }) {
   const setRole = (h, r) => setState(s => {
     const next = { ...s.roles, [h]: r };
     let prev = null;
-    if (SINGLE.has(r)) for (const [col, role] of Object.entries(s.roles)) if (col !== h && role === r) { next[col] = s.kind === 'nodes' ? 'attr' : 'ignore'; prev = col; }
-    setMoved(prev ? `"${prev}" was the ${roleName(r)} column; it is now ${s.kind === 'nodes' ? 'an attribute' : 'ignored'}.` : null);
+    if (SINGLE.has(r)) for (const [col, role] of Object.entries(s.roles)) if (col !== h && role === r) { next[col] = fallbackRole(s.kind); prev = col; }
+    setMoved(prev ? `"${prev}" was the ${roleName(r)} column; it is now ${s.kind === 'nodes' ? 'an attribute' : s.kind === 'incidence' ? 'an event column' : 'ignored'}.` : null);
     return { ...s, roles: next };
   });
-  const missing = (state.kind === 'nodes' ? ['id'] : ['actor', 'targets']).filter(r => !Object.values(state.roles).includes(r));
+  const missing = (state.kind === 'nodes' ? ['id'] : state.kind === 'incidence' ? ['actor', 'event'] : ['actor', 'targets']).filter(r => !Object.values(state.roles).includes(r));
+  const setModeLabel = (k, v) => setState(s => { const l = [...(s.extra.modeLabels || ['People', 'Events'])]; l[k] = v; return { ...s, extra: { ...s.extra, modeLabels: l } }; });
   return html`<div class="dv-mapper">
     <p class="label">Column mapping</p>
     <div class="row dv-mapper__row">
-      <${Select} label="Each row is" value=${state.kind} onChange=${k => setState(s => ({ ...s, kind: k, roles: Object.fromEntries(Object.entries(s.roles).map(([h, r]) => [h, ROLE_SETS[k].some(([v]) => v === r) ? r : k === 'nodes' ? 'attr' : 'ignore'])) }))} options=${[{ value: 'events', label: 'An event (message, meeting...)' }, { value: 'edges', label: 'A tie between two people' }, { value: 'nodes', label: 'A person (attributes)' }]} />
+      <${Select} label="Each row is" value=${state.kind} onChange=${k => setState(s => ({ ...s, kind: k, roles: Object.fromEntries(Object.entries(s.roles).map(([h, r]) => [h, ROLE_SETS[k].some(([v]) => v === r) ? r : fallbackRole(k)])) }))} options=${KIND_OPTIONS} />
+      ${TWO_MODE.has(state.kind) && html`<label class="field"><span>First kind is called</span><input class="input" type="text" value=${state.extra.modeLabels?.[0] ?? ''} onInput=${e => setModeLabel(0, e.currentTarget.value)} /></label>
+        <label class="field"><span>Second kind is called</span><input class="input" type="text" value=${state.extra.modeLabels?.[1] ?? ''} onInput=${e => setModeLabel(1, e.currentTarget.value)} /></label>`}
       ${state.kind === 'events' && html`<${Select} label="Time format" value=${state.extra.timeFormat || 'iso'} onChange=${v => setState(s => ({ ...s, extra: { ...s.extra, timeFormat: v } }))} options=${[['iso', 'ISO (2025-01-31 14:05)'], ['epoch_s', 'Unix seconds'], ['epoch_ms', 'Unix milliseconds'], ['mdy', 'Month/day/year'], ['dmy', 'Day/month/year'], ['ymd', 'Year/month/day']].map(([v, l]) => ({ value: v, label: l }))} />`}
       ${state.kind === 'events' && html`<${ZoneField} opt=${{ label: 'Time zone of the times', default: 'UTC' }} value=${state.extra.timezone || 'UTC'} onChange=${v => setState(s => ({ ...s, extra: { ...s.extra, timezone: v } }))} />`}
     </div>
     ${state.notes.map(n => html`<p class="small text2">${n}</p>`)}
+    ${TWO_MODE.has(state.kind) && html`<p class="small text2">Two-mode data: people are tied only to the events or groups they belong to. Network can show the two kinds side by side or tie people by the events they share (construction settings).</p>`}
     ${moved && html`<p class="small" role="status"><${Flag} level="info" /> ${moved}</p>`}
     ${missing.length > 0 && html`<p class="small" role="status"><${Flag} level="caution">Needs a column</${Flag}> <span class="text2">Choose a column for ${missing.map(roleName).join(' and ')}.</span></p>`}
     <div class="table-wrap">
@@ -244,7 +264,12 @@ function toMapping(state) {
     if (r === 'ignore') continue;
     if (r === 'attr') attrs.push(h); else m[r] = h;
   }
-  if (state.kind === 'nodes') m.attrs = attrs;
+  if (state.kind === 'nodes' || state.kind === 'incidence') m.attrs = attrs;
+  if (state.kind === 'incidence') { m.events = Object.entries(state.roles).filter(([, r]) => r === 'event').map(([h]) => h); delete m.event; }
+  if (TWO_MODE.has(state.kind)) {
+    m.modeLabels = (state.extra.modeLabels || []).map((l, k) => String(l || '').trim() || ['People', 'Events'][k]);
+    if (state.kind === 'affiliations' && m.timestamp) { m.timeFormat = state.extra.timeFormat || 'iso'; m.timezone = state.extra.timezone || 'UTC'; }
+  }
   if (state.kind === 'events') { m.timeFormat = state.extra.timeFormat || 'iso'; m.timezone = state.extra.timezone || 'UTC'; m.role = 'to'; m.eventType = 'message'; }
   if (state.kind === 'edges') { m.role = 'declared'; m.eventType = 'declared'; }
   if (state.extra.targetSeparator) m.targetSeparator = state.extra.targetSeparator;

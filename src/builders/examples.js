@@ -9,7 +9,8 @@
 //   exampleSession(id) an ego interview session (kind 'ego'), at its review step
 //
 // Every drawing is undirected with one tie type, so Build and Network count
-// the same ties. Fake names throughout.
+// the same ties. 'clubs-two-mode' is a two-mode drawing (doc.twoMode), the
+// worked example for affiliation networks. Fake names throughout.
 //
 // Pure module: runs in Node.
 
@@ -75,6 +76,17 @@ export const EXAMPLES = [
     ],
   },
   {
+    id: 'clubs-two-mode', kind: 'draw', title: 'Students and clubs (two-mode)',
+    summary: 'Six students and the four clubs they belong to: a two-mode network, where ties run only between a student and a club.',
+    lookFor: [
+      'Network reads 10 nodes and 10 ties: 6 students and 4 clubs, every tie joining a student to a club. Two-mode density is 10 / (6 × 4) = 0.417.',
+      'Two-mode degree divides by the size of the other mode: Dev Rao is in 2 of the 4 clubs (0.500) and Choir has 3 of the 6 students (0.500). Their plain degrees, 2 and 3, are not comparable.',
+      'Two-mode betweenness (Borgatti-Everett): Cara Nunez 0.667 and Dev Rao 0.600 bridge the clubs. A student here can lie on at most 30 shortest routes between pairs; Cara lies on 20, and 20 / 30 = 0.667.',
+      'Construction settings, Two-mode, project onto Students: Ana Silva and Ben Adler share 2 clubs, so their tie weighs 2; every other tie shares 1 club. In this projection Cara and Dev each have betweenness 0.600.',
+      'Clustering is not applicable on the two-mode view (no two students are tied directly, so there are no triangles); two-mode clustering (Robins-Alexander) is 0.333.',
+    ],
+  },
+  {
     id: 'ego-10', kind: 'ego', title: 'An ego network: you and 10 people',
     summary: 'One interview: family, college friends and coworkers, and who knows whom.',
     lookFor: [
@@ -88,7 +100,7 @@ export const EXAMPLES = [
 
 // Other names links may use: the Learn view's pair links open the first of
 // the pair, whose notes point to the second.
-const ALIASES = { 'path-and-star': 'path', 'ring-small-world': 'ring', 'two-teams': 'two-cliques-broker', 'class-majors': 'class-friendships', 'ego-ten': 'ego-10' };
+const ALIASES = { 'path-and-star': 'path', 'ring-small-world': 'ring', 'two-teams': 'two-cliques-broker', 'class-majors': 'class-friendships', 'ego-ten': 'ego-10', 'two-mode': 'clubs-two-mode', clubs: 'clubs-two-mode' };
 
 export function exampleById(id) { const k = ALIASES[id] || id; return EXAMPLES.find(x => x.id === k) || null; }
 
@@ -167,7 +179,26 @@ function classMajors() {
   };
 }
 
+// Two-mode: students (circles) tied to the clubs they belong to (squares).
+// Cara (Choir and Drama) and Dev (Drama and Robotics) chain the clubs
+// together; Chess and Choir share both Ana and Ben.
+function clubs() {
+  const students = [['ana', 'Ana Silva'], ['ben', 'Ben Adler'], ['cara', 'Cara Nunez'], ['dev', 'Dev Rao'], ['eli', 'Eli Moss'], ['fay', 'Fay Quinn']];
+  const clubs = [['chess', 'Chess'], ['choir', 'Choir'], ['drama', 'Drama'], ['robotics', 'Robotics']];
+  const nodes = [
+    ...students.map(([id, label], i) => ({ ...node(id, label, -170, -250 + i * 100), mode: 0 })),
+    ...clubs.map(([id, label], i) => ({ ...node(id, label, 170, -190 + i * 125), mode: 1 })),
+  ];
+  return {
+    twoMode: { labels: ['Students', 'Clubs'] },
+    nodes,
+    edges: ties([['ana', 'chess'], ['ana', 'choir'], ['ben', 'chess'], ['ben', 'choir'], ['cara', 'choir'], ['cara', 'drama'],
+      ['dev', 'drama'], ['dev', 'robotics'], ['eli', 'robotics'], ['fay', 'robotics']]),
+  };
+}
+
 const DRAWINGS = {
+  'clubs-two-mode': clubs,
   'two-cliques-broker': twoTeams, path, star,
   ring: () => ring(), 'small-world': () => ring([[0, RING_N / 2], [RING_N / 4, (3 * RING_N) / 4]]),
   'class-friendships': classMajors,
@@ -180,7 +211,7 @@ export function exampleDoc(id = 'two-cliques-broker') {
   const d = DRAWINGS[ex.id]();
   return validateDoc({
     version: 1, name: `Example: ${ex.title}`, example: ex.id,
-    groups: d.groups || [], groupKey: d.groupKey, attrColumns: [], edgeTypes: ['tie'],
+    groups: d.groups || [], groupKey: d.groupKey, attrColumns: [], edgeTypes: ['tie'], ...(d.twoMode ? { twoMode: d.twoMode } : {}),
     nodes: d.nodes, edges: d.edges,
   }).doc;
 }

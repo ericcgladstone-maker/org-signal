@@ -91,6 +91,8 @@ Every method returns a Promise. Positional arguments follow the pure function, m
   media: null | [...],                // context medium, or source medium without a context
   excludeBots: true, excludeNodes: [] /* dataset indices */, includeIsolates: true,
   tieFields: { weight: null, filters: [] },  // tie fields (events.attrs), see below
+  twoMode: null | { view: 'two-mode' | 'mode0' | 'mode1', projection: 'count' | 'newman' | 'binary', minShared: 1 },
+                                      // two-mode data only (twoModeOf(ds)); see "Two-mode networks"
 }
 ```
 
@@ -108,7 +110,7 @@ Only rules whose evidence exists are on. Default weights are 1, except adjacency
 | `mention`, `dm`, `to`, `cc`, `bcc` | that role |
 | `adjacency` | same context (not `email_thread`, `meeting`, `survey`, `canvas`), time order: an untargeted message by A directly after a message by B != A, within `windowMin`. Runs by one speaker count once. Addressed messages sit in the sequence but create no adjacency tie. There is no carry-over across time windows. |
 | `copresence` | `copresence` events: all pairs among the actor plus `attendee`/`member` targets. Amount per pair is weight/(k-1) when `normalize`. Symmetric. Meetings above `maxSize` are dropped. |
-| `declared` | role `declared`, or `subject` on a declared event, or (with neither) the author of the resolved parent; amount = event weight |
+| `declared` | role `declared`, or `subject` on a declared event, or (with neither) the author of the resolved parent; amount = event weight. Role `member` on a declared event is an affiliation (two-mode data, `addAffiliation`): the same rule, symmetric (both directions in a directed network). |
 | `repost`, `like`, `follow`, `reaction` | event of that type: the `subject` target, or the author of the resolved parent |
 
 The amount per piece of evidence is `event.weight` times the bootstrap multiplicity, and `raw = sum(rule.weight * amount)`. The same target and rule within one event counts once.
@@ -146,11 +148,40 @@ Edges are sorted by (src, dst). With `includeIsolates`, every eligible person is
 
 ### `edgeEvidence(ds, net, a, b, { limit = 50, bothDirections = false })`
 
-Returns an array, oldest first: `{ event, t, type, rule, amount, from, to, actor, actorLabel, context, visibility, text (280 chars max), attrs }` (`attrs`: the event's tie fields or `null`). In a directed network only a -> b is returned unless `bothDirections`.
+Returns an array, oldest first: `{ event, t, type, rule, amount, from, to, actor, actorLabel, context, visibility, text (280 chars max), attrs }` (`attrs`: the event's tie fields or `null`). In a directed network only a -> b is returned unless `bothDirections`. On a projection (two-mode data) a tie has no events of its own: the result is the evidence of the affiliations a and b share, each with `via` (the shared node, dataset index) and `viaLabel`.
 
 ### `networkFromEdges(n, [[a, b, w]], { directed, nodeIds })`
 
 Builds a Network from an edge list. Duplicate ties are summed.
+
+## Two-mode networks
+
+Representation (`src/core/model.js`, CONTRACTS.md): node attribute `bipartite` 0 / 1, `source.twoMode = { labels }`, affiliations as declared events with a `member` target (`addAffiliation`). `twoModeOf(ds)` says whether a dataset is two-mode (declared, or every non-bot node has `bipartite` 0/1 and both occur, as in a networkx file).
+
+**Construction** (`settings.twoMode`, filled by `defaultSettings` for two-mode data; `null` for one-mode data, and `twoMode: null` given explicitly builds the ordinary one-mode network of every node and tie):
+
+- `view: 'two-mode'` (default): actors and events, ties only between the modes, always undirected (`directed` is forced false). Ties within a mode (a survey tie between two people) and nodes with no mode are left out and counted in `summary.twoMode.sameModeEvidence` / `unknownModeEvidence`. Rule weights, tie fields, time windows, bots, `minWeight` and the weighting apply to the affiliation ties as usual.
+- `view: 'mode0'` / `'mode1'`: the one-mode projection onto that mode. Two nodes are tied when they share at least `minShared` (default 1) affiliations that survive the filters above; every node of the mode stays (isolates with `includeIsolates`), the other mode leaves. Weight (`edges.raw`, then the weighting transform gives `w`): `projection: 'count'` = shared affiliations (Breiger 1974; networkx `weighted_projected_graph`), `'newman'` = sum over shared nodes y of 1 / (deg(y) - 1) (Newman 2001; `collaboration_weighted_projected_graph`), `'binary'` = 1 (`projected_graph`). An affiliation counts once however heavy (as networkx). `edges.shared` holds the shared count; `byRule` is empty; `layerMask` is the union of the two affiliations' layers. Pairs below `minShared` are counted in `summary.twoMode.belowMinShared`.
+- The Network gains `twoMode = { view, labels, mode: Uint8Array(n), counts: [n0, n1], basis (-1, 0 or 1), projection, minShared, affiliations, sameModeEvidence, unknownModeEvidence, belowMinShared }` (and `summary.twoMode` without `mode`); `engine.build()` / `info()` return it.
+
+**Measures on the two-mode view** (`src/analysis/twomode.js`, `TWO_MODE_METRICS`; computed by `computeNodeMetrics` by default on two-mode views and never on other networks). All unweighted, matching networkx.algorithms.bipartite (`docs/accuracy.md`, section 8):
+
+| Key | Definition |
+|---|---|
+| `twoModeDegree` | degree / number of nodes of the other mode |
+| `twoModeBetweenness` | Brandes betweenness over unordered pairs / the Borgatti-Everett (1997) maximum for the node's mode, (1/2)[m^2(s+1)^2 + m(s+1)(2t-s-1) - t(2s-t+3)], s, t = divmod(n - 1, m) (n = own mode size, m = other); NaN when that maximum is 0. Pivot-sampled above `approxThreshold`, like betweenness. |
+| `twoModeCloseness` | (m + 2(n - 1)) / (sum of distances to reachable nodes) x (reachable - 1) / (N - 1); 0 for isolates. Classic, not harmonic, closeness. |
+| `twoModeClustering` | Latapy, Magnien and Del Vecchio (2008), "dot": mean over nodes v two steps away of \|N(u) and N(v)\| / \|N(u) or N(v)\|; 0 with nobody two steps away |
+
+`computeNetworkMetrics` adds on two-mode views: `twoModeDensity` = ties / (n0 n1), `robinsAlexander` = 4 x four-cycles / three-paths (Robins and Alexander 2004; 0 below 4 nodes or 3 ties), `twoModeAvgClustering` (mean Latapy), `twoModeAvgClusteringByMode`, `modeCounts`, `modeLabels`, `fourCycles`, `threePaths`. One-mode measures are still computed; applicability marks which ones mean nothing there.
+
+**Applicability on the two-mode view:** clustering, transitivity, average clustering, ego density (always 0: no triangles), constraint and effective size (contacts are never tied to each other), one-mode density, degree centralization and degree assortativity are `na` with reasons naming the modes; betweenness, closeness, eigenvector, PageRank and core number are `caution` (the two modes are not comparable on one scale); the null model is `na` (one-mode rewiring would create ties within a mode, and `nullModel` returns no statistics there); communities carry a caution saying how they were found. The two-mode measures are `na` everywhere else. On a projection, clustering, transitivity, constraint, effective size and ego density are `caution` (each shared node becomes a clique) and so is the null model.
+
+**Communities** on the two-mode view (`detectCommunities`): Louvain on the mode-0 projection (shared-affiliation counts), the usual practice (Borgatti and Halgin 2011); each mode-1 node joins the community most of its members are in (ties: lower id), and mode-1 nodes nobody shares get their own. Ids are renumbered by first member. `modularity` is the projection's Newman modularity; `barberModularity` is Barber's (2007) bipartite modularity of the joint partition, sum_c [W_c/W - (K_c/W)(D_c/W)] over unweighted ties; `method` says so. `{ twoMode: 'bipartite' }` runs plain Louvain on the two-mode ties instead. `barberModularity(net, membership)` is exported for any partition. On projections communities are ordinary one-mode communities.
+
+**Rendering:** `graphForRender` adds `nodes.mode`, `modeLabels` and `twoModeView` for two-mode data; `arrange: 'columns' | 'rows'` places each mode on its own side, ordered by eight barycenter sweeps to reduce crossings (two-mode view only; otherwise ForceAtlas2).
+
+**Other functions:** `projectNetwork(net, basis, how)` (projection of a two-mode Network, used by communities), `twoModeBetweennessMax(n, m)`, `isTwoModeView(net)`, `twoModeNodeMetrics`, `twoModeNetworkMetrics`. Time series, resampling, before/after and edge evidence run on two-mode data through `buildNetwork`, so every window or replicate is built with the same view and projection.
 
 ## Node metrics
 
@@ -360,6 +391,7 @@ It is collapsed Gibbs LDA; `distinctive` ranks by relevance with lambda 0.6.
 - The Network adds `index`, `edges.raw` and `summary`. Settings add `excludeNodes` and `copresence.maxSize`.
 - `groupMetrics` returns the richer shape above.
 - Extra exports: `networkFromEdges`, `graphForRender`, `GLOSSARY`, `NODE_METRICS`, `NULL_STATS`, `RULES`, `RULE_INFO`, `makeWindows`, `tokenize`, `createRng`.
+- Two-mode (2026-10-03): `settings.twoMode`, `net.twoMode`, `TWO_MODE_METRICS`, the two-mode network keys, `barberModularity` on two-mode communities, `graphForRender({ arrange })`, `TWO_MODE_VIEWS`, `PROJECTIONS`, `twoModeDefaults` (see "Two-mode networks").
 - **For llm:** pass dataset indices to `egoMetrics` (`nodeIds[ni]`).
 
 ## Validation
@@ -390,7 +422,9 @@ Hand-computed checks are in `metrics.test.js`.
 
 **Accuracy campaign.** `tools/accuracy/campaign.mjs` checks every measure against networkx, exact linear algebra, closed forms, invariances, a naive reimplementation of the construction rules, file round trips and the generator's ground truth on thousands of seeded cases; `test/accuracy/` runs a fixed slice of it in about 15 s. Method, numbers and conventions that differ from networkx are in `docs/accuracy.md`.
 
-Run `node --test 'test/analysis/**/*.test.js'` (77 tests). Set `ORG_SIGNAL_SKIP_PERF=1` to skip the 12 s performance test.
+Two-mode measures and projections are validated against networkx.algorithms.bipartite (`tools/accuracy/checks/twomode.mjs`, `test/accuracy/twomode.test.js`, `test/analysis/twomode.test.js`).
+
+Run `node --test 'test/analysis/**/*.test.js'`. Set `ORG_SIGNAL_SKIP_PERF=1` to skip the 12 s performance test.
 
 ## Performance (Node 24.19, Apple silicon, one thread)
 
@@ -446,6 +480,10 @@ These strings are shown in the UI verbatim, from `GLOSSARY` in `src/analysis/glo
 | `hitRate` | Hit rate | Of the ties that are really there, the share an informant reported. | Ties reported and in the reference / ties in the reference. | Perceived networks. | Ignores false alarms: someone who ticks every box gets 100%. Read it with Jaccard. |
 | `jaccard` | Jaccard similarity | How much two sets of ties overlap: 1 means identical, 0 means nothing in common. Used to score how accurately an informant sees the network. | \|A and B\| / \|A or B\| over the ties of the two networks. | Two networks on the same people. | Penalizes both missed ties and invented ones, so it is the fairest single accuracy score here. |
 | `cognitiveSocialStructure` | Cognitive social structure | The network as each person in a group perceives it (Krackhardt 1987); comparing the perceptions shows who sees the group accurately. | One full roster matrix per informant; aggregated by union, intersection or consensus. | Perceived networks (Build). | Perception is not behavior: an accurate perceiver need not be central. |
+| `twoMode` | Two-mode network | A network with two kinds of node, such as people and the events they attend, where ties run only between the kinds: a person attends an event, never another person directly. Also called an affiliation or bipartite network. | Nodes split into mode 0 (actors) and mode 1 (events, groups); ties only between modes. Davis, Gardner and Gardner (1941): 18 women x 14 social events; Breiger (1974), Borgatti and Everett (1997). | Data recording who belongs to or attended what (an incidence list or matrix). | One-mode measures (clustering, density, Burt's constraint) mislead here; use the two-mode versions or a projection. |
+| `affiliation` | Affiliation | A tie between a person and something they belong to or take part in: a club, a board, a meeting, a course. | One tie per (actor, event) pair; optionally weighted (hours, role) and dated. Stored as a declared event with a member target. | Two-mode data. | Membership says people had the chance to meet, not that they did. |
+| `projection` | Projection | Turning a two-mode network into a one-mode one: two people are tied when they share an event (or two events when they share a person). The tie weight says how much they share. | Count: number of shared affiliations (Breiger 1974). Newman (2001): each shared event adds 1 / (its size - 1), so a big event ties people weakly. Binary: 1 for any overlap. A minimum shared count can drop thin ties. | Two-mode data. | Every event becomes a clique, so clustering and constraint are inflated by construction, and information about which events made a tie is lost; check the two-mode view too. |
+| `borgattiEverett` | Borgatti-Everett normalization | Scaling two-mode centralities by what is possible for a node of that mode, so a person and an event can each be read from 0 to 1. | Borgatti and Everett (1997): degree / size of the other mode; betweenness / the maximum for that mode given both mode sizes; closeness = (m + 2(n - 1)) / sum of distances for a node in a mode of n with m in the other. | A two-mode network. | Compare values within a mode; across modes the scales are made comparable but the meanings differ (a busy person vs a well-attended event). |
 
 ### Node measures
 
@@ -470,6 +508,10 @@ These strings are shown in the UI verbatim, from `GLOSSARY` in `src/analysis/glo
 | `constraint` | Constraint | How much this person's contacts are tied to each other: high = embedded in one closed group; low = spans separate groups (Burt's structural holes). | Burt (1992): sum over contacts j of (p_ij + sum_q p_iq p_qj)^2, p = share of i's total mutual tie weight w(i,j) + w(j,i), as networkx. | Full view; weighted. | People with one contact always score 1. Use with effective size; check the per-person null model before calling someone a broker. |
 | `effectiveSize` | Effective size | Number of non-redundant contacts: contacts who do not already know each other. | Burt (1992): sum over contacts j of (1 - sum_q p_iq m_jq), m = tie weight / j's strongest tie (as networkx). Unweighted undirected equals n - 2t/n (Borgatti 1997). | Full view; weighted. | Grows with degree; efficiency = effective size / degree compares people with different numbers of contacts. |
 | `egoDensity` | Ego density | Share of possible ties among this person's contacts that exist. | Ties among alters / possible ties. Undirected: equals clustering. Directed: directed ties among alters / k(k-1). | Full view, or an ego-network survey with alter-alter ties. | Undefined with fewer than two contacts. |
+| `twoModeDegree` | Two-mode degree | Share of the other kind of node this one is tied to: the share of events a person attended, or the share of people at an event. | Degree / number of nodes of the other mode (Borgatti and Everett 1997; networkx bipartite.degree_centrality). | Two-mode network. | Robust; compare within a mode. |
+| `twoModeBetweenness` | Two-mode betweenness | How often this person or event sits on the shortest routes between others, scaled by the most a node of its kind could have. | Brandes betweenness (unordered pairs, unweighted) / the Borgatti-Everett (1997) maximum for its mode: (1/2)[m^2(s+1)^2 + m(s+1)(2t-s-1) - t(2s-t+3)], s, t = divmod(n-1, m) (networkx bipartite.betweenness_centrality). | Two-mode network. | Sensitive to missing affiliations; an event shared by two otherwise separate groups scores high. |
+| `twoModeCloseness` | Two-mode closeness | How few steps this person or event needs to reach everyone, against the fewest possible for its kind. | Borgatti and Everett (1997): (m + 2(n - 1)) / sum of distances for a node in a mode of n nodes (m in the other), times (reachable - 1) / (N - 1) when not everyone is reachable (networkx bipartite.closeness_centrality). | Two-mode network. | Classic, not harmonic, closeness: in disconnected networks the reach factor dominates. |
+| `twoModeClustering` | Two-mode clustering | How much this node shares its contacts with the nodes two steps away: people who attend the same events as each other, events with the same crowd. | Latapy, Magnien and Del Vecchio (2008), dot mode: mean over nodes v two steps away of \|N(u) and N(v)\| / \|N(u) or N(v)\| (networkx bipartite.clustering). | Two-mode network. | Unweighted; 0 for nodes with nobody two steps away. |
 
 ### Network measures
 
@@ -488,6 +530,9 @@ These strings are shown in the UI verbatim, from `GLOSSARY` in `src/analysis/glo
 | `degreeAssortativity` | Degree assortativity | Whether well-connected people connect with each other (positive) or with the less connected (negative). | Newman (2002) Pearson correlation of degree across tie ends; directed: source out-degree vs target in-degree (networkx). | Full view. | Compare with the null model; hubs in small networks force negative values. |
 | `modularity` | Modularity | How cleanly the network splits into groups with many ties inside and few between. | Newman (2004): sum_c [W_c/W - resolution (S_c/2W)^2], symmetrized weighted network. | Full view. | Louvain finds high modularity even in random networks; compare with the null model and other seeds. |
 | `communities` | Communities | Groups of people more tied to each other than to the rest, found from the ties alone. | Louvain (Blondel et al. 2008) on the symmetrized weighted network, seeded; ids ordered by first member. | Full view. | Different seeds and resolutions give different splits; small communities are unstable. |
+| `twoModeDensity` | Two-mode density | Share of all possible person-event ties that exist. | Ties / (n0 x n1) (networkx bipartite.density). | Two-mode network. | Falls as either mode grows; compare networks of similar size. |
+| `robinsAlexander` | Two-mode clustering (Robins-Alexander) | How often two people who share one event also share another: the two-mode version of "a friend of a friend is a friend". | Robins and Alexander (2004): 4 x four-cycles / three-paths (networkx bipartite.robins_alexander_clustering). | Two-mode network with at least 4 nodes and 3 ties. | Big events create many four-cycles; read it with the event sizes. |
+| `barberModularity` | Bipartite modularity (Barber) | How cleanly people and events split into groups that keep to themselves, judged against random mixing that respects the two modes. | Barber (2007): sum_c [W_c / W - (K_c / W)(D_c / W)], K_c and D_c the tie totals of the mode-0 and mode-1 nodes in c. | Two-mode network and a partition of both modes. | Here it scores the communities found on the projection; it is not maximized directly. |
 
 ### Group measures
 

@@ -128,6 +128,21 @@ export function uniqueLabels(labels, clean = s => s) {
   });
 }
 
+// The two-mode view of two-mode data (net.twoMode from buildNetwork), or null.
+// Its nodes carry the dataset attribute `bipartite` (0 / 1), which every
+// attribute-carrying format writes like any other attribute; Pajek and UCINET
+// DL use their own two-mode layouts (mode-0 nodes first).
+export function twoModeExport(net) {
+  const t = net?.twoMode;
+  if (!t || t.view !== 'two-mode' || !t.mode) return null;
+  const order = [];
+  for (let k = 0; k < 2; k++) for (let i = 0; i < net.n; i++) if (t.mode[i] === k) order.push(i);
+  let n0 = 0;
+  for (let i = 0; i < net.n; i++) if (t.mode[i] === 0) n0++;
+  if (!n0 || n0 === net.n) return null;
+  return { labels: t.labels || ['Actors', 'Events'], mode: t.mode, order, n0 };
+}
+
 export function edgeRules(net) {
   return net.edges.byRule ? Object.keys(net.edges.byRule).filter(r => net.edges.byRule[r]) : [];
 }
@@ -170,7 +185,16 @@ export function exportGraphML(ds, net, opts = {}) {
   const ecols = edgeColumns(ds, net, { taken: rules.map(evidenceName) });
   const ecolIds = ecols.map((c, k) => keyId(`e_${c.name}`, `t${k}`));
   ecols.forEach((c, k) => out.push(`  <key id="${xmlEscape(ecolIds[k])}" for="edge" attr.name="${xmlEscape(c.name)}" attr.type="${c.type}"/>`));
+  // Two-mode view: the mode is the node attribute `bipartite` (long, which
+  // networkx reads back as int, its bipartite convention); the mode labels go
+  // in graph-level data (our convention; networkx keeps them in G.graph).
+  const tm = twoModeExport(net);
+  if (tm) {
+    out.push('  <key id="mode0_label" for="graph" attr.name="mode0_label" attr.type="string"/>');
+    out.push('  <key id="mode1_label" for="graph" attr.name="mode1_label" attr.type="string"/>');
+  }
   out.push(`  <graph id="G" edgedefault="${net.directed ? 'directed' : 'undirected'}">`);
+  if (tm) out.push(`    <data key="mode0_label">${xmlEscape(tm.labels[0])}</data>`, `    <data key="mode1_label">${xmlEscape(tm.labels[1])}</data>`);
   for (let i = 0; i < net.n; i++) {
     let s = `    <node id="${xmlEscape(ids[i])}"><data key="label">${xmlEscape(nodeLabel(ds, net, i))}</data>`;
     cols.forEach((c, k) => {

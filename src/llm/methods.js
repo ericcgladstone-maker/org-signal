@@ -35,6 +35,12 @@ export const REFERENCES = {
   watts1998: "Watts, D. J., & Strogatz, S. H. (1998). Collective dynamics of 'small-world' networks. *Nature, 393*(6684), 440-442. https://doi.org/10.1038/30918",
   seidman1983: 'Seidman, S. B. (1983). Network structure and minimum degree. *Social Networks, 5*(3), 269-287. https://doi.org/10.1016/0378-8733(83)90028-X',
   batagelj2003: 'Batagelj, V., & Zaversnik, M. (2003). *An O(m) algorithm for cores decomposition of networks* (arXiv:cs/0310049). https://arxiv.org/abs/cs/0310049',
+  borgatti1997: 'Borgatti, S. P., & Everett, M. G. (1997). Network analysis of 2-mode data. *Social Networks, 19*(3), 243-269. https://doi.org/10.1016/S0378-8733(96)00301-2',
+  breiger1974: 'Breiger, R. L. (1974). The duality of persons and groups. *Social Forces, 53*(2), 181-190. https://doi.org/10.2307/2576011',
+  newman2001: 'Newman, M. E. J. (2001). Scientific collaboration networks. II. Shortest paths, weighted networks, and centrality. *Physical Review E, 64*(1), 016132. https://doi.org/10.1103/PhysRevE.64.016132',
+  latapy2008: 'Latapy, M., Magnien, C., & Del Vecchio, N. (2008). Basic notions for the analysis of large two-mode networks. *Social Networks, 30*(1), 31-48. https://doi.org/10.1016/j.socnet.2007.04.006',
+  robins2004: 'Robins, G., & Alexander, M. (2004). Small worlds among interlocking directors: Network structure and distance in bipartite graphs. *Computational and Mathematical Organization Theory, 10*(1), 69-94. https://doi.org/10.1023/B:CMOT.0000032580.12184.c0',
+  barber2007: 'Barber, M. J. (2007). Modularity and community detection in bipartite networks. *Physical Review E, 76*(6), 066102. https://doi.org/10.1103/PhysRevE.76.066102',
   newman2004: 'Newman, M. E. J., & Girvan, M. (2004). Finding and evaluating community structure in networks. *Physical Review E, 69*(2), 026113. https://doi.org/10.1103/PhysRevE.69.026113',
   traag2019: 'Traag, V. A., Waltman, L., & van Eck, N. J. (2019). From Louvain to Leiden: Guaranteeing well-connected communities. *Scientific Reports, 9*, 5233. https://doi.org/10.1038/s41598-019-41695-z',
   efron1993: 'Efron, B., & Tibshirani, R. J. (1993). *An introduction to the bootstrap.* Chapman & Hall.',
@@ -55,7 +61,7 @@ const CITE = {
   maslov2002: 'Maslov & Sneppen, 2002', page1999: 'Page et al., 1999', bonacich1972: 'Bonacich, 1972', bonacich1987: 'Bonacich, 1987',
   freeman1977: 'Freeman, 1977', freeman1978: 'Freeman, 1978', marchiori2000: 'Marchiori & Latora, 2000', boldi2014: 'Boldi & Vigna, 2014',
   watts1998: 'Watts & Strogatz, 1998', seidman1983: 'Seidman, 1983', batagelj2003: 'Batagelj & Zaversnik, 2003',
-  newman2004: 'Newman & Girvan, 2004', traag2019: 'Traag et al., 2019', efron1993: 'Efron & Tibshirani, 1993',
+  newman2004: 'Newman & Girvan, 2004', borgatti1997: 'Borgatti & Everett, 1997', breiger1974: 'Breiger, 1974', newman2001: 'Newman, 2001', latapy2008: 'Latapy et al., 2008', robins2004: 'Robins & Alexander, 2004', barber2007: 'Barber, 2007', traag2019: 'Traag et al., 2019', efron1993: 'Efron & Tibshirani, 1993',
   borgatti2006: 'Borgatti et al., 2006', blei2003: 'Blei et al., 2003', krippendorff2019: 'Krippendorff, 2019', cohen1960: 'Cohen, 1960',
   wasserman1994: 'Wasserman & Faust, 1994', kleinberg1999: 'Kleinberg, 1999', sparckjones1972: 'Sparck Jones, 1972',
   garlaschelli2004: 'Garlaschelli & Loffredo, 2004',
@@ -84,6 +90,10 @@ const NODE_METRIC_TEXT = {
   constraint: ['Constraint: Burt\'s measure of how much a person\'s contacts are connected to each other (low constraint indicates brokerage opportunity), with tie weights as Burt\'s proportional tie strengths.', ['burt1992']],
   effectiveSize: ['Effective size: number of contacts minus the redundancy among them, with tie weights (Burt\'s formula).', ['burt1992']],
   egoDensity: ['Ego-network density: density of ties among a person\'s contacts.', ['wasserman1994']],
+  twoModeDegree: ['Two-mode degree: the share of the other mode a node is tied to (degree divided by the size of the other mode).', ['borgatti1997']],
+  twoModeBetweenness: ['Two-mode betweenness: betweenness over unordered pairs divided by the largest value possible for a node of that mode given both mode sizes (Borgatti-Everett normalization).', ['borgatti1997', 'brandes2001']],
+  twoModeCloseness: ['Two-mode closeness: the smallest possible sum of distances for a node of that mode, m + 2(n - 1), divided by the node\'s sum of distances, times the share of the network it can reach.', ['borgatti1997']],
+  twoModeClustering: ['Two-mode clustering: for each node, the mean overlap (Jaccard) of its neighbors with those of each node two steps away (Latapy, dot mode).', ['latapy2008']],
 };
 const UNDIRECTED_DEGREE = 'Contacts (degree): number of distinct people a person has a tie with.';
 
@@ -108,6 +118,9 @@ export const NETWORK_STAT_TEXT = {
   degreeCentralization: ['degree centralization', ['freeman1978']],
   strengthGini: ['Gini coefficient of node strength (inequality of activity)', []],
   modularity: ['modularity of the detected partition', ['newman2004']],
+  twoModeDensity: ['two-mode density (ties divided by the product of the two mode sizes)', ['borgatti1997']],
+  robinsAlexander: ['two-mode clustering (four times the four-cycles over the three-paths)', ['robins2004']],
+  barberModularity: ['bipartite modularity of the detected partition', ['barber2007']],
   assortativity: ['degree assortativity', ['newman2002']],
 };
 
@@ -381,6 +394,18 @@ export function buildMethodsAppendix(input = {}) {
   if (s.excludeBots && !surveyOnly) parts.push('accounts flagged as bots were excluded');
   if (s.includeIsolates != null) parts.push(s.includeIsolates ? (surveyOnly ? 'people who named nobody and were named by nobody were kept' : 'isolates were kept') : 'isolates were removed');
   out.push(parts.join('; ') + '.');
+  // Two-mode data: say which network was analyzed and how a projection was weighted.
+  const tm = s.twoMode;
+  if (tm) {
+    const labels = net?.twoMode?.labels || ['actors', 'events'];
+    const [a, b] = labels.map(x => String(x).toLowerCase());
+    if (tm.view === 'two-mode') out.push('', `The data are two-mode (${a} and ${b}): the network analyzed has ties only between ${a} and ${b}, undirected; ties within a mode were left out. Two-mode measures use the Borgatti and Everett normalizations${cite(['borgatti1997'])}.`);
+    else {
+      const [me, via] = tm.view === 'mode0' ? [a, b] : [b, a];
+      const how = tm.projection === 'newman' ? `each shared one adding 1 / (its size - 1)${cite(['newman2001'])}` : tm.projection === 'binary' ? 'weight 1 for any overlap' : `weighted by the number shared${cite(['breiger1974'])}`;
+      out.push('', `The data are two-mode (${a} and ${b}); the network analyzed is the one-mode projection onto ${me}: two ${me} are tied when they share at least ${tm.minShared || 1} of the ${via}, ${how}.`);
+    }
+  }
   if (net) out.push('', `The resulting network had ${fmtNum(net.n)} ${surveyOnly ? 'people' : 'nodes'} and ${fmtNum(net.edges?.count ?? net.edgeCount ?? 0)} ${net.directed ? 'directed' : 'undirected'} ties.`);
   out.push('');
 

@@ -4,7 +4,7 @@
 // (engine.js) runs these in a worker and keeps the dataset and the current
 // network there.
 
-export { defaultSettings, normalizeSettings, buildNetwork, edgeEvidence, networkFromEdges, forEachEvidence, edgeTieAttributes, tieFieldPlan, RULES, RULE_INFO, LAYERS } from './construct.js';
+export { defaultSettings, normalizeSettings, buildNetwork, edgeEvidence, networkFromEdges, forEachEvidence, edgeTieAttributes, tieFieldPlan, RULES, RULE_INFO, LAYERS, TWO_MODE_VIEWS, PROJECTIONS, twoModeDefaults } from './construct.js';
 export { computeNodeMetrics, NODE_METRICS } from './metrics.js';
 export { computeNetworkMetrics } from './network.js';
 export { detectCommunities, modularity } from './communities.js';
@@ -14,5 +14,6 @@ export { applicability, APPLICABILITY_KEYS } from './applicability.js';
 export { timeSeries, detectShifts, compareBeforeAfter, makeWindows } from './time.js';
 export { affect, keywords, topics, diffusion, tokenize } from './content/index.js';
 export { graphForRender } from './render.js';
+export { TWO_MODE_METRICS, twoModeNodeMetrics, twoModeNetworkMetrics, barberModularity, projectNetwork, twoModeBetweennessMax, isTwoModeView } from './twomode.js';
 export { GLOSSARY, glossaryFor } from './glossary.js';
 export { createRng } from './rng.js';

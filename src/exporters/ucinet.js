@@ -12,7 +12,7 @@
 // spaces, commas, quotes or '=', at most 18 characters, unique. UCINET shows
 // them in upper case.
 
-import { nodeLabel } from './graphml.js';
+import { nodeLabel, twoModeExport } from './graphml.js';
 
 export function dlLabels(ds, net) {
   const used = new Set();
@@ -30,8 +30,29 @@ export function dlLabels(ds, net) {
   return out;
 }
 
+// Two-mode view: a rectangular matrix, rows = mode 0, columns = mode 1
+// (`dl nr= nc= format=fullmatrix`, ROW LABELS / COLUMN LABELS, spec section
+// 5), whatever opts.format says, up to 250,000 cells; larger two-mode
+// networks fall back to the one-mode edge list (the mode is then lost).
 export function exportUCINET(ds, net, opts = {}) {
   const labels = dlLabels(ds, net);
+  const tm = twoModeExport(net);
+  if (tm && tm.n0 * (net.n - tm.n0) <= 250000) {
+    const rows = tm.order.slice(0, tm.n0), cols = tm.order.slice(tm.n0);
+    const colPos = new Map(cols.map((v, k) => [v, k]));
+    const rowPos = new Map(rows.map((v, k) => [v, k]));
+    const M = rows.map(() => new Float64Array(cols.length));
+    const E = net.edges;
+    for (let e = 0; e < E.count; e++) {
+      const a = E.src[e], b = E.dst[e];
+      const r = rowPos.has(a) ? rowPos.get(a) : rowPos.get(b), c = colPos.has(b) ? colPos.get(b) : colPos.get(a);
+      if (r === undefined || c === undefined) continue;   // same-mode ties are not in the two-mode view
+      M[r][c] += E.w[e];
+    }
+    const out = [`dl nr=${rows.length} nc=${cols.length} format=fullmatrix`, 'row labels:', rows.map(v => labels[v]).join(','), 'column labels:', cols.map(v => labels[v]).join(','), 'data:'];
+    for (const row of M) out.push(Array.from(row, String).join(' '));
+    return out.join('\n') + '\n';
+  }
   const E = net.edges;
   const cell = new Map();
   const add = (a, b, w) => { const k = a * net.n + b; cell.set(k, (cell.get(k) || 0) + w); };

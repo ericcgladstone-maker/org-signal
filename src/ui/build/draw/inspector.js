@@ -8,7 +8,7 @@ import * as D from '../../../builders/draw.js';
 import { ATTR_TYPES } from '../../../builders/common.js';
 import { groupColor } from '../shared.js';
 
-export function Inspector({ doc, sel, apply, setSel, edgeDefaults, setEdgeDefaults, onRename }) {
+export function Inspector({ doc, sel, apply, setSel, edgeDefaults, setEdgeDefaults, onRename, onTwoMode }) {
   if (sel.edges.length === 1 && !sel.nodes.length) {
     const e = D.edgeById(doc, sel.edges[0]);
     if (e) return html`<${EdgePanel} doc=${doc} e=${e} apply=${apply} setSel=${setSel} />`;
@@ -18,7 +18,15 @@ export function Inspector({ doc, sel, apply, setSel, edgeDefaults, setEdgeDefaul
     if (n) return html`<${NodePanel} doc=${doc} n=${n} apply=${apply} setSel=${setSel} onRename=${onRename} />`;
   }
   if (sel.nodes.length > 1 || sel.edges.length > 1) return html`<${MultiPanel} doc=${doc} sel=${sel} apply=${apply} setSel=${setSel} />`;
-  return html`<${DocPanel} doc=${doc} apply=${apply} edgeDefaults=${edgeDefaults} setEdgeDefaults=${setEdgeDefaults} />`;
+  return html`<${DocPanel} doc=${doc} apply=${apply} edgeDefaults=${edgeDefaults} setEdgeDefaults=${setEdgeDefaults} onTwoMode=${onTwoMode} />`;
+}
+
+// Two-mode drawings: which mode a node (or a selection) is, in words.
+function ModeSelect({ doc, value, onChange, id, mixed }) {
+  return html`<select class="select" id=${id} value=${mixed ? '__mixed' : String(value)} onChange=${e => e.currentTarget.value !== '__mixed' && onChange(+e.currentTarget.value)}>
+    ${mixed ? html`<option value="__mixed">Mixed</option>` : null}
+    ${doc.twoMode.labels.map((l, m) => html`<option value=${String(m)}>${D.modeNoun(l)} (${m === 0 ? 'circle' : 'square'})</option>`)}
+  </select>`;
 }
 
 function GroupSelect({ doc, value, onChange, id, mixed }) {
@@ -44,10 +52,14 @@ function AttrInput({ col, value, onChange, id }) {
 function NodePanel({ doc, n, apply, setSel, onRename }) {
   const ties = doc.edges.filter(e => e.source === n.id || e.target === n.id);
   const other = e => D.nodeById(doc, e.source === n.id ? e.target : e.source)?.label;
+  const tm = doc.twoMode;
   return html`<div class="ob-stack">
-    <h3 class="label">Person</h3>
+    <h3 class="label">${tm ? D.modeNoun(tm.labels[D.nodeMode(n)]) : 'Person'}</h3>
     <div class="field"><label class="field__label" for="ob-n-label">Name</label>
       <input class="input" id="ob-n-label" value=${n.label} onChange=${e => apply(d => D.updateNode(d, n.id, { label: e.currentTarget.value.trim() || n.label }), 'Rename')} /></div>
+    ${tm ? html`<div class="field"><label class="field__label" for="ob-n-mode">Mode</label>
+      <${ModeSelect} id="ob-n-mode" doc=${doc} value=${D.nodeMode(n)} onChange=${m => apply(d => D.setNodeMode(d, [n.id], m), 'Change mode')} />
+      <p class="ob-help">Ties join ${tm.labels[0].toLowerCase()} with ${tm.labels[1].toLowerCase()} only; changing the mode leaves existing ties in place, and any that then join two of the same mode are left out of the analysis.</p></div>` : null}
     <div class="field"><label class="field__label" for="ob-n-group">Group</label>
       <${GroupSelect} id="ob-n-group" doc=${doc} value=${n.group} onChange=${g => apply(d => D.setGroup(d, [n.id], g), 'Set group')} /></div>
     ${doc.attrColumns.map(c => html`<div class="field" key=${c.key}><label class="field__label" for=${'ob-n-a-' + c.key}>${c.key} <span class="ob-help">(${c.type})</span></label>
@@ -79,7 +91,9 @@ function MultiPanel({ doc, sel, apply, setSel }) {
     setNewGroup('');
   };
   return html`<div class="ob-stack">
-    <h3 class="label">${nodes.length} people${sel.edges.length ? `, ${sel.edges.length} ties` : ''} selected</h3>
+    <h3 class="label">${nodes.length} ${doc.twoMode ? 'nodes' : 'people'}${sel.edges.length ? `, ${sel.edges.length} ties` : ''} selected</h3>
+    ${nodes.length && doc.twoMode ? html`<div class="field"><label class="field__label" for="ob-m-mode">Mode</label>
+      <${ModeSelect} id="ob-m-mode" doc=${doc} value=${D.nodeMode(nodes[0])} mixed=${new Set(nodes.map(D.nodeMode)).size > 1} onChange=${m => apply(d => D.setNodeMode(d, sel.nodes, m), 'Change mode')} /></div>` : null}
     ${nodes.length ? html`
     <div class="field"><label class="field__label" for="ob-m-group">Group</label>
       <${GroupSelect} id="ob-m-group" doc=${doc} value=${[...groups][0]} mixed=${groups.size > 1} onChange=${g => apply(d => D.setGroup(d, sel.nodes, g), 'Set group')} /></div>
@@ -131,7 +145,8 @@ function EdgePanel({ doc, e, apply, setSel }) {
       <${TypeSelect} id="ob-e-type" doc=${doc} value=${e.type} onChange=${v => apply(d => D.updateEdge(d, e.id, { type: v }), 'Tie type')} /></div>
     <div class="field"><label class="field__label" for="ob-e-w">Weight</label>
       <input class="input" id="ob-e-w" type="number" min="0" step="any" value=${e.weight} onChange=${ev => apply(d => D.updateEdge(d, e.id, { weight: ev.currentTarget.value }), 'Tie weight')} /></div>
-    <label class="check"><input type="checkbox" checked=${e.directed} onChange=${ev => apply(d => D.updateEdge(d, e.id, { directed: ev.currentTarget.checked }), 'Tie direction')} /> Directed (one-way)</label>
+    ${doc.twoMode ? html`<p class="ob-note">${D.canConnect(doc, s.id, t.id) ? 'Both ends are of the same mode: this tie is left out of the analysis.' : 'An affiliation: membership has no direction.'}</p>`
+      : html`<label class="check"><input type="checkbox" checked=${e.directed} onChange=${ev => apply(d => D.updateEdge(d, e.id, { directed: ev.currentTarget.checked }), 'Tie direction')} /> Directed (one-way)</label>`}
     <div class="ob-row">
       ${e.directed ? html`<button type="button" class="tlink" onClick=${() => apply(d => D.reverseEdge(d, e.id), 'Reverse tie')}>Reverse direction</button>` : null}
       <button type="button" class="tlink ob-danger" onClick=${() => { apply(d => D.removeEdges(d, [e.id]), 'Delete tie'); setSel({ nodes: [], edges: [] }); }}>Delete tie</button>
@@ -139,7 +154,8 @@ function EdgePanel({ doc, e, apply, setSel }) {
   </div>`;
 }
 
-function DocPanel({ doc, apply, edgeDefaults, setEdgeDefaults }) {
+function DocPanel({ doc, apply, edgeDefaults, setEdgeDefaults, onTwoMode }) {
+  const tm = doc.twoMode;
   const [col, setCol] = useState({ key: '', type: 'text' });
   const [grp, setGrp] = useState('');
   const addCol = () => { if (col.key.trim()) { apply(d => D.addAttrColumn(d, { key: col.key.trim(), type: col.type }), 'Add column'); setCol({ key: '', type: col.type }); } };
@@ -148,13 +164,24 @@ function DocPanel({ doc, apply, edgeDefaults, setEdgeDefaults }) {
     <h3 class="label">Drawing</h3>
     <div class="field"><label class="field__label" for="ob-d-name">Name</label>
       <input class="input" id="ob-d-name" value=${doc.name} onChange=${e => apply(d => ({ ...d, name: e.currentTarget.value.trim() || d.name }), 'Rename drawing')} /></div>
-    <dl class="ob-kv"><dt>People</dt><dd>${doc.nodes.length}</dd><dt>Ties</dt><dd>${doc.edges.length}</dd><dt>Groups</dt><dd>${doc.groups.length}</dd></dl>
+    <dl class="ob-kv">${tm ? html`<dt>${tm.labels[0]}</dt><dd>${doc.nodes.filter(n => D.nodeMode(n) === 0).length}</dd><dt>${tm.labels[1]}</dt><dd>${doc.nodes.filter(n => D.nodeMode(n) === 1).length}</dd>` : html`<dt>People</dt><dd>${doc.nodes.length}</dd>`}<dt>Ties</dt><dd>${doc.edges.length}</dd><dt>Groups</dt><dd>${doc.groups.length}</dd></dl>
+
+    <div class="ob-stack" style="gap:.4rem">
+      <h3 class="label">Kind of network</h3>
+      <label class="check"><input type="checkbox" id="ob-d-twomode" checked=${!!tm} onChange=${e => onTwoMode?.(e.currentTarget.checked)} /> Two-mode drawing</label>
+      ${tm ? html`<div class="ob-row" style="flex-wrap:nowrap;gap:.4rem">
+        ${[0, 1].map(m => html`<div class="field" style="flex:1 1 0;min-width:0"><label class="field__label" for=${'ob-d-mode' + m}>${m === 0 ? 'Circles are' : 'Squares are'}</label>
+          <input class="input input--sm" id=${'ob-d-mode' + m} value=${tm.labels[m]} onChange=${e => apply(d => D.setModeLabels(d, m === 0 ? [e.currentTarget.value, d.twoMode.labels[1]] : [d.twoMode.labels[0], e.currentTarget.value]), 'Rename mode')} /></div>`)}
+      </div>
+      <p class="ob-note">Ties join ${tm.labels[0].toLowerCase()} to ${tm.labels[1].toLowerCase()} only (affiliations, like Davis's women and the events they attended). Network can show the two-mode network or either projection.</p>`
+      : html`<p class="ob-note">Two-mode: two kinds of node, such as people and the clubs or events they belong to, tied only across the kinds.</p>`}
+    </div>
 
     <div class="ob-stack" style="gap:.4rem">
       <h3 class="label">New ties</h3>
       <div class="field"><label class="field__label" for="ob-d-etype">Type</label>
         <${TypeSelect} id="ob-d-etype" doc=${doc} value=${edgeDefaults.type} onChange=${v => { apply(d => D.addEdgeType(d, v), 'Add tie type'); setEdgeDefaults({ ...edgeDefaults, type: v }); }} /></div>
-      <label class="check"><input type="checkbox" checked=${edgeDefaults.directed} onChange=${e => setEdgeDefaults({ ...edgeDefaults, directed: e.currentTarget.checked })} /> Directed (one-way)</label>
+      ${tm ? null : html`<label class="check"><input type="checkbox" checked=${edgeDefaults.directed} onChange=${e => setEdgeDefaults({ ...edgeDefaults, directed: e.currentTarget.checked })} /> Directed (one-way)</label>`}
     </div>
 
     <div class="ob-stack" style="gap:.4rem">

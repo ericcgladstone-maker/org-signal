@@ -58,10 +58,12 @@ export function ReportView({ report, pending = false, excludeBots = true }) {
     pending ? 'before merging duplicates' : (t.nodesInEvents != null && t.nodesInEvents !== t.nodes ? `${fmtInt(t.nodes)} listed in the export` : null),
     bots ? `${plural(bots, 'bot')} left out of the network, which shows ${fmtInt((t.nodesInEvents ?? t.nodes) - bots)}` : null,
   ].filter(Boolean).join('; ') || null;
+  // Two-mode (affiliation) data counts both kinds of node and the memberships.
+  const tm = t.twoMode;
   const rows = [
-    ['People', fmtInt(t.nodesInEvents ?? t.nodes), peopleSub],
-    reported ? ['Reported ties', fmtInt(t.events), 'one per nomination'] : ['Messages and other events', fmtInt(t.events), t.messages ? `${fmtInt(t.messages)} messages, ${fmtInt(t.messagesWithText)} with text` : null],
-    [reported ? 'Questions' : 'Conversations', fmtInt(t.contexts), !reported && vis.length > 1 ? vis.map(([v, n]) => `${fmtInt(n)} ${VIS_WORDS[v] || v}`).join(', ') : null],
+    tm ? [`${tm.labels[0]} and ${tm.labels[1]}`, fmtInt(tm.counts[0] + tm.counts[1]), `${fmtInt(tm.counts[0])} ${tm.labels[0].toLowerCase()}, ${fmtInt(tm.counts[1])} ${tm.labels[1].toLowerCase()}${pending ? '; before merging duplicates' : ''}`] : ['People', fmtInt(t.nodesInEvents ?? t.nodes), peopleSub],
+    tm && reported ? ['Affiliations', fmtInt(t.events), 'one per membership or attendance'] : reported ? ['Reported ties', fmtInt(t.events), 'one per nomination'] : ['Messages and other events', fmtInt(t.events), t.messages ? `${fmtInt(t.messages)} messages, ${fmtInt(t.messagesWithText)} with text` : null],
+    ...(tm && reported ? [] : [[reported ? 'Questions' : 'Conversations', fmtInt(t.contexts), !reported && vis.length > 1 ? vis.map(([v, n]) => `${fmtInt(n)} ${VIS_WORDS[v] || v}`).join(', ') : null]]),
     ['Time range', t.timeRange ? fmtRange(t.timeRange.start, t.timeRange.end) : 'no timestamps', null],
     ...(!reported ? [['Bots', fmtInt(t.botsInEvents ?? t.bots), t.botNames?.length ? t.botNames.slice(0, 4).join(', ') + (t.botNames.length > 4 ? ', ...' : '') : null]] : []),
     ...(t.deactivatedInEvents ? [['Deactivated accounts', fmtInt(t.deactivatedInEvents), t.deactivatedNames.slice(0, 4).join(', ') + (t.deactivatedNames.length > 4 ? ', ...' : '')]] : []),
@@ -80,6 +82,14 @@ function Counts({ s, counts }) {
   const c = counts || s.counts;
   const imp = s.importerCounts || {};
   const vis = Object.entries(c.contextsByVisibility || {}).filter(([, n]) => n);
+  if (s.reported && s.twoMode) {
+    const [l0, l1] = s.twoMode.labels;
+    return html`<dl class="kv dv-kv">
+      <dt>${l0}</dt><dd>${fmtInt(s.twoMode.counts[0])}</dd>
+      <dt>${l1}</dt><dd>${fmtInt(s.twoMode.counts[1])}</dd>
+      <dt>Affiliations</dt><dd>${fmtInt(imp.affiliations ?? c.events)}</dd>
+    </dl>`;
+  }
   if (s.reported) {
     return html`<dl class="kv dv-kv">
       ${imp.respondents != null && html`<dt>Respondents</dt><dd>${fmtInt(imp.respondents)}</dd>`}

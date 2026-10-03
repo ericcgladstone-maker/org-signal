@@ -81,13 +81,21 @@ import { GenerateView } from './generate/index.js'; // <GenerateView />
   - `snapPoint(p, others, { grid, gridSize, guides, threshold })`
 - Layouts (`draw-layout.js`):
   - `LAYOUTS`, `runLayout(doc, id, ids, { all, root, key, seed, box })`, which returns positions.
-  - `circleLayout`, `gridLayout`, `treeLayout` (breadth-first from a root), `forceLayout` (seeded and deterministic), `concentricLayout` (rings by degree, group or an attribute).
+  - `circleLayout`, `gridLayout`, `treeLayout` (breadth-first from a root), `forceLayout` (seeded and deterministic), `concentricLayout` (rings by degree, group or an attribute), `twoModeLayout` (two-mode drawings: `columns` / `rows`), `layoutsFor(doc)`.
   - `layoutBox` (a selection is laid out inside its own bounding box), `fitInto`, `concentricKeys`.
 - UI: `DrawEditor()`. One toolbar (mode `.seg`, undo/redo, Canvas | Table, File menu, shortcuts, the primary "Analyze this network"); layout and snapping live in the panel beside the canvas. The canvas fills the window height below it. New people open for naming. Tie types are drawn with dashes, plus a key, only when more than one is used. Undo history, zoom and panels survive leaving the view (module memory).
   - SVG canvas with pan and zoom, grid snap, alignment guides, group outlines, marquee and shift-click selection, and inline renaming.
   - Inspector, an equivalent table view for screen readers, and autosave.
   - Layout changes animate, except under `prefers-reduced-motion`.
   - Every action has a keyboard path; `?` opens the shortcut list.
+
+**Two-mode drawings** (people and the events, clubs or boards they belong to; see CONTRACTS.md, "Two-mode").
+- Format: `doc.twoMode = { labels: [mode0Label, mode1Label] }` (default `['People', 'Events']`) and `node.mode` `0 | 1` on every node. One-mode drawings carry neither field, so older drawings and files load unchanged; `validateDoc` keeps `mode` only in two-mode docs (a missing mode becomes 0, with a warning), clears `directed` on ties, and warns about same-mode ties. The format round-trips through Export / Import JSON and the browser draft.
+- Functions: `setTwoMode(doc, on, labels)` -> `{ doc, assigned: 'colouring' | 'all-mode-0' | null, sameMode }` (turning on keeps every node and tie: if the ties already alternate between two sides those sides become the modes, otherwise everyone starts in mode 0 and the same-mode ties are counted; directed ties become undirected; turning off drops the modes and keeps the ties), `setModeLabels`, `setNodeMode(doc, ids, mode)`, `canConnect(doc, a, b)` (a reason in words, or null), `sameModeEdges(doc)`, `twoColouring(doc)`, `modeNoun(label)` ('People' -> 'Person', 'Clubs' -> 'Club'), `isTwoMode`, `nodeMode`. `addNode(doc, { mode })`; `nextLabel(doc, mode)` names by mode ('Event 3'). `addEdge` and `connectPath` refuse same-mode ties; `paste` keeps only cross-mode ties into a two-mode drawing.
+- `toDataset`: `declareTwoMode` + `addModeNode` + `addAffiliation` (the mode-0 node is the actor, the mode-1 node a `member` target, weight kept, the tie type as a `canvas` context); same-mode ties are skipped with the warning `same-mode-tie`. The analysis then defaults to the two-mode view.
+- Layouts: `columns` and `rows` (`twoModeLayout`): mode 0 on one side, mode 1 on the other, ordered by barycenter sweeps to reduce crossings; `layoutsFor(doc)` offers them only to two-mode drawings. A selection stays in its own box; the whole drawing grows so neighbours keep 56 px for labels.
+- UI: File, "Two-mode drawing (people and events)" (and "Make it one-mode"), or the "Two-mode drawing" box in the panel with nothing selected, where the two mode labels are edited ("Circles are", "Squares are"). The notice says what happened to existing ties. The toolbar gets a choice of which kind Add places (circle / square icons with the mode in words; M switches). Mode-1 nodes are squares, with a shape key in words and counts on the canvas; the inspector and the table have a Mode field; a refused same-mode tie shows its reason as a notice; same-mode ties left in the drawing are listed under the canvas as left out of the analysis.
+- Worked example `clubs-two-mode` ("Students and clubs (two-mode)", aliases `two-mode`, `clubs`): 6 students x 4 clubs, 10 ties; its notes (two-mode density 0.417, two-mode degree 0.500, two-mode betweenness 0.667 = 20 / 30, the projection tie of weight 2, Robins-Alexander 0.333) are asserted in `test/ui-build/examples.test.js`.
 
 ## Ego network: src/builders/ego.js; UI src/ui/build/ego/
 

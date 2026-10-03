@@ -140,3 +140,40 @@ test('C4: Priyanka\'s A3 interview gives Burt\'s binary effective size (8.33), n
   const ego = egoMetrics(buildNetwork(ds, defaultSettings(ds)), 0);
   near(ego.effectiveSize, 8.333); near(ego.constraint, 0.267);
 });
+
+test('two-mode example: students and clubs, every number in its notes', () => {
+  const doc = exampleDoc('clubs-two-mode');
+  assert.deepEqual(doc.twoMode.labels, ['Students', 'Clubs']);
+  assert.equal(exampleById('two-mode').id, 'clubs-two-mode');
+  const ds = D.toDataset(doc);
+  const settings = defaultSettings(ds);
+  assert.equal(settings.twoMode.view, 'two-mode');
+  const net = buildNetwork(ds, settings);
+  assert.equal(net.n, 10);
+  assert.equal(net.edges.count, 10);
+  assert.deepEqual(net.twoMode.counts, [6, 4]);
+  const m = computeNodeMetrics(net);
+  const by = k => Object.fromEntries(Array.from(net.nodeIds, (d, v) => [ds.nodes.labels[d], m[k][v]]));
+  near(computeNetworkMetrics(net).twoModeDensity, 10 / 24);
+  near(by('twoModeDegree')['Dev Rao'], 0.5);
+  near(by('twoModeDegree').Choir, 0.5);
+  assert.equal(by('degree').Choir, 3);
+  const bt = by('twoModeBetweenness');
+  near(bt['Cara Nunez'], 20 / 30);
+  near(bt['Dev Rao'], 0.6);
+  assert.equal(Object.entries(bt).filter(([k]) => !['Chess', 'Choir', 'Drama', 'Robotics'].includes(k)).sort((a, b) => b[1] - a[1])[0][0], 'Cara Nunez');
+  // Raw betweenness 20 of a possible 30 for a student in a 6 x 4 network.
+  near(m.betweenness[net.index[ds.nodes.labels.indexOf('Cara Nunez')]] * (9 * 8) / 2, 20, 1e-9);
+  near(computeNetworkMetrics(net).robinsAlexander, 1 / 3);
+  const p = buildNetwork(ds, { ...settings, twoMode: { view: 'mode0' } });
+  const w = {};
+  for (let e = 0; e < p.edges.count; e++) w[[ds.nodes.labels[p.nodeIds[p.edges.src[e]]], ds.nodes.labels[p.nodeIds[p.edges.dst[e]]]].sort().join('|')] = p.edges.raw[e];
+  assert.equal(w['Ana Silva|Ben Adler'], 2);
+  assert.ok(Object.entries(w).every(([k, v]) => k === 'Ana Silva|Ben Adler' || v === 1));
+  const pb = computeNodeMetrics(p, { which: ['betweenness'] });
+  const pby = Object.fromEntries(Array.from(p.nodeIds, (d, v) => [ds.nodes.labels[d], pb.betweenness[v]]));
+  near(pby['Cara Nunez'], 0.6); near(pby['Dev Rao'], 0.6);
+  // The notes quote these values.
+  const notes = exampleById('clubs-two-mode').lookFor.join(' ');
+  for (const num of ['0.417', '0.500', '0.667', '0.600', '0.333', '20 / 30']) assert.ok(notes.includes(num), num);
+});

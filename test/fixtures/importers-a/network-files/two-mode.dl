@@ -1,0 +1,9 @@
+dl nr=3 nc=2 format=fullmatrix
+row labels:
+Avery,Jordan,Sam
+column labels:
+Choir,Sam
+data:
+1 0
+1 0
+1 1

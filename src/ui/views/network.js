@@ -40,6 +40,7 @@ import { communityScale } from '../lib/communities.js';
 import { orientLayout, labelBudget, overlaps, groupAnchors, hullEdgeSpots, namesFirst } from '../lib/labels.js';
 import { VISIBILITY } from '../../core/model.js';
 import { cachedRender, getRender, clearRender, tiesOf } from '../lib/render-cache.js';
+import { twoModeOfNet, isTwoModeView, layoutOptions, defaultLayout, arrangeFor, projectionSentence, twoModeIntro, perModeStandouts, standoutWords, withoutModeAttr, modeLabelOf, TWO_MODE_KEYS } from '../lib/twomode.js';
 
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const dur = ms => (reducedMotion() ? 0 : ms);
@@ -68,17 +69,18 @@ export function NetworkView() {
   return html`<${NetworkInner} ds=${ds} net=${net} />`;
 }
 
-function useRender(net) {
-  const [state, setState] = useState(() => { const d = cachedRender(net.version); return d ? { data: d } : { loading: true }; });
+// arrange: the two-mode arrangement ('columns' | 'rows') or null (force).
+function useRender(net, arrange = null) {
+  const [state, setState] = useState(() => { const d = cachedRender(net.version, arrange); return d ? { data: d } : { loading: true }; });
   useEffect(() => {
-    const d = cachedRender(net.version);
+    const d = cachedRender(net.version, arrange);
     if (d) { setState({ data: d }); return; }
     let live = true;
     setState({ loading: true });
-    getRender(net.version).then(data => { if (live) setState({ data }); },
+    getRender(net.version, arrange).then(data => { if (live) setState({ data }); },
       error => { if (live) setState({ error: error.name === 'AbortError' ? new Error('Layout cancelled.') : error }); });
     return () => { live = false; };
-  }, [net.version]);
+  }, [net.version, arrange]);
   return state;
 }
 
@@ -90,20 +92,27 @@ function drawnPositions(ds) {
 }
 
 function NetworkInner({ ds, net }) {
-  const r = useRender(net);
+  const positions0 = drawnPositions(ds);
+  // Layout choice per dataset and per two-mode view (columns are offered
+  // only on the two-mode view itself).
+  const tmView = twoModeOfNet(net)?.view ?? null;
+  if (prefs.ds !== ds) prefs = { ds, sizeBy: 'contacts', layout: defaultLayout(net, { drawn: !!positions0 }), view: tmView };
+  else if (prefs.view !== tmView) { prefs.view = tmView; if (!layoutOptions(net, { drawn: !!positions0 }).some(o => o.value === prefs.layout) || tmView === 'two-mode') prefs.layout = defaultLayout(net, { drawn: !!positions0 }); }
+  const r = useRender(net, arrangeFor(prefs.layout));
   const rawMetrics = useStore(s => s.metrics);
   const communities = useStore(s => s.communities);
   const applicability = useStore(s => s.applicability);
   const selection = useStore(s => s.selection);
-  const attrs = useMemo(() => preferredAttributes(ds), [ds]);
+  const attrs = useMemo(() => withoutModeAttr(preferredAttributes(ds)), [ds]);
   const nodeMetrics = useMemo(() => withContacts(rawMetrics?.node, net.directed), [rawMetrics, net.directed]);
-  const positions = drawnPositions(ds);
-  if (prefs.ds !== ds) prefs = { ds, sizeBy: 'contacts', layout: positions ? 'drawn' : 'force' };
+  const positions = positions0;
+  const tm = twoModeOfNet(net);
+  const twoModeView = isTwoModeView(net);
   // Color by is shared with the People swatches (lib/coloring.js).
   // Read from the shared choices on every render: the view stays mounted
   // when a new dataset loads, so component state would keep the old one.
   const [, redraw] = useState(0);
-  const colorBy = getColorBy(ds, communities, attrs);
+  const colorBy = getColorBy(ds, communities, attrs, net);
   const { sizeBy, layout } = prefs;
   const setColorBy = v => { shareColorBy(ds, v); redraw(x => x + 1); };
   const setSizeBy = v => { prefs.sizeBy = v; redraw(x => x + 1); };
@@ -129,7 +138,7 @@ function NetworkInner({ ds, net }) {
     const ni = r.data.netIndex;
     const c = nodeColoring({ ds, net, communities, colorBy, attrs, nodeMetrics, label: mlabel });
     return { ...c, of: v => c.of(ni[v]), key: c.key ? v => c.key(ni[v]) : undefined };
-  }, [r.data, colorBy, communities, nodeMetrics, ds]);
+  }, [r.data, colorBy, communities, nodeMetrics, ds, net]);
 
   const sizes = useMemo(() => {
     if (!r.data) return null;
@@ -167,6 +176,7 @@ function NetworkInner({ ds, net }) {
   const bookAttrs = attrs.filter(a => isBookkeeping(a));
   const colorOptions = [
     { value: 'none', label: 'Single color' },
+    ...(twoModeView ? [{ value: 'mode', label: `Kind of node (${tm.labels.map(x => x.toLowerCase()).join(', ')})` }] : []),
     ...(communities ? [{ value: 'community', label: `Community (${communityCounts(communities).groups})` }] : []),
     ...(plainAttrs.length ? [{ group: 'Attributes', options: plainAttrs.map(a => ({ value: `attr:${a.key}`, label: `${a.label} (${a.values.length})` })) }] : []),
     { group: 'Measure (low to high)', options: nodeMetricKeys.map(k => ({ value: `metric:${k}`, label: mlabel(k) })) },
@@ -175,16 +185,21 @@ function NetworkInner({ ds, net }) {
   const sizeOptions = [{ value: 'none', label: 'Same size' }, ...nodeMetricKeys.map(k => ({ value: k, label: mlabel(k) }))];
   const sel = selection[selection.length - 1];
   const touch = coarse();
+  const layouts = layoutOptions(net, { drawn: !!positions });
+  const arranged = !!arrangeFor(layout) && twoModeView;
+  const intro = tm ? `${twoModeIntro(tm, fmtInt(net.n), fmtInt(net.edgeCount))}${tm.view !== 'two-mode' ? ` ${projectionSentence(tm)}` : ''} ${touch ? 'Tap' : 'Click'} a node to see its neighborhood, or a tie to see the events behind it.`
+    : `${fmtInt(net.n)} people and ${fmtInt(net.edgeCount)} ties${net.directed ? ' (directed: a two-way tie counts as two)' : ''}. ${touch ? 'Tap' : 'Click'} a person to see their neighborhood, or a tie to see the events behind it.`;
 
   return html`<div class="view">
-    <${ViewHead} title="Network" intro=${`${fmtInt(net.n)} people and ${fmtInt(net.edgeCount)} ties${net.directed ? ' (directed: a two-way tie counts as two)' : ''}. ${touch ? 'Tap' : 'Click'} a person to see their neighborhood, or a tie to see the events behind it.`}
+    <${ViewHead} title="Network" intro=${intro}
       actions=${html`<div class="tlinks"><${ConstructionButton} /><${ExportMenu} sigmaRef=${sigmaRef} data=${r.data} coloring=${coloring} ds=${ds} /></div>`} />
     <${RecoveryBanner} ds=${ds} />
-    <${Standouts} ds=${ds} net=${net} metrics=${nodeMetrics} applicability=${applicability} onPick=${(i) => { selectNode(i); sigmaRef.current?.focusNode(i); }} />
+    ${twoModeView ? html`<${TwoModeStandouts} ds=${ds} net=${net} metrics=${nodeMetrics} onPick=${(i) => { selectNode(i); sigmaRef.current?.focusNode(i); }} />`
+      : html`<${Standouts} ds=${ds} net=${net} metrics=${nodeMetrics} applicability=${applicability} onPick=${(i) => { selectNode(i); sigmaRef.current?.focusNode(i); }} />`}
     <div class="toolbar" role="group" aria-label="Network display">
       <${Select} label="Color by" value=${colorBy} onChange=${v => { setColorBy(v); setPinCat(null); setHoverCat(null); }} options=${colorOptions} />
       <${Select} label="Size by" value=${sizeBy} onChange=${setSizeBy} options=${sizeOptions} />
-      ${positions && html`<${Select} label="Layout" value=${layout} onChange=${setLayout} options=${[{ value: 'drawn', label: 'As drawn' }, { value: 'force', label: 'Force-directed' }]} />`}
+      ${layouts.length > 1 && html`<${Select} label="Layout" value=${layout} onChange=${setLayout} options=${layouts} />`}
       <${Search} ds=${ds} ids=${r.data?.nodeIds} onPick=${(i) => { selectNode(i); sigmaRef.current?.focusNode(i); }} />
     </div>
     <div class="split">
@@ -192,14 +207,14 @@ function NetworkInner({ ds, net }) {
         ${r.loading || !r.data ? html`<div class="net"><div class="net__empty"><${Loading}>Computing layout</${Loading}></div></div>`
           : html`<${SigmaCanvas} ref_=${sigmaRef} data=${r.data} ds=${ds} coloring=${coloring} sizes=${sizes} selection=${selection} focusCat=${focusCat}
               rulesOff=${rulesOff} visOff=${visOff} edgeSel=${edgeSel} onNode=${selectNode} onEdge=${setEdgeSel}
-              positions=${layout === 'drawn' ? positions : null} />`}
+              positions=${layout === 'drawn' ? positions : null} arranged=${arranged} />`}
         ${selection.length > 0 && html`<div class="net-selbar" aria-live="polite">
           <span class="grow"><strong>${nodeLabel(ds, sel)}</strong>${selection.length > 1 ? html` <span class="muted">and ${selection.length - 1} more</span>` : ''}</span>
           <button type="button" class="tlink tlink--down" onClick=${showDetails}>Details</button>
           <button type="button" class="tlink tlink--quiet" onClick=${() => store.actions.select([])}>Clear</button>
         </div>`}
         ${r.data?.truncated && (r.data.truncated.nodes || r.data.truncated.edges) ? html`<p class="small" style="margin-top:.5rem"><${Flag} level="info">Drawing simplified</${Flag}> <span class="text2">${r.data.truncated.nodes ? `${fmtInt(r.data.truncated.nodes)} least connected people` : ''}${r.data.truncated.nodes && r.data.truncated.edges ? ' and ' : ''}${r.data.truncated.edges ? `${fmtInt(r.data.truncated.edges)} weakest ties` : ''} are not drawn. Every measure still uses the full network.</span></p>` : ''}
-        <p class="basis" style="margin-top:.5rem">${layout === 'drawn' && positions ? 'Positions: as drawn in Build.' : 'Positions: force-directed layout from the engine. Distance on screen is approximate; read structure from the measures, not the picture.'}
+        <p class="basis" style="margin-top:.5rem">${layout === 'drawn' && positions ? 'Positions: as drawn in Build.' : arranged ? `Positions: ${tm.labels[0].toLowerCase()} in one ${layout === 'rows' ? 'row' : 'column'}, ${tm.labels[1].toLowerCase()} in the other, each ordered so lines cross less. Order within a side carries no meaning.` : 'Positions: force-directed layout from the engine. Distance on screen is approximate; read structure from the measures, not the picture.'}${twoModeView ? ` Shapes: ${tm.labels[0].toLowerCase()} are circles, ${tm.labels[1].toLowerCase()} squares.` : ''}
           ${touch ? ' Tap a person to select them, tap empty space to clear. Move or zoom the map with two fingers; one finger scrolls the page.'
             : ' Click a person to select them; Shift-click adds people. Keys on the map: arrows move it, plus and minus zoom, 0 fits, Escape clears the selection.'}</p>
       </div>
@@ -213,7 +228,7 @@ function NetworkInner({ ds, net }) {
             : html`<${NetworkSummary} />`}
         </div>
         ${(selection.length > 0 || edgeSel) && html`<div class="section"><${NetworkSummary} open=${false} /></div>`}
-        ${!selection.length && !edgeSel && r.data && html`<div class="section"><${Fragility} ds=${ds} net=${net} data=${r.data} metrics=${nodeMetrics} coloring=${coloring} applicability=${applicability} /></div>`}
+        ${!selection.length && !edgeSel && r.data && !twoModeView && html`<div class="section"><${Fragility} ds=${ds} net=${net} data=${r.data} metrics=${nodeMetrics} coloring=${coloring} applicability=${applicability} /></div>`}
         ${(rulesPresent.length > 1 || visPresent.length > 1) && html`<div class="section stack">
           <h2 class="label" style="margin:0">Show ties</h2>
           ${rulesPresent.length > 1 && html`<${Filter} label="From these rules" items=${rulesPresent} names=${RULE_LABEL} off=${rulesOff} setOff=${setRulesOff} />`}
@@ -285,7 +300,7 @@ function Search({ ds, ids, onPick }) {
 // dense cluster stay separate shapes (sigma's own circle program has no
 // border). The triangle that carries each disc is grown by 2px so the ring
 // sits outside the disc and the visible size of a node is unchanged.
-function borderedNodeProgram(ringHex) {
+function borderedNodeProgram(ringHex, { square = false } = {}) {
   const c = ringHex.replace('#', '');
   const rgb = [0, 2, 4].map(i => (parseInt(c.slice(i, i + 2), 16) / 255).toFixed(4));
   const FRAG = `
@@ -298,7 +313,7 @@ const vec4 transparent = vec4(0.0, 0.0, 0.0, 0.0);
 const vec4 ring = vec4(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 1.0);
 void main(void) {
   float px = u_correctionRatio * 2.0;
-  float dist = length(v_diffVector) - v_radius;
+  float dist = ${square ? 'max(abs(v_diffVector.x), abs(v_diffVector.y)) - v_radius * 0.886' : 'length(v_diffVector) - v_radius'};
   #ifdef PICKING_MODE
   if (dist > 0.0) gl_FragColor = transparent; else gl_FragColor = v_color;
   #else
@@ -318,7 +333,10 @@ void main(void) {
       return {
         ...d,
         VERTEX_SHADER_SOURCE: d.VERTEX_SHADER_SOURCE
-          .replace(sizeLine, 'float size = (a_size / u_sizeRatio + 2.0) * u_correctionRatio * 4.0;')
+          // Squares (two-mode networks) reach further out at the corners: a
+          // larger carrying triangle keeps them whole. 0.886 gives a square
+          // the area of the disc of the same size.
+          .replace(sizeLine, square ? 'float size = (a_size / u_sizeRatio * 1.35 + 3.0) * u_correctionRatio * 4.0;' : 'float size = (a_size / u_sizeRatio + 2.0) * u_correctionRatio * 4.0;')
           .replace(radiusLine, 'v_radius = a_size / u_sizeRatio * u_correctionRatio * 2.0;'),
         FRAGMENT_SHADER_SOURCE: FRAG,
       };
@@ -348,7 +366,7 @@ function drawHover(ctx, data, settings) {
   ctx.fillText(label, x + 6, data.y + size / 3);
 }
 
-function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rulesOff, visOff, edgeSel, onNode, onEdge, positions }) {
+function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rulesOff, visOff, edgeSel, onNode, onEdge, positions, arranged = false }) {
   const box = useRef(null);
   const outer = useRef(null);
   const sig = useRef(null);
@@ -369,13 +387,29 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
     if (positions) {
       X = Float32Array.from(data.nodeIds, i => positions[i]?.[0] ?? 0);
       Y = Float32Array.from(data.nodeIds, i => positions[i]?.[1] ?? 0);
-    } else {
+    } else if (!arranged) {
+      // Columns and rows (two-mode) keep their orientation; a force layout is
+      // turned to fit the frame.
       const rect = box.current.getBoundingClientRect();
       ({ x: X, y: Y } = orientLayout(data.x, data.y, rect.width >= rect.height));
+    } else {
+      // Columns and rows: spread the two sides apart to about 70% of the
+      // frame's shape, so the ties between them can be told apart (the
+      // engine's spacing is in layout units and knows nothing of the frame).
+      const rect = box.current.getBoundingClientRect();
+      const span = a => { let lo = Infinity, hi = -Infinity; for (const x of a) { if (x < lo) lo = x; if (x > hi) hi = x; } return hi - lo || 1; };
+      const want = Math.max(0.3, (rect.width || 1) / (rect.height || 1)) * 0.7;
+      const sx = span(data.x), sy = span(data.y);
+      const k = (want * sy) / sx;
+      if (sx < sy) X = Float32Array.from(data.x, x => x * Math.max(1, k));
+      else Y = Float32Array.from(data.y, y => y * Math.max(1, sx / (want * sy)));
     }
+    // Two-mode networks: mode-1 nodes (events, groups) are squares, so the
+    // kind of node never rests on color alone.
+    const shapeOf = v => (data.mode && data.mode[v] === 1 ? 'square' : 'circle');
     for (let v = 0; v < n; v++) {
       const i = data.nodeIds[v];
-      g.addNode(String(v), { x: X[v], y: -Y[v], size: 3, color: t.node, label: ds.nodes.labels[i] || ds.nodes.keys[i], ds: i });
+      g.addNode(String(v), { x: X[v], y: -Y[v], size: 3, color: t.node, label: ds.nodes.labels[i] || ds.nodes.keys[i], ds: i, type: shapeOf(v) });
     }
     const m = data.src.length;
     const maxW = Math.max(1e-9, ...Array.from(data.w || []).slice(0, 200000));
@@ -402,7 +436,7 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
       defaultEdgeType: 'line',
       defaultEdgeColor: edgeBase,
       defaultNodeType: 'circle',
-      nodeProgramClasses: { circle: borderedNodeProgram(t.bgDeep) },
+      nodeProgramClasses: { circle: borderedNodeProgram(t.bgDeep), square: borderedNodeProgram(t.bgDeep, { square: true }) },
       enableEdgeEvents: m < 60000,
       hideEdgesOnMove: m > 30000,
       zIndex: true,
@@ -474,9 +508,11 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
     renderer.createCanvasContext('f2labels', { afterLayer: 'labels' });
     const placed = { labels: [], badges: [], groups: [] };
     const centres = groupCentres(g, state);
-    const small = namesFirst(n, !!positions);
+    // Columns and rows leave room to name everyone in a classroom-sized network.
+    const nameAll = arranged && n <= 150;
+    const small = namesFirst(n, !!positions) || nameAll;
     renderer.on('afterRender', () => {
-      try { drawLabels(renderer, g, data, state.current, focus.current, hoverRef.current, centres, placed, small); } catch { /* killed mid-frame */ }
+      try { drawLabels(renderer, g, data, state.current, focus.current, hoverRef.current, centres, placed, small, nameAll); } catch { /* killed mid-frame */ }
     });
     renderer.refresh();
 
@@ -523,7 +559,7 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
       for (const ev of ['touchstart', 'touchmove', 'touchend']) wrap.removeEventListener(ev, onTouch, { capture: true });
       renderer.kill(); sig.current = null; ref_.current = null;
     };
-  }, [data, positions]);
+  }, [data, positions, arranged]);
 
   // Recompute highlight sets and refresh when display state changes.
   useEffect(() => {
@@ -595,7 +631,7 @@ function groupCentres(g, state) {
 // small or hand-drawn map (L5) people's names come first and the group cue
 // goes on the edge of the group (lib/labels.js hullEdgeSpots), so it never
 // covers a person.
-function drawLabels(renderer, g, data, s, focus, hovered, centres, placed, small) {
+function drawLabels(renderer, g, data, s, focus, hovered, centres, placed, small, nameAll = false) {
   const ctx = renderer.canvasContexts?.f2labels;
   if (!ctx) return;
   const { width: W, height: H } = renderer.getDimensions();
@@ -663,7 +699,9 @@ function drawLabels(renderer, g, data, s, focus, hovered, centres, placed, small
 
   const placeGroups = () => {
     const cs = centres();
-    if (!cs || focus.set) return;
+    // Kinds of node (two-mode) are told apart by shape and the legend; a
+    // name in the middle of each column would only cover nodes.
+    if (!cs || focus.set || s.coloring?.mode) return;
     if (s.coloring.community) {
       for (const c of cs) {
         if ((c.n < 3 && !small) || !shownKey(c.key)) continue;
@@ -717,7 +755,7 @@ function drawLabels(renderer, g, data, s, focus, hovered, centres, placed, small
       cand.push({ key, label: attr.label, x: p.x, y: p.y, r: renderer.scaleSize(d.size), pri, size: d.size });
     });
     cand.sort((a, b) => a.pri - b.pri || b.size - a.size || a.key - b.key);
-    const budget = labelBudget({ n, width: W, ratio, focus: !!focus.set });
+    const budget = nameAll ? Infinity : labelBudget({ n, width: W, ratio, focus: !!focus.set });
     ctx.lineJoin = 'round';
     let count = 0;
     for (const c of cand) {
@@ -765,10 +803,10 @@ const LEGEND_MAX = 200;
 function Legend({ coloring, pinCat, setPinCat, setHoverCat, sizeBy, directed, small = false }) {
   if (!coloring) return null;
   const gc = coloring.gc;
-  const row = (value, color, label, count, { sub = false, missing = false, title } = {}) => html`<button type="button" class=${`legend__item${sub ? ' legend__item--sub' : ''}`} aria-pressed=${String(pinCat === value)} title=${title}
+  const row = (value, color, label, count, { sub = false, missing = false, title, square = false } = {}) => html`<button type="button" class=${`legend__item${sub ? ' legend__item--sub' : ''}`} aria-pressed=${String(pinCat === value)} title=${title}
       onClick=${() => setPinCat(pinCat === value ? null : value)} onMouseEnter=${() => setHoverCat(value)} onMouseLeave=${() => setHoverCat(null)}
       onFocus=${() => setHoverCat(value)} onBlur=${() => setHoverCat(null)}>
-    <span class=${`swatch${missing ? ' swatch--missing' : ''}`} style=${`background:${color}`} aria-hidden="true"></span><span class="grow">${label}</span><span class="legend__count">${fmtInt(count)}</span></button>`;
+    <span class=${`swatch${missing ? ' swatch--missing' : ''}${square ? ' swatch--sq' : ''}`} style=${`background:${color}`} aria-hidden="true"></span><span class="grow">${label}</span><span class="legend__count">${fmtInt(count)}</span></button>`;
   const onKey = (e) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const items = [...e.currentTarget.querySelectorAll('.legend__item')];
@@ -783,13 +821,13 @@ function Legend({ coloring, pinCat, setPinCat, setHoverCat, sizeBy, directed, sm
     ${coloring.kind === 'cat' && html`<h2 class="label">Color: ${coloring.title}</h2>
       ${gc.many && html`<p class="small text2 net-legend__lead">${fmtInt(gc.entries.length)} groups: the eight largest in color, the rest gray. Choose any group to light it up.</p>`}
       <div class=${`legend${gc.many ? ' legend--scroll' : ''}`} onKeyDown=${onKey} role="group" aria-label=${`Groups by ${coloring.title}`}>
-        ${gc.colored.map(e => row(e.value, e.color, e.label, e.count))}
+        ${gc.colored.map(e => (coloring.mode ? row(e.value, e.color, `${e.label} (${e.value === '1' ? 'squares' : 'circles'})`, e.count, { square: e.value === '1' }) : row(e.value, e.color, e.label, e.count)))}
         ${gc.many && row(OTHER, gc.otherColor, gc.otherLabel, gc.otherPeople, { title: 'All groups after the eight largest; they share gray' })}
         ${listed.map(e => row(e.value, e.color, e.label, e.count, { sub: true }))}
         ${unlisted.length > 0 && html`<p class="legend__more small muted">and ${plural(unlisted.length, coloring.community ? 'smaller community' : 'smaller group', coloring.community ? 'smaller communities' : 'smaller groups')} (${plural(unlisted.reduce((a, e) => a + e.count, 0), 'person', 'people')})</p>`}
         ${gc.missing > 0 && row(MISSING, gc.missingColor, gc.missingLabel, gc.missing, { missing: true, title: `No ${coloring.title.toLowerCase()} in the data` })}
       </div>
-      <p class="basis">${small
+      <p class="basis">${coloring.mode ? `Two kinds of node: ${coloring.labels[0].toLowerCase()} (circles) and ${coloring.labels[1].toLowerCase()} (squares). Every tie joins one of each; none joins two of the same kind. Hover or select a kind to pick it out.` : small
         ? `Everyone is named on the map; ${coloring.community ? 'community numbers' : 'group names'} sit at the edge of each group.${gc.many ? '' : ' Hover or select a group to pick it out.'}`
         : coloring.community
         ? `Numbers on the map mark each community of three or more people.${gc.many ? ' Communities after the eighth share gray; choose one to light it up.' : ' Hover or select a community to pick it out.'}`
@@ -830,10 +868,16 @@ function NetworkSummary({ open = null }) {
   const m = useStore(s => s.metrics?.network);
   const net = useStore(s => s.network);
   const communities = useStore(s => s.communities);
+  const ap = useStore(s => s.applicability) || {};
   const [nm, setNm] = useState(null);
   const [busy, setBusy] = useState(false);
   if (!m) return null;
-  const keys = SUMMARY_KEYS.filter(k => Number.isFinite(m[k]));
+  const twoModeView = isTwoModeView(net);
+  const apKey = k => (k === 'reciprocity' ? 'reciprocityNetwork' : k);
+  // On a two-mode network the one-mode measures that cannot apply (density,
+  // clustering, centralization) are replaced by their two-mode versions.
+  const keys = SUMMARY_KEYS.filter(k => Number.isFinite(m[k]) && !(twoModeView && ap[apKey(k)]?.level === 'na'));
+  const nullNa = ap.nullModel?.level === 'na';
   // One run per network, shared with Groups and the reports: the engine
   // caches each statistic's random networks (analysis NULL_REPS).
   const runNull = async () => {
@@ -850,13 +894,15 @@ function NetworkSummary({ open = null }) {
   // away instead of disappearing).
   return html`<details class="net-summary" open=${open ?? !narrow()}>
     <summary><h2 class="label" style="display:inline;margin:0">Whole network</h2></summary>
+    ${twoModeView && html`<${TwoModeSummary} m=${m} net=${net} communities=${communities} />`}
     ${communities && html`<div class="metric-row"><span><${MetricName} metric="modularity" gloss=${true} /></span><span class="metric-row__val">${fmtNum(communities.modularity)}</span>
       <span class="metric-row__sub">${communityWords(communities)}.
         ${tiny && html`<br />With only ${fmtInt(net.n)} people, community detection still splits the network into pieces (a chain of 6 becomes three pairs). Treat these communities as a suggestion, not groups, until modularity beats random networks.`}</span>
       ${nm?.modularity && html`<${NullVerdict} stat="modularity" x=${nm.modularity} reps=${reps} shown=${communities.modularity} />`}</div>`}
     ${keys.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k === 'reciprocity' ? 'reciprocityNetwork' : k} gloss=${true} /></span><span class="metric-row__val">${k === 'largestComponentShare' ? `${Math.round(m[k] * 100)}%` : fmtNum(m[k])}</span>
       ${nm?.[k] && html`<${NullVerdict} stat=${k} x=${nm[k]} reps=${reps} />`}</div>`)}
-    ${!nm ? html`<div style="margin-top:.8rem"><button type="button" class="tlink" onClick=${runNull} disabled=${busy}>${busy ? 'Comparing' : 'Compare with random networks'}</button>
+    ${nullNa ? html`<p class="basis" style="margin-top:.8rem">No comparison with random networks here: ${(ap.nullModel.reason || '').replace(/^./, c => c.toLowerCase())}</p>`
+      : !nm ? html`<div style="margin-top:.8rem"><button type="button" class="tlink" onClick=${runNull} disabled=${busy}>${busy ? 'Comparing' : 'Compare with random networks'}</button>
       <p class="basis">Clustering, reciprocity and modularity are only notable if they beat random networks where everyone keeps their number of ties.</p></div>`
       : html`<p class="basis">Random networks: ${nm.meta?.model || 'degree-preserving rewiring'}, ${fmtInt(reps)} networks, seed ${nm.meta?.seed ?? 1}; two-sided empirical p. The same run is quoted in Groups and the reports.</p>`}
     <${HowToRead} title="How to read the comparison with random networks"
@@ -866,6 +912,24 @@ function NetworkSummary({ open = null }) {
         : m.transitivity != null ? `Transitivity here is ${fmtNum(m.transitivity)}. Compare with random networks to see whether that is more than the degrees alone would give.` : null}
       mistake="Reading a value as high because it is far from 0, or a small p as a large effect. The size of the gap to the random average is the finding." />
   </details>`;
+}
+
+// Whole-network two-mode measures: how many of each kind, two-mode density,
+// bipartite clustering, and Barber's modularity of the communities.
+function TwoModeSummary({ m, net, communities }) {
+  const [a, b] = net.twoMode.labels;
+  const counts = m.modeCounts || net.twoMode.counts;
+  return html`<div class="twomode-summary">
+    <div class="metric-row"><span><${Term} k="twoMode">Two-mode network</${Term}></span><span class="metric-row__val">${fmtInt(counts[0])} + ${fmtInt(counts[1])}</span>
+      <span class="metric-row__sub">${fmtInt(counts[0])} ${a.toLowerCase()} and ${fmtInt(counts[1])} ${b.toLowerCase()}; ties run only between the two kinds.</span></div>
+    ${Number.isFinite(m.twoModeDensity) && html`<div class="metric-row"><span><${MetricName} metric="twoModeDensity" gloss=${true} /></span><span class="metric-row__val">${fmtNum(m.twoModeDensity)}</span>
+      <span class="metric-row__sub">${fmtInt(net.edgeCount)} of the ${fmtInt(counts[0] * counts[1])} possible ${a.toLowerCase()}-${b.toLowerCase()} ties.</span></div>`}
+    ${Number.isFinite(m.robinsAlexander) && html`<div class="metric-row"><span><${MetricName} metric="robinsAlexander" gloss=${true} /></span><span class="metric-row__val">${fmtNum(m.robinsAlexander)}</span></div>`}
+    ${Number.isFinite(m.twoModeAvgClustering) && html`<div class="metric-row"><span><${MetricName} metric="twoModeClustering" label="Average two-mode clustering (Latapy)" gloss=${true} /></span><span class="metric-row__val">${fmtNum(m.twoModeAvgClustering)}</span>
+      ${Array.isArray(m.twoModeAvgClusteringByMode) && html`<span class="metric-row__sub">${a}: ${fmtNum(m.twoModeAvgClusteringByMode[0])}; ${b.toLowerCase()}: ${fmtNum(m.twoModeAvgClusteringByMode[1])}.</span>`}</div>`}
+    ${Number.isFinite(communities?.barberModularity) && html`<div class="metric-row"><span><${MetricName} metric="barberModularity" gloss=${true} /></span><span class="metric-row__val">${fmtNum(communities.barberModularity)}</span>
+      <span class="metric-row__sub">Communities are found among the ${a.toLowerCase()} (tied by shared ${b.toLowerCase()}); each of the ${b.toLowerCase()} joins the community most of its ${a.toLowerCase()} are in. Modularity below is that projection's.</span></div>`}
+  </div>`;
 }
 
 // "Who stands out" (decision 1, L8): the direct answers to "who has the
@@ -896,6 +960,38 @@ function Standouts({ ds, net, metrics, applicability, onPick }) {
 ${' · '}<button type="button" class="tlink tlink--arrow" onClick=${() => { requestPeopleSort(r.key); store.actions.setView('people'); }}>Full ranking</button></span>
       </li>`)}
     </ul>
+    ${ds.meta?.example?.lookFor?.length && html`<div class="standout__example">
+      <p class="small text2"><strong>${ds.meta.example.title}: what to look for</strong></p>
+      <ul class="small text2">${ds.meta.example.lookFor.map(x => html`<li>${x}</li>`)}</ul>
+    </div>`}
+  </section>`;
+}
+
+// Who stands out on a two-mode network: each kind of node ranked among its
+// own kind, by the two-mode measures (normalized per mode, Borgatti and
+// Everett), so the busiest woman and the best-attended event are both named.
+function TwoModeStandouts({ ds, net, metrics, onPick }) {
+  const tm = net.twoMode;
+  const groups = useMemo(() => perModeStandouts(metrics, tm.mode), [metrics, tm]);
+  if (!groups.some(g => g.rows.length)) return null;
+  const who = v => net.nodeIds[v];
+  const name = v => html`<button type="button" class="linkish standout__name" onClick=${() => onPick(who(v))}>${nodeLabel(ds, who(v))}</button>`;
+  const glue = list => list.map((v, i) => html`${i ? (i === list.length - 1 ? ' and ' : ', ') : ''}${name(v)}`);
+  return html`<section class="standout standout--twomode" aria-labelledby="standout-h">
+    <h2 class="label" id="standout-h">Who stands out, ${tm.labels[0].toLowerCase()} and ${tm.labels[1].toLowerCase()} each among their own kind</h2>
+    ${groups.map(g => g.rows.length > 0 && html`<div class="standout__mode">
+      <h3 class="standout__modeh">${tm.labels[g.mode]} <span class="meta">${g.mode === 1 ? 'squares' : 'circles'}</span></h3>
+      <ul class="standout__list">
+        ${g.rows.map(r => html`<li class="standout__item">
+          <span class="standout__q"><${Term} k=${r.key}>${standoutWords(r.key, tm.labels, g.mode)}</${Term}></span>
+          <span class="standout__a">${r.allSame ? html`<span class="text2">All the same (${r.value})</span>`
+            : html`${glue(r.top)}${r.tied > r.top.length ? ` and ${fmtInt(r.tied - r.top.length)} more` : ''} <span class="standout__v">${r.value}${r.tied > 1 ? ' each' : ''}</span>`}</span>
+          <span class="standout__sub">${metricLabel(r.key, false)}${r.tied > 1 ? ' · tied at the precision shown' : r.next ? ` · next: ${nodeLabel(ds, who(r.next.v))} ${r.next.value}` : ''}
+${' · '}<button type="button" class="tlink tlink--arrow" onClick=${() => { requestPeopleSort(r.key); store.actions.setView('people'); }}>Full ranking</button></span>
+        </li>`)}
+      </ul>
+    </div>`)}
+    <p class="basis">Two-mode measures (<${Term} k="borgattiEverett">Borgatti-Everett normalization</${Term}>): each value is a share of what is possible for that kind of node, so read each kind on its own.</p>
     ${ds.meta?.example?.lookFor?.length && html`<div class="standout__example">
       <p class="small text2"><strong>${ds.meta.example.title}: what to look for</strong></p>
       <ul class="small text2">${ds.meta.example.lookFor.map(x => html`<li>${x}</li>`)}</ul>
@@ -967,12 +1063,14 @@ function SelectionPanel({ ds, selection, data, metrics, onEdge }) {
   const [allTies, setAllTies] = useState(false);
   const i = selection[selection.length - 1];
   const v = net.nodeIds ? Array.prototype.indexOf.call(net.nodeIds, i) : -1;
-  const show = PANEL_METRICS.filter(k => metrics?.[k] && ap?.[k]?.level !== 'na' && !(k === 'degree' && !net.directed));
+  const panelKeys = isTwoModeView(net) ? [...TWO_MODE_KEYS, ...PANEL_METRICS] : PANEL_METRICS;
+  const show = panelKeys.filter(k => metrics?.[k] && ap?.[k]?.level !== 'na' && !(k === 'degree' && !net.directed));
+  const kind = v >= 0 ? modeLabelOf(net, v) : null;
   const ties = useMemo(() => tiesOf(data, i, net.directed), [data, i]);
   const shownTies = allTies ? ties : ties.slice(0, 8);
   const sc = communities ? communityScale(communities) : null;
   const key = displayKey(ds.nodes.keys[i]);
-  const attrs = Object.entries(ds.nodes.attrs[i]).filter(([k]) => k !== 'deactivated');
+  const attrs = Object.entries(ds.nodes.attrs[i]).filter(([k]) => k !== 'deactivated' && k !== 'bipartite');
   const dep = departures(ds).get(i);
   return html`<div>
     <div class="row row--between" style="gap:.3rem 1rem">
@@ -983,8 +1081,9 @@ function SelectionPanel({ ds, selection, data, metrics, onEdge }) {
     <p class="meta" style="margin:.2rem 0 .6rem">${key || ''}${ds.nodes.isBot[i] ? `${key ? ' · ' : ''}bot` : ''}${isDeactivated(ds, i) ? html` <${Flag} level="caution">Deactivated account</${Flag}>` : ''}</p>
     ${dep && dep.kind === 'silent' && html`<p class="small"><${Flag} level="caution">Left?</${Flag}> <span class="text2">No activity after ${fmtDateTime(dep.last).split(',')[0]} (the last ${fmtInt(dep.quietDays)} days of the data). Whole-period measures mix the time before and after.</span></p>`}
     ${v < 0 ? html`<p class="small text2">Not in the current network (filtered out or without ties).</p>` : html`
+      ${kind && html`<div class="metric-row"><span>Kind</span><span class="metric-row__val">${kind}</span></div>`}
       ${communities && html`<div class="metric-row"><span>Community</span><span class="metric-row__val"><${Swatch} color=${sc.color(String(communities.membership[v]))} /> ${communities.membership[v] + 1}</span></div>`}
-      ${show.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k} label=${metricLabel(k, net.directed)} note=${measureNote(k, { n: net.n, directed: net.directed })} gloss=${true} /></span><span class="metric-row__val">${measureFormat(k, metrics[k])(metrics[k][v])}</span></div>`)}
+      ${show.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k} label=${metricLabel(k, net.directed)} note=${measureNote(k, { n: net.n, directed: net.directed, twoMode: net.twoMode })} gloss=${true} /></span><span class="metric-row__val">${measureFormat(k, metrics[k])(metrics[k][v])}</span></div>`)}
     `}
     ${v >= 0 && html`<h3 class="label" style="margin-top:1.1rem">Ties (${fmtInt(ties.length)})</h3>
       ${ties.length ? html`<ul class="net-ties">
@@ -1045,6 +1144,7 @@ export function Evidence({ ds, a, b, onClose }) {
       <ol class="net-evidence">
         ${events.map(e => { const pt = parentText(e); return html`<li>
           <div class="row row--between" style="gap:.2rem .6rem"><span style="color:var(--text)">${e.actorLabel || nodeLabel(ds, e.actor)} <span class="muted">· ${RULE_LABEL[e.rule] || e.rule}</span></span><span class="meta">${fmtDateTime(e.t)}</span></div>
+          ${e.viaLabel && html`<div class="small text2" style="margin-top:.15rem">Shared: ${e.viaLabel}</div>`}
           <div class="meta" style="margin-top:.15rem">${humanize(e.type)}${e.context ? ` in ${e.context}` : ''}${e.visibility && e.visibility !== 'unknown' ? ` · ${(VISIBILITY_LABEL[e.visibility] || e.visibility).toLowerCase()}` : ''}${e.amount != null ? ` · weight ${fmtNum(e.amount)}` : ''}</div>
           ${pt && html`<p class="text2" style="margin-top:.25rem"><span class="muted">On:</span> ${pt}</p>`}
           ${tieFields(ds, e.attrs) && html`<p class="small text2" style="margin-top:.25rem">${tieFields(ds, e.attrs)}</p>`}
@@ -1093,7 +1193,7 @@ function buildSVG(ref, coloring, ds) {
     const rad = r.scaleSize(d.size);
     pos.set(key, p);
     if (p.x < -20 || p.y < -20 || p.x > width + 20 || p.y > height + 20) return;
-    nodes.push({ key, x: p.x, y: p.y, r: Math.max(1, rad), color: d.color, z: d.zIndex || 0 });
+    nodes.push({ key, x: p.x, y: p.y, r: Math.max(1, rad), color: d.color, z: d.zIndex || 0, square: g.getNodeAttribute(key, 'type') === 'square' });
   });
   nodes.sort((a, b) => a.z - b.z);
   const edges = [];
@@ -1107,16 +1207,16 @@ function buildSVG(ref, coloring, ds) {
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const placed = ref.placed || { labels: [], badges: [] };
   const gc = coloring?.kind === 'cat' ? coloring.gc : null;
-  const items = gc ? [...gc.colored.map(e => ({ color: e.color, label: e.label })),
+  const items = gc ? [...gc.colored.map(e => ({ color: e.color, label: coloring.mode ? `${e.label} (${e.value === '1' ? 'squares' : 'circles'})` : e.label, square: coloring.mode && e.value === '1' })),
     ...(gc.many ? [{ color: gc.otherColor, label: coloring.community ? `${gc.otherLabel}, numbered on the map` : gc.otherLabel }] : []),
     ...(gc.missing > 0 ? [{ color: gc.missingColor, label: `${gc.missingLabel} (${plural(gc.missing, 'person', 'people')})`, missing: true }] : [])] : [];
-  const legend = items.map((e, i) => `<g transform="translate(16,${height - 16 - (items.length - i) * 16})"><circle r="5" cx="5" cy="-4" fill="${e.color}"${e.missing ? ` stroke="${t.muted}" stroke-width="1.2"` : ''}/><text x="16" y="0" fill="${t.text2}" font-size="11">${esc(e.label)}</text></g>`).join('');
+  const legend = items.map((e, i) => `<g transform="translate(16,${height - 16 - (items.length - i) * 16})">${e.square ? `<rect x="0.5" y="-8.5" width="9" height="9" fill="${e.color}"/>` : `<circle r="5" cx="5" cy="-4" fill="${e.color}"${e.missing ? ` stroke="${t.muted}" stroke-width="1.2"` : ''}/>`}<text x="16" y="0" fill="${t.text2}" font-size="11">${esc(e.label)}</text></g>`).join('');
   const groupNames = (placed.groups || []).map(l => `<circle cx="${(l.x + 4).toFixed(1)}" cy="${l.y.toFixed(1)}" r="4.5" fill="${l.color}" stroke="${t.bgDeep}" stroke-width="1.5"/><text x="${(l.x + 12).toFixed(1)}" y="${(l.y + 4).toFixed(1)}" fill="${t.text}" font-weight="600" stroke="${t.bgDeep}" stroke-width="4" stroke-linejoin="round" paint-order="stroke">${esc(l.text)}</text>`).join('');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="Geist, system-ui, sans-serif">
 <rect width="100%" height="100%" fill="${t.bgDeep}"/>
 <g>${edges.join('')}</g>
-<g stroke="${t.bgDeep}" stroke-width="1.5">${nodes.map(n => `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(n.r + 0.75).toFixed(2)}" fill="${n.color}"/>`).join('')}</g>
+<g stroke="${t.bgDeep}" stroke-width="1.5">${nodes.map(n => (n.square ? `<rect x="${(n.x - n.r * 0.886 - 0.75).toFixed(1)}" y="${(n.y - n.r * 0.886 - 0.75).toFixed(1)}" width="${(2 * n.r * 0.886 + 1.5).toFixed(2)}" height="${(2 * n.r * 0.886 + 1.5).toFixed(2)}" fill="${n.color}"/>` : `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(n.r + 0.75).toFixed(2)}" fill="${n.color}"/>`)).join('')}</g>
 <g font-size="11" font-weight="600">${placed.badges.map(b => `<circle cx="${b.x.toFixed(1)}" cy="${b.y.toFixed(1)}" r="${b.r}" fill="${t.bgDeep}" stroke="${b.color}" stroke-width="2"/><text x="${b.x.toFixed(1)}" y="${(b.y + 4).toFixed(1)}" text-anchor="middle" fill="${t.text}">${esc(b.text)}</text>`).join('')}</g>
 <g font-size="13">${groupNames}</g>
 <g font-size="12" stroke="${t.bgDeep}" stroke-width="4" stroke-linejoin="round" paint-order="stroke">${placed.labels.map(l => `<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" fill="${l.strong ? t.text : t.text2}"${l.strong ? ' font-weight="600"' : ''}>${esc(l.text)}</text>`).join('')}</g>

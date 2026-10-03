@@ -7,8 +7,14 @@
 import { UndirectedGraph, louvain } from '../../vendor/graphology.js';
 import { graphOf } from './graph.js';
 import { createRng } from './rng.js';
+import { isTwoModeView, projectNetwork, barberModularity } from './twomode.js';
 
-export function detectCommunities(net, { resolution = 1, seed = 1 } = {}) {
+export function detectCommunities(net, opts = {}) {
+  if (isTwoModeView(net) && opts.twoMode !== 'bipartite') return twoModeCommunities(net, opts);
+  return louvainCommunities(net, opts);
+}
+
+function louvainCommunities(net, { resolution = 1, seed = 1 } = {}) {
   const g = graphOf(net);
   const { n } = g, U = g.und;
   const G = new UndirectedGraph();
@@ -55,6 +61,43 @@ export function modularity(g, membership, resolution = 1) {
   let Q = 0;
   for (const [c, s] of strength) Q += (inside.get(c) || 0) / W - resolution * (s / (2 * W)) ** 2;
   return Q;
+}
+
+// Two-mode network: Louvain runs on the actors' projection (mode 0, weight =
+// shared affiliations), the usual practice for affiliation data (Borgatti and
+// Halgin 2011); each event then joins the community holding most of its
+// members (ties: the lower community id), and events nobody shares stay
+// alone. `modularity` is the projection's (Newman), `barberModularity` the
+// bipartite modularity (Barber 2007) of the joint partition. With
+// opts.twoMode === 'bipartite' Louvain runs on the two-mode ties directly.
+function twoModeCommunities(net, { resolution = 1, seed = 1 } = {}) {
+  const n = net.n, mode = net.twoMode.mode;
+  const { net: proj, members } = projectNetwork(net, 0, 'count');
+  const pc = louvainCommunities(proj, { resolution, seed });
+  const raw = new Int32Array(n).fill(-1);
+  members.forEach((v, i) => { raw[v] = pc.membership[i]; });
+  const g = graphOf(net);
+  const { off, adj } = g.und;
+  let next = pc.count;
+  for (let y = 0; y < n; y++) {
+    if (mode[y] === 0) continue;
+    const tally = new Map();
+    for (let p = off[y]; p < off[y + 1]; p++) { const c = raw[adj[p]]; if (c >= 0) tally.set(c, (tally.get(c) || 0) + 1); }
+    let best = -1, bestN = 0;
+    for (const [c, k] of tally) if (k > bestN || (k === bestN && c < best)) { best = c; bestN = k; }
+    raw[y] = best >= 0 ? best : next++;
+  }
+  // Renumber by first member in network order, as one-mode communities.
+  const remap = new Map();
+  const membership = new Int32Array(n);
+  for (let v = 0; v < n; v++) { if (!remap.has(raw[v])) remap.set(raw[v], remap.size); membership[v] = remap.get(raw[v]); }
+  const count = remap.size;
+  const sizes = new Int32Array(count);
+  for (let v = 0; v < n; v++) sizes[membership[v]]++;
+  let nontrivial = 0;
+  for (const s of sizes) if (s > 1) nontrivial++;
+  return { membership, modularity: pc.modularity, barberModularity: barberModularity(net, membership), count, nontrivial, sizes: Array.from(sizes), resolution, seed,
+    method: 'two-mode: Louvain on the mode-0 projection (shared affiliations), mode-1 nodes join their members\' most common community' };
 }
 
 export { graphOf };

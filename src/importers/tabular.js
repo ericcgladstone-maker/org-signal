@@ -10,7 +10,7 @@
 
 import Papa from '../../vendor/papaparse.js';
 import { lines, peek } from '../core/fileset.js';
-import { EVENT_TYPES, ROLES, DatasetBuilder, VIEWS } from '../core/model.js';
+import { EVENT_TYPES, ROLES, DatasetBuilder, VIEWS, DEFAULT_MODE_LABELS, declareTwoMode, addAffiliation } from '../core/model.js';
 
 // ---- CSV helpers (shared) ---------------------------------------------------
 
@@ -236,6 +236,17 @@ export function detectTimeFormat(values) {
 // kind 'events'  one row = one event (actor -> targets at a time)
 //      'edges'   one row = one declared tie (source -> target, weight)
 //      'nodes'   one row = one person (id, label, attributes)
+//      'affiliations'  two-mode incidence list: one row = one person's
+//                membership of one event / group (actor, targets = the event
+//                column, optional weight, timestamp; targetSeparator splits a
+//                list of events), mapping.modeLabels = [people, events]
+//      'incidence'  two-mode incidence matrix: one row per person (actor =
+//                the row-name column), mapping.events = the event columns,
+//                a cell's number is the tie's weight (blank or 0 = none;
+//                x / yes / true = 1), attrs = person attributes
+// Two-mode kinds write affiliations (addAffiliation): people keep the key
+// `<namespace>:<value>`, events get `<namespace>:event:<value>` so an event
+// named like a person stays a separate node.
 // Header aliases extend the list in docs/formats/network-files.md section 6
 // (our convention, not a standard) with common message-log names.
 
@@ -283,6 +294,8 @@ function profileColumn(values) {
 // Returns { kind, mapping, columns: [{ header, role, confidence, reason }], notes[] }.
 export function suggestMapping(headers, sampleRows = []) {
   const cols = headers.map((h, j) => ({ header: h, prof: profileColumn(sampleRows.map(r => r[j])) }));
+  const two = suggestTwoMode(headers, cols, sampleRows);
+  if (two) return two;
   const notes = [];
   const taken = new Set();
   const pick = (role, extra = () => 0) => {
@@ -366,6 +379,78 @@ export function suggestMapping(headers, sampleRows = []) {
   return { kind, mapping, columns, notes };
 }
 
+// ---- two-mode tables ------------------------------------------------------------
+
+// Columns naming what people belong to or attend (incidence lists).
+const EVENTISH = /^(events?|event_(name|id)|groups?|group_(name|id)|clubs?|organi[sz]ations?|org|affiliations?|boards?|committees?|courses?|class(es)?|projects?|meetings?|parties|party|venues?|activit(y|ies)|memberships?)$/;
+const PERSONISH = /^(person|people|member|members|actor|actors|name|participant|attendee|student|director|employee|woman|women|man|men|person_id|member_id|user|individual)$/;
+const BINARY_CELL = /^(0|1|0\.0|1\.0|x|yes|no|true|false)$/i;
+// Mode labels name a kind of node in the plural ("Students", "Clubs"), as
+// the views count them: "5 students, 3 clubs".
+const modeLabel = (h, k) => {
+  let t = String(h ?? '').trim().replace(/[_-]+/g, ' ');
+  if (!t || /^(id|name|key|label)$/i.test(t)) return DEFAULT_MODE_LABELS[k];
+  if (/^person$/i.test(t)) t = 'people';
+  else if (/[^aeiou]y$/i.test(t)) t = t.slice(0, -1) + 'ies';
+  else if (/(s|x|ch|sh)$/i.test(t)) t = /s$/i.test(t) ? t : t + 'es';
+  else if (!/(people|men|women|children)$/i.test(t)) t += 's';
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
+// Two-mode shapes, recognised before the one-mode roles:
+//   incidence matrix: a first column of distinct names, then two or more
+//     columns holding only 0/1 (or x / yes) cells
+//   incidence list: a person-like column whose values repeat and an
+//     event-like column (event, group, club, committee, ...)
+// Returns a suggestMapping result or null.
+function suggestTwoMode(headers, cols, rows) {
+  if (!rows.length || headers.length < 2) return null;
+  const first = cols[0];
+  const rest = cols.slice(1);
+  if (rest.length >= 2 && first.prof.count >= 2 && first.prof.distinct === first.prof.count && first.prof.numeric < 0.5) {
+    // Event columns hold only 0/1 (x / yes) cells; other columns (a year, a
+    // team) are attributes of the row. Most columns must be event columns.
+    const isEvent = rest.map((c, j) => rows.every(r => { const v = String(r[j + 1] ?? '').trim(); return v === '' || BINARY_CELL.test(v); }) && !OTHER_PERSON.test(norm(c.header)));
+    const evH = headers.slice(1).filter((_, j) => isEvent[j]), attrH = headers.slice(1).filter((_, j) => !isEvent[j]);
+    const ones = rows.some(r => r.slice(1).some((v, j) => isEvent[j] && /^(1|1\.0|x|yes|true)$/i.test(String(v ?? '').trim())));
+    if (evH.length >= 2 && evH.length > attrH.length && ones) {
+      return {
+        kind: 'incidence',
+        mapping: { namespace: 'csv', actor: headers[0], events: evH, attrs: attrH, modeLabels: [modeLabel(headers[0], 0), DEFAULT_MODE_LABELS[1]] },
+        columns: [{ header: headers[0], role: 'actor', confidence: 0.7, reason: 'values' }, ...evH.map(h => ({ header: h, role: 'event', confidence: 0.7, reason: 'values' })), ...attrH.map(h => ({ header: h, role: 'attr', confidence: 0.5, reason: 'values' }))],
+        notes: [`Looks like a two-mode incidence matrix: one row per "${headers[0]}", one column per event or group; a 1 means the row belongs to that event or group.`],
+      };
+    }
+  }
+  const ev = cols.find(c => EVENTISH.test(norm(c.header)));
+  const actor = cols.find(c => c !== ev && (PERSONISH.test(norm(c.header)) || headerScore(c.header, 'actor') >= 0.9 || headerScore(c.header, 'id') >= 0.9));
+  if (ev && actor && actor.prof.count >= 2 && actor.prof.distinct < actor.prof.count) {
+    const mapping = { namespace: 'csv', actor: actor.header, targets: ev.header, modeLabels: [modeLabel(actor.header, 0), modeLabel(ev.header, 1)] };
+    const columns = [{ header: actor.header, role: 'actor', confidence: 0.7, reason: 'header name' }, { header: ev.header, role: 'targets', confidence: 0.7, reason: 'header name' }];
+    // Weight: a weight-like header, else the one all-numeric column (hours, days attended).
+    const nums = cols.filter(c => c !== ev && c !== actor && c.prof.numeric > 0.95 && c.prof.count);
+    const w = nums.find(c => headerScore(c.header, 'weight')) || (nums.length === 1 ? nums[0] : null);
+    if (w) { mapping.weight = w.header; columns.push({ header: w.header, role: 'weight', confidence: 0.6, reason: 'header name' }); }
+    const t = cols.find(c => c !== ev && c !== actor && c !== w && c.prof.time.format);
+    if (t) { mapping.timestamp = t.header; mapping.timeFormat = t.prof.time.format; mapping.timezone = 'UTC'; columns.push({ header: t.header, role: 'timestamp', confidence: 0.6, reason: 'values' }); }
+    if (ev.prof.listSep) mapping.targetSeparator = ev.prof.listSep;
+    for (const c of cols) if (!columns.some(x => x.header === c.header)) columns.push({ header: c.header, role: 'ignore', confidence: 0, reason: 'no role matched' });
+    return { kind: 'affiliations', mapping, columns, notes: [`Looks like a two-mode list: each row says that a "${actor.header}" belongs to or attended a "${ev.header}".`] };
+  }
+  return null;
+}
+
+const TWO_MODE_KINDS = new Set(['affiliations', 'incidence']);
+
+// One row of a two-mode table -> affiliations.
+function cellWeight(v) {
+  const s = String(v ?? '').trim();
+  if (!s || /^(no|false)$/i.test(s)) return 0;
+  if (/^(x|yes|true)$/i.test(s)) return 1;
+  const n = Number(s.replace(/^(-?\d+),(\d+)$/, '$1.$2'));
+  return Number.isFinite(n) ? n : NaN;
+}
+
 // ---- import -----------------------------------------------------------------
 
 const DIRECTED_FALSE = /^(undirected|false|no|0|mutual)$/i;
@@ -395,12 +480,23 @@ async function importTable({ builder, mapping, kind, fileName, records, signal }
   };
   let headers = null, idx = {};
   let rowsRead = 0, skipped = 0, badTime = 0, undirected = 0, directed = 0;
-  const ctxDefault = builder.context(`${ns}:file:${fileName}`, { name: fileName, kind: kind === 'edges' ? 'network' : 'channel', visibility: 'unknown' });
+  const ctxDefault = builder.context(`${ns}:file:${fileName}`, { name: fileName, kind: kind === 'edges' || TWO_MODE_KINDS.has(kind) ? 'network' : 'channel', visibility: 'unknown' });
+  const twoMode = TWO_MODE_KINDS.has(kind);
+  let eventCols = null;
+  if (twoMode) {
+    declareTwoMode(builder, [0, 1].map(k => m.modeLabels?.[k] || DEFAULT_MODE_LABELS[k]));
+    builder.source.directed = false;
+  }
+  const actorKey = v => `${ns}:${v}`, eventKey = v => `${ns}:event:${v}`;
   for await (const row of records) {
     if (!headers) {
       headers = uniqueHeaders(row);
       for (const [k, v] of Object.entries(m)) if (typeof v === 'string') idx[k] = headers.indexOf(v);
-      for (const need of kind === 'nodes' ? ['id'] : ['actor', 'targets']) {
+      if (kind === 'incidence') {
+        eventCols = (m.events || []).map(h => [h, headers.indexOf(h)]).filter(([, j]) => j >= 0 && j !== idx.actor);
+        if (!eventCols.length) throw new Error(`No event columns of ${fileName} are mapped. Columns: ${headers.join(', ')}`);
+      }
+      for (const need of kind === 'nodes' ? ['id'] : kind === 'incidence' ? ['actor'] : ['actor', 'targets']) {
         if (!(idx[need] >= 0)) throw new Error(`Column "${m[need]}" (mapped as ${need}) is not in ${fileName}. Columns: ${headers.join(', ')}`);
       }
       continue;
@@ -408,6 +504,38 @@ async function importTable({ builder, mapping, kind, fileName, records, signal }
     if (signal?.aborted) throw new Error('Import cancelled.');
     rowsRead++;
     const cell = k => (idx[k] >= 0 ? String(row[idx[k]] ?? '').trim() : '');
+    if (kind === 'incidence') {
+      const who = cell('actor');
+      if (!who) { skipped++; continue; }
+      const attrs = {};
+      for (const a of m.attrs || []) { const j = headers.indexOf(a); if (j >= 0 && String(row[j] ?? '').trim() !== '') attrs[a] = typedValue(row[j]); }
+      const label = cell('label') || who;
+      for (const [h, j] of eventCols) {
+        const w = cellWeight(row[j]);
+        if (Number.isNaN(w)) { skipped++; continue; }
+        if (!w) continue;
+        addAffiliation(builder, actorKey(who), eventKey(h), { weight: w, actorLabel: label, eventLabel: h, actorAttrs: attrs, context: ctxDefault });
+        builder.stat('affiliations');
+      }
+      // People with no membership still belong to the network (isolates).
+      addAffiliationNode(builder, actorKey(who), 0, label, attrs);
+      for (const [h] of eventCols) addAffiliationNode(builder, eventKey(h), 1, h);
+      builder.stat('nodes');
+      continue;
+    }
+    if (kind === 'affiliations') {
+      const who = cell('actor'), what = cell('targets');
+      if (!who || !what) { skipped++; continue; }
+      let t = NaN;
+      if (idx.timestamp >= 0 && cell('timestamp')) { t = parseTimestamp(cell('timestamp'), m.timeFormat || 'iso', m.timezone || 'UTC'); if (Number.isNaN(t)) badTime++; }
+      let w = 1;
+      if (idx.weight >= 0 && cell('weight') !== '') { w = cellWeight(cell('weight')); if (Number.isNaN(w)) { skipped++; continue; } if (!w) { builder.stat('zero-weight-rows'); continue; } }
+      for (const e of splitTargets(what, m.targetSeparator)) {
+        addAffiliation(builder, actorKey(who), eventKey(e), { weight: w, t, actorLabel: who, eventLabel: e, context: ctxDefault });
+        builder.stat('affiliations');
+      }
+      continue;
+    }
     if (kind === 'nodes') {
       const id = cell('id');
       if (!id) { skipped++; continue; }
@@ -457,10 +585,10 @@ async function importTable({ builder, mapping, kind, fileName, records, signal }
     builder.stat(kind === 'edges' ? 'edges' : 'events');
   }
   if (!headers) builder.warn('empty-file', `${fileName} has no rows.`);
-  if (skipped) builder.warn('rows-skipped', `Rows with an empty ${kind === 'nodes' ? 'id' : 'source or target'} or a non-numeric weight were skipped.`, skipped);
+  if (skipped) builder.warn('rows-skipped', kind === 'incidence' ? 'Rows without a name, or cells that are not a number (or x / yes), were skipped.' : `Rows with an empty ${kind === 'nodes' ? 'id' : kind === 'affiliations' ? 'person or event' : 'source or target'} or a non-numeric weight were skipped.`, skipped);
   if (badTime) builder.warn('bad-timestamps', `Timestamps that did not match the chosen format (${m.timeFormat || 'iso'}) were left unknown.`, badTime);
   if (undirected && directed) builder.warn('mixed-directedness', 'Some rows are marked undirected and some directed; each row is stored as written (source to target).', undirected);
-  builder.source.directed = undirected && !directed ? false : builder.source.directed;
+  if (!twoMode) builder.source.directed = undirected && !directed ? false : builder.source.directed;
   builder.stat('rows', rowsRead);
   return rowsRead;
 }
@@ -501,9 +629,14 @@ export async function importTabular(fs, { mapping, kind, builder, files, progres
   return own ? b.build() : null;
 }
 
+// A node of a known mode without a tie (an incidence-matrix row of zeros).
+function addAffiliationNode(builder, key, mode, label, attrs) {
+  builder.node(key, { label, attrs: { ...(attrs || {}), bipartite: mode } });
+}
+
 function sourceInfo(e, kind, view) {
   return {
-    format: 'tabular', family: 'tabular', medium: kind === 'edges' ? 'declared' : 'unknown',
+    format: 'tabular', family: 'tabular', medium: kind === 'edges' || TWO_MODE_KINDS.has(kind) ? 'declared' : 'unknown',
     view: view || VIEWS.FULL, context: 'custom', tz: 'UTC', fileNames: [e.rel], tableKind: kind,
   };
 }
@@ -538,7 +671,7 @@ export default {
   },
   options: [
     { key: 'mapping', label: 'Column mapping', type: 'mapping', default: null },
-    { key: 'kind', label: 'Each row is', type: 'choice', default: null, choices: [{ value: 'events', label: 'An event (message, meeting)' }, { value: 'edges', label: 'A tie between two people' }, { value: 'nodes', label: 'A person' }] },
+    { key: 'kind', label: 'Each row is', type: 'choice', default: null, choices: [{ value: 'events', label: 'An event (message, meeting)' }, { value: 'edges', label: 'A tie between two people' }, { value: 'nodes', label: 'A person' }, { value: 'affiliations', label: 'A person and an event or group they belong to (two-mode list)' }, { value: 'incidence', label: 'A person, with one column per event or group (two-mode matrix)' }] },
     { key: 'view', label: 'Who the table covers', type: 'choice', default: 'full', choices: [{ value: 'full', label: 'Everyone in a bounded group' }, { value: 'ego', label: "One person's contacts" }, { value: 'sample', label: 'A sample of a larger group' }] },
   ],
   async import(fs, { builder, options = {}, progress, signal }) {

@@ -122,4 +122,9 @@
 
 /* A worked example's "what to look for", under Who stands out. */
 .standout__example{margin-top:.75rem;padding-top:.6rem;border-top:1px solid var(--rule)}
+/* Two-mode networks: one block of standouts per kind of node. */
+.standout__mode+.standout__mode{margin-top:.7rem;padding-top:.6rem;border-top:1px solid var(--rule)}
+.standout__modeh{font-size:.875rem;font-weight:600;color:var(--text);margin:0 0 .35rem}
+.standout__modeh .meta{margin-left:.4rem}
+.standout--twomode .basis{margin-top:.6rem}
 .standout__example ul{margin:.3rem 0 0;padding-left:1.1rem}

@@ -17,7 +17,9 @@
 // therefore uses the original graph with float32 weights as the expectation
 // (tolerance 1e-9) and records the float64 drift separately.
 
-import { DatasetBuilder } from '../../../src/core/model.js';
+import { DatasetBuilder, twoModeOf } from '../../../src/core/model.js';
+import { makeTwoModeCase, twoModeDataset, caseMix as twoModeMix } from './twomode.mjs';
+import { TWO_MODE_METRICS } from '../../../src/analysis/twomode.js';
 import { FileSet } from '../../../src/core/fileset.js';
 import importer from '../../../src/importers/network-files.js';
 import { networkFromEdges, buildNetwork, defaultSettings } from '../../../src/analysis/construct.js';
@@ -33,7 +35,7 @@ import { exportCSV } from '../../../src/exporters/csv.js';
 import { caseMix, makeCase, canonicalEdges, caseAttrs, close, relErr, tally } from '../lib.mjs';
 
 export const name = 'roundtrip';
-export const title = 'Export, re-import and recompute (GraphML, GEXF, GML, Pajek, UCINET DL, Gephi CSV)';
+export const title = 'Export, re-import and recompute (GraphML, GEXF, GML, Pajek, UCINET DL, Gephi CSV; one-mode and two-mode)';
 
 const NODE_KEYS = ['degree', 'inDegree', 'outDegree', 'strength', 'betweenness', 'betweennessWeighted', 'closeness', 'closenessWeighted', 'eigenvector', 'pagerank', 'clustering', 'coreNumber', 'constraint', 'effectiveSize'];
 const ITERATIVE = new Set(['eigenvector', 'pagerank']);
@@ -193,7 +195,68 @@ export async function roundTrip(c, fmtName, { t = null } = {}) {
   return { problems, losses, maxDrift };
 }
 
-export async function run({ count = 200, seed = 1, log = () => {}, formats = Object.keys(FORMATS), maxN = 150, largeN = 300 } = {}) {
+// ---- two-mode (affiliation) data ----------------------------------------------------
+//
+// The two-mode view of random bipartite datasets (tools/accuracy/checks/
+// twomode.mjs, built through addAffiliation, with same-mode noise ties that
+// the view leaves out) through every format that keeps the mode: GraphML,
+// GEXF, GML and Gephi CSV (the `bipartite` node attribute), Pajek
+// (*Vertices N N0) and UCINET DL (a rectangular matrix). The re-imported
+// dataset must be two-mode again (twoModeOf) with the same mode per node,
+// the same ties and weights, and the same two-mode measures and density.
+export const TWO_MODE_FORMATS = ['graphml', 'gexf', 'gml', 'pajek', 'dl-edgelist', 'csv-nodes-edges'];
+
+export async function twoModeRoundTrip(c, fmtName) {
+  const fmt = FORMATS[fmtName];
+  const ds = twoModeDataset(c);
+  const net = buildNetwork(ds, { twoMode: { view: 'two-mode' } });
+  const problems = [];
+  const ds2 = await importText(fmt.files(ds, net));
+  const tm = twoModeOf(ds2);
+  if (!tm) return { problems: ['re-imported data is not two-mode'] };
+  const net2 = buildNetwork(ds2, defaultSettings(ds2));
+  if (net2.twoMode?.view !== 'two-mode') problems.push('default settings do not build the two-mode view');
+  const map = mapping(ds, ds2, net, fmt);
+  if (map.some(x => x < 0)) return { problems: [...problems, 'unmapped nodes'] };
+  if (ds2.nodes.count !== c.n) problems.push(`node count ${ds2.nodes.count}, expected ${c.n}`);
+  for (let j = 0; j < ds2.nodes.count; j++) if (tm.mode[j] !== c.mode[map[j]]) { problems.push(`mode of ${ds.nodes.labels[map[j]]}: ${tm.mode[j]}, expected ${c.mode[map[j]]}`); break; }
+  const key = (a, b) => (a < b ? a + ',' + b : b + ',' + a);
+  const exp = new Map();
+  for (let e = 0; e < net.edges.count; e++) exp.set(key(net.nodeIds[net.edges.src[e]], net.nodeIds[net.edges.dst[e]]), net.edges.w[e]);
+  const got = new Map();
+  for (let e = 0; e < net2.edges.count; e++) got.set(key(map[net2.nodeIds[net2.edges.src[e]]], map[net2.nodeIds[net2.edges.dst[e]]]), net2.edges.w[e]);
+  if (got.size !== exp.size) problems.push(`ties ${got.size}, expected ${exp.size}`);
+  for (const [k, w] of exp) if (got.get(k) !== w) { problems.push(`tie ${k}: ${got.get(k)}, expected ${w}`); break; }
+  if (problems.length) return { problems };
+  const m1 = computeNodeMetrics(net, { which: TWO_MODE_METRICS, approx: false }), m2 = computeNodeMetrics(net2, { which: TWO_MODE_METRICS, approx: false });
+  const pos = new Int32Array(c.n).fill(-1);
+  for (let v = 0; v < net.n; v++) pos[net.nodeIds[v]] = v;
+  for (const k of TWO_MODE_METRICS) for (let v = 0; v < net2.n; v++) {
+    const i = pos[map[net2.nodeIds[v]]];
+    if (!close(m2[k][v], m1[k][i], 1e-9)) { problems.push(`${k}[${ds.nodes.labels[net.nodeIds[i]]}] ${m2[k][v]}, expected ${m1[k][i]}`); break; }
+  }
+  const d1 = computeNetworkMetrics(net), d2 = computeNetworkMetrics(net2);
+  for (const k of ['twoModeDensity', 'robinsAlexander']) if (!close(d2[k], d1[k], 1e-12)) problems.push(`network ${k} ${d2[k]}, expected ${d1[k]}`);
+  return { problems };
+}
+
+export async function runTwoMode(t, { count, seed, log = () => {} }) {
+  const per = Object.fromEntries(TWO_MODE_FORMATS.map(f => [f, { cases: 0, passed: 0 }]));
+  for (const spec of twoModeMix(count, seed, { maxN0: 30, maxN1: 20, largeShare: 0.02 })) {
+    const c = makeTwoModeCase(spec);
+    for (const f of TWO_MODE_FORMATS) {
+      t.case();
+      per[f].cases++;
+      let r;
+      try { r = await twoModeRoundTrip(c, f); } catch (err) { r = { problems: [`threw: ${err.message}`] }; }
+      if (t.cmp(!r.problems.length, { format: f, twoMode: true, spec: c.spec, problems: r.problems.slice(0, 5) })) per[f].passed++;
+    }
+  }
+  log(`roundtrip two-mode: ${count} datasets`);
+  return per;
+}
+
+export async function run({ count = 200, seed = 1, log = () => {}, formats = Object.keys(FORMATS), maxN = 150, largeN = 300, twoModeCount = Math.max(10, Math.round(count / 4)) } = {}) {
   const t = tally(name);
   const specs = caseMix(count, seed, { maxN, largeN, largeShare: 0.05 });
   const per = Object.fromEntries(formats.map(f => [f, { cases: 0, passed: 0, losses: {} }]));
@@ -215,6 +278,10 @@ export async function run({ count = 200, seed = 1, log = () => {}, formats = Obj
     if (i % 50 === 0) log(`roundtrip ${i}/${specs.length}`);
   }
   for (const f of formats) per[f].passRate = per[f].cases ? per[f].passed / per[f].cases : NaN;
+  if (twoModeCount > 0) {
+    t.stats.twoMode = await runTwoMode(t, { count: twoModeCount, seed, log });
+    t.notes.push(`Two-mode: ${twoModeCount} random bipartite datasets (addAffiliation, same-mode noise ties) per format that keeps the mode (${TWO_MODE_FORMATS.join(', ')}); each must re-import as two-mode with the same mode per node, ties, weights and two-mode measures (1e-9).`);
+  }
   t.stats.formats = per;
   t.stats.maxFloat32WeightDrift = maxDrift;
   t.stats.seconds = (Date.now() - t0) / 1000;

@@ -29,6 +29,7 @@ const CHECKS = {
   construction: ['./checks/construction.mjs', 2000],
   roundtrip: ['./checks/roundtrip.mjs', 500],
   content: ['./checks/content.mjs', 300],
+  twomode: ['./checks/twomode.mjs', 1000],
   recovery: ['./checks/recovery.mjs', 10, (scale) => ({ shiftSeeds: Math.max(10, Math.round(200 * scale)) })],
 };
 

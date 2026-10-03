@@ -18,6 +18,7 @@
 
 import { graphOf, components } from './graph.js';
 import { createRng, sampleWithoutReplacement } from './rng.js';
+import { TWO_MODE_METRICS, isTwoModeView, twoModeNodeMetrics } from './twomode.js';
 
 export const NODE_METRICS = ['degree', 'inDegree', 'outDegree', 'strength', 'inStrength', 'outStrength',
   'betweenness', 'betweennessWeighted', 'closeness', 'closenessWeighted', 'eigenvector', 'pagerank',
@@ -26,7 +27,10 @@ const DEFAULT_WHICH = NODE_METRICS;
 
 export function computeNodeMetrics(net, opts = {}) {
   const g = graphOf(net);
-  const which = new Set(opts.which || DEFAULT_WHICH);
+  // Two-mode networks also get the two-mode measures (src/analysis/twomode.js);
+  // other networks never have them, even when asked.
+  const twoMode = isTwoModeView(net);
+  const which = new Set(opts.which || (twoMode ? [...DEFAULT_WHICH, ...TWO_MODE_METRICS] : DEFAULT_WHICH));
   const progress = opts.onProgress || (() => {});
   const out = {};
   const meta = {};
@@ -67,6 +71,13 @@ export function computeNodeMetrics(net, opts = {}) {
     const b = burt(g);
     if (which.has('constraint')) out.constraint = b.constraint;
     if (which.has('effectiveSize')) out.effectiveSize = b.effectiveSize;
+  }
+  const tmWhich = twoMode ? TWO_MODE_METRICS.filter(k => which.has(k)) : [];
+  if (tmWhich.length) {
+    progress(0.97, 'two-mode measures');
+    Object.assign(out, twoModeNodeMetrics(net, { which: tmWhich, betweenness: out.betweenness, pivots: approx.pivots, seed: opts.seed ?? 1 }));
+    if (out.twoModeBetweenness) meta.twoModeBetweenness = { ...(approx.pivots ? { approximate: true, pivots: approx.pivots, seed: opts.seed ?? 1 } : { approximate: false }), normalization: 'Borgatti and Everett (1997), per mode' };
+    if (out.twoModeCloseness) meta.twoModeCloseness = { approximate: false, normalization: 'Borgatti and Everett (1997), per mode; networkx reach correction' };
   }
   progress(1, 'done');
   out.meta = meta;

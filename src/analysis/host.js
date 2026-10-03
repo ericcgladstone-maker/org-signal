@@ -23,7 +23,7 @@ export function createHost() {
     return st.net;
   };
   const withP = (opts, progress) => ({ ...(opts || {}), onProgress: progress });
-  const netInfo = (net) => ({ n: net.n, directed: net.directed, nodeIds: net.nodeIds, summary: net.summary, settings: net.settings });
+  const netInfo = (net) => ({ n: net.n, directed: net.directed, nodeIds: net.nodeIds, summary: net.summary, settings: net.settings, ...(net.twoMode ? { twoMode: net.twoMode } : {}) });
 
   const methods = {
     load(progress, ds) {
@@ -67,7 +67,7 @@ export function createHost() {
     edgeEvidence(progress, a, b, opts) { return edgeEvidence(needDs(), needNet(), a, b, opts); },
     graphForRender(progress, opts = {}) {
       const net = needNet();
-      const key = JSON.stringify({ maxNodes: opts.maxNodes, maxEdges: opts.maxEdges, layout: opts.layout, iterations: opts.iterations, seed: opts.seed });
+      const key = JSON.stringify({ maxNodes: opts.maxNodes, maxEdges: opts.maxEdges, layout: opts.layout, iterations: opts.iterations, seed: opts.seed, arrange: opts.arrange });
       // Same network, same options: return the same picture.
       if (st.render && st.render.net === net && st.render.key === key) return st.render.result;
       const r = graphForRender(net, { ...opts, previous: st.positions, labels: st.ds.nodes.labels });
@@ -77,7 +77,7 @@ export function createHost() {
     },
     resetLayout() { st.positions.clear(); st.render = null; return true; },
     // Aliases matching the interface src/llm/tools.js expects.
-    info() { const net = needNet(); return { n: net.n, directed: net.directed, edges: { count: net.edges.count }, settings: net.settings, summary: net.summary }; },
+    info() { const net = needNet(); return { n: net.n, directed: net.directed, edges: { count: net.edges.count }, settings: net.settings, summary: net.summary, ...(net.twoMode ? { twoMode: net.twoMode } : {}) }; },
     nodeIds() { return needNet().nodeIds; },
     groupMetrics(progress, attr, opts) { return groupMetrics(needNet(), needDs(), attr, opts); },
     egoMetrics(progress, node, opts) { return egoMetrics(needNet(), node, { ds: needDs(), ...(opts || {}) }); },

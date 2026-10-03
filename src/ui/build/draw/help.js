@@ -15,6 +15,7 @@ export const SHORTCUTS = [
     ['N', 'New person near the center of the view, ready to name'], ['Tab / Shift+Tab', 'Move to the next / previous person and select them (leaves the canvas after the last)'],
     ['Space', 'Keep the selection while moving with Tab; again to add or remove the focused person'], ['Enter or F2', 'Rename the focused or selected person'],
     ['E', 'Connect the selected people in the order selected (or the selected person to the focused one)'],
+    ['M', 'Two-mode drawings: switch which kind of node Add places (circle or square)'],
     ['Arrow keys', 'Nudge the selection by one grid step (Shift: five); with nothing selected, pan'],
     ['Delete / Backspace', 'Delete the selection'], [`${mod}+A`, 'Select everyone'], ['Esc', 'Clear selection, cancel, close'],
   ]],
@@ -41,6 +42,7 @@ export function HelpOverlay({ onClose }) {
         <li><strong>Add people:</strong> choose Add person, click the canvas, type the name and press Enter.</li>
         <li><strong>Tie two people:</strong> choose Connect, then click one person and then the other. Ties are two-way unless you tick Directed (one-way) in the panel beside the canvas.</li>
         <li><strong>Fix mistakes:</strong> Undo, or choose Select, click a person or tie and use the panel (rename, group, delete).</li>
+        <li><strong>Two kinds of node:</strong> File, Two-mode drawing makes people (circles) and events or clubs (squares), tied only across the kinds. Choose which kind Add places in the toolbar (or press M); Arrange, Two columns lines them up.</li>
         <li><strong>Analyze:</strong> Analyze this network opens the map; People lists each person's measures.</li>
       </ol>
       <p class="ob-note">Not sure where to start? File, Start from an example loads a small network with notes on what to look for. Every action is also a button, and Table edits the same drawing as rows.</p>

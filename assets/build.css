@@ -127,13 +127,13 @@
 .ob-canvas .edge-label{fill:var(--text-muted);font-size:10px;font-family:var(--sans)}
 .ob-canvas .arrow{fill:var(--edge)}
 .ob-canvas .arrow.sel{fill:var(--accent)}
-.ob-canvas .node circle{fill:var(--node);stroke:var(--bg-deep);stroke-width:1.5;vector-effect:non-scaling-stroke}
-.ob-canvas .node.sel circle{stroke:var(--accent);stroke-width:3}
+.ob-canvas .node circle,.ob-canvas .node rect.shape{fill:var(--node);stroke:var(--bg-deep);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.ob-canvas .node.sel circle,.ob-canvas .node.sel rect.shape{stroke:var(--accent);stroke-width:3}
 .ob-canvas .node text{fill:var(--text);font-size:12px;pointer-events:none;paint-order:stroke;stroke:var(--bg-deep);stroke-width:3px;stroke-linejoin:round}
 .ob-canvas .node{cursor:grab}
 .ob-canvas .node .focus-ring{fill:none;stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}
-.ob-canvas .node.pending circle:not(.focus-ring){stroke:var(--accent);stroke-width:3;stroke-dasharray:3 2}
-.ob-canvas .node.target circle:not(.focus-ring){stroke:var(--accent);stroke-width:3}
+.ob-canvas .node.pending .shape:not(.focus-ring){stroke:var(--accent);stroke-width:3;stroke-dasharray:3 2}
+.ob-canvas .node.target .shape:not(.focus-ring){stroke:var(--accent);stroke-width:3}
 .ob-canvas .hull{fill-opacity:.12;stroke-width:1.5;stroke-opacity:.85;vector-effect:non-scaling-stroke}
 .ob-canvas .hull-label{font-size:11px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;paint-order:stroke;stroke:var(--bg-deep);stroke-width:3px;stroke-linejoin:round}
 .ob-canvas .guide{stroke:var(--accent);stroke-width:1;stroke-dasharray:4 3;vector-effect:non-scaling-stroke}
@@ -366,3 +366,12 @@ label.rs-person{justify-content:flex-start;cursor:pointer}
 .ego-measures__list dd{max-width:var(--measure,66ch)}
 /* Bigger cells for fingers; the grid scrolls inside its own frame (M16). */
 @media (pointer:coarse){.ob-matrix td{width:2.6rem;min-width:2.6rem;height:2.6rem}}
+
+/* Two-mode drawings: shape key on the canvas, shape icons in toolbar and tables */
+.ob-modekey{position:absolute;left:.5rem;top:.5rem;display:flex;flex-direction:column;gap:.15rem;font-size:var(--fs-meta,.75rem);color:var(--text-2);
+  background:rgba(var(--bg-deep-rgb),.8);padding:.3rem .45rem;pointer-events:none}
+.ob-modekey span{display:flex;align-items:center;gap:.4rem}
+.ob-modeshape,.ob-canvas svg.ob-modeshape{flex:none;display:inline-block;vertical-align:-1px;width:12px;height:12px}
+.ob-modeshape circle,.ob-modeshape rect{fill:var(--node);stroke:var(--text-2);stroke-width:1}
+.ob-addmode button{display:inline-flex;align-items:center;gap:.35rem}
+.ob-canvas .node .focus-ring{fill:none}

@@ -11,6 +11,7 @@
 // each node's rank. A node "ranked first" whose interval spans 1..9 is not a
 // finding.
 
+import { isTwoModeView } from './twomode.js';
 import { makeGraph, graphOf } from './graph.js';
 import { createRng } from './rng.js';
 import { transitivity, overallReciprocity, degreeAssortativity } from './network.js';
@@ -60,6 +61,9 @@ export function nullModel(net, opts = {}) {
   const needsAttr = (s) => s === 'attrAssortativity' || s === 'eiIndex';
   let stats = (opts.stats || NULL_STATS).filter(s => NULL_STATS.includes(s));
   if (!net.directed) stats = stats.filter(s => s !== 'reciprocity');
+  // Two-mode view: one-mode rewiring would put ties inside a mode, so no
+  // statistic is tested (applicability says why).
+  if (isTwoModeView(net)) stats = [];
   const codes = opts.ds && opts.attr ? attrCodes(net, opts.ds, opts.attr) : null;
   if (!codes) stats = stats.filter(s => !needsAttr(s));
   const k = codes ? codes.values.length : 0;

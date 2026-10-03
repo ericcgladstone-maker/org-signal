@@ -250,9 +250,14 @@ export function Canvas(props) {
     const p = pos(n.id);
     const gi = groupIndex.get(n.group);
     const cls = 'node' + (selN.has(n.id) ? ' sel' : '') + (pending === n.id ? ' pending' : '') + (rubber?.over === n.id ? ' target' : '');
-    return html`<g key=${n.id} class=${cls} data-node=${n.id} transform=${`translate(${p.x},${p.y})`}>
-      ${focusId === n.id ? html`<circle class="focus-ring" r=${NODE_R + 6} />` : null}
-      <circle r=${NODE_R} style=${gi !== undefined ? `fill:${groupColor(gi)}` : undefined} />
+    // Two-mode drawings: the second mode is a square, so the mode never
+    // rests on color alone (groups keep their fill colors).
+    const square = doc.twoMode && n.mode === 1;
+    const fill = gi !== undefined ? `fill:${groupColor(gi)}` : undefined;
+    const S = NODE_R * 0.9;
+    return html`<g key=${n.id} class=${cls + (square ? ' node--sq' : '')} data-node=${n.id} data-mode=${doc.twoMode ? (n.mode === 1 ? 1 : 0) : undefined} transform=${`translate(${p.x},${p.y})`}>
+      ${focusId === n.id ? (square ? html`<rect class="focus-ring" x=${-S - 6} y=${-S - 6} width=${2 * S + 12} height=${2 * S + 12} />` : html`<circle class="focus-ring" r=${NODE_R + 6} />`) : null}
+      ${square ? html`<rect class="shape" x=${-S} y=${-S} width=${2 * S} height=${2 * S} style=${fill} />` : html`<circle class="shape" r=${NODE_R} style=${fill} />`}
       <text y=${NODE_R + 4 + fs} text-anchor="middle" style=${`font-size:${fs}px`}>${n.label}</text>
     </g>`;
   });
@@ -292,6 +297,13 @@ export function Canvas(props) {
       ${marquee ? html`<rect class="marquee" x=${marquee.x} y=${marquee.y} width=${marquee.w} height=${marquee.h} />` : null}
     </g>
   </svg>`;
+}
+
+// The mode's shape as a small inline icon for keys, toolbars and tables.
+export function ModeShape({ mode = 0, size = 12 }) {
+  const h = size / 2;
+  return html`<svg class="ob-modeshape" width=${size} height=${size} viewBox=${`0 0 ${size} ${size}`} aria-hidden="true">
+    ${mode === 1 ? html`<rect x="1.5" y="1.5" width=${size - 3} height=${size - 3} />` : html`<circle cx=${h} cy=${h} r=${h - 1.5} />`}</svg>`;
 }
 
 export function clampK(k) { return Math.max(0.15, Math.min(5, k)); }

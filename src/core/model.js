@@ -260,6 +260,12 @@ export function inferAttributeSchema(attrs) {
   const schema = [];
   for (const [key, vals] of keys) {
     const distinct = new Set(vals.map(v => String(v)));
+    // The two-mode marker is structural, not a measured quantity: always a
+    // two-value choice, whatever the count of nodes (see twoModeOf).
+    if (key === MODE_ATTR && [...distinct].every(v => v === '0' || v === '1')) {
+      schema.push({ key, type: 'categorical', label: 'Mode (two-mode)', coverage: vals.length / (attrs.length || 1), values: [...distinct].sort() });
+      continue;
+    }
     let type;
     if (vals.every(v => typeof v === 'boolean' || /^(true|false|yes|no)$/i.test(String(v)))) type = 'boolean';
     else if (vals.every(v => typeof v === 'number' || (String(v).trim() !== '' && !isNaN(Number(v))))) type = distinct.size <= 12 && vals.length > 30 ? 'ordinal' : 'numeric';
@@ -385,3 +391,93 @@ export function fromJSON(str) {
 }
 
 export const MODEL_VERSION = 1;
+
+// ---- two-mode (affiliation) data ---------------------------------------------------
+//
+// A two-mode network ties two kinds of node: actors (people, mode 0) and the
+// things they belong to or attend (events, groups, boards, mode 1), and ties
+// run only between the kinds (Davis's Southern Women: 18 women x 14 events).
+// The representation is deliberately small, so every existing path (toJSON,
+// toTransfer, merge, identity merges, the import worker, exporters) carries
+// it without change:
+//
+//   - each node's mode is the node attribute `bipartite` (MODE_ATTR): 0 or 1,
+//     the attribute networkx uses, so GraphML / GEXF files round-trip;
+//   - a source declares itself two-mode with source.twoMode = { labels:
+//     [mode-0 label, mode-1 label] } (e.g. ['Women', 'Events']);
+//   - an affiliation is a `declared` event from the actor with the mode-1
+//     node as a `member` target (addAffiliation), optionally weighted, dated
+//     and carrying tie fields. Any other tie between the modes (a `declared`
+//     tie read from a network file) also counts as an affiliation.
+//
+// twoModeOf(ds) reads it back; the analysis engine builds the two-mode network
+// or a one-mode projection from it (settings.twoMode, src/analysis/construct.js).
+
+export const MODE_ATTR = 'bipartite';
+export const DEFAULT_MODE_LABELS = ['Actors', 'Events'];
+
+// Normalise a mode value as it arrives from attributes or files: 0 / 1,
+// '0' / '1', true / false. Anything else is unknown (-1).
+export function modeValue(v) {
+  if (v === 0 || v === 1) return v;
+  if (v === '0' || v === '1') return Number(v);
+  if (v === false || v === 'false') return 0;
+  if (v === true || v === 'true') return 1;
+  return -1;
+}
+
+// Add (or update) a node of a given mode. Returns the node index.
+export function addModeNode(builder, key, mode, { label, attrs, ...rest } = {}) {
+  if (mode !== 0 && mode !== 1) throw new Error(`addModeNode: mode must be 0 or 1, got ${mode}`);
+  return builder.node(key, { label, attrs: { ...(attrs || {}), [MODE_ATTR]: mode }, ...rest });
+}
+
+// Record that actorKey (mode 0) belongs to / attended eventKey (mode 1).
+//   opts: { weight = 1, t = NaN, attrs (tie fields), context = -1,
+//           actorLabel, eventLabel, actorAttrs, eventAttrs, key }
+// Creates both nodes if needed and declares the current source two-mode
+// (keeping labels it already has). Returns the event index.
+export function addAffiliation(builder, actorKey, eventKey, opts = {}) {
+  const { weight = 1, t = NaN, attrs = null, context = -1, actorLabel, eventLabel, actorAttrs, eventAttrs, key = null } = opts;
+  if (!builder.source) builder.beginSource({ format: 'two-mode', family: 'custom', view: VIEWS.FULL, directed: false });
+  const src = builder.source;
+  if (!src.twoMode) src.twoMode = { labels: [...DEFAULT_MODE_LABELS] };
+  const a = addModeNode(builder, actorKey, 0, { label: actorLabel, attrs: actorAttrs });
+  const e = addModeNode(builder, eventKey, 1, { label: eventLabel, attrs: eventAttrs });
+  return builder.event({ type: 'declared', t, actor: a, targets: [[e, 'member']], context, weight, attrs, key });
+}
+
+// Declare the current source two-mode with mode labels, e.g.
+// declareTwoMode(builder, ['Women', 'Events']). Undirected by nature.
+export function declareTwoMode(builder, labels = DEFAULT_MODE_LABELS) {
+  const src = builder.source;
+  if (!src) throw new Error('declareTwoMode: call beginSource first');
+  src.twoMode = { labels: [String(labels[0] ?? DEFAULT_MODE_LABELS[0]), String(labels[1] ?? DEFAULT_MODE_LABELS[1])] };
+  if (src.directed === undefined) src.directed = false;
+  return src.twoMode;
+}
+
+// Is this dataset two-mode, and which node is which?
+// Returns null for one-mode data, else
+//   { mode: Int8Array(ds.nodes.count) (0, 1, or -1 unknown), labels: [l0, l1],
+//     counts: [n0, n1], unknown, declared }
+// Two-mode when a source declares twoMode, or (networkx-style files with no
+// declaration) every non-bot node has `bipartite` 0 or 1 and both occur.
+export function twoModeOf(ds) {
+  const N = ds?.nodes?.count || 0;
+  const sources = ds?.meta?.sources || [];
+  const decl = sources.find(s => s && s.twoMode);
+  const mode = new Int8Array(N).fill(-1);
+  const counts = [0, 0];
+  let unknown = 0, unknownNonBot = 0;
+  for (let i = 0; i < N; i++) {
+    const m = modeValue(ds.nodes.attrs[i]?.[MODE_ATTR]);
+    mode[i] = m;
+    if (m >= 0) counts[m]++;
+    else { unknown++; if (!ds.nodes.isBot?.[i]) unknownNonBot++; }
+  }
+  if (!decl && (unknownNonBot > 0 || !counts[0] || !counts[1])) return null;
+  if (decl && !counts[0] && !counts[1]) return null;
+  const labels = decl?.twoMode?.labels ? [String(decl.twoMode.labels[0] ?? DEFAULT_MODE_LABELS[0]), String(decl.twoMode.labels[1] ?? DEFAULT_MODE_LABELS[1])] : [...DEFAULT_MODE_LABELS];
+  return { mode, labels, counts, unknown, declared: !!decl };
+}

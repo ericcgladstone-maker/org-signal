@@ -16,7 +16,13 @@ export const LAYOUTS = [
   { id: 'tree', label: 'Tree from a root' },
   { id: 'force', label: 'Force-directed' },
   { id: 'concentric', label: 'Concentric by attribute' },
+  { id: 'columns', label: 'Two columns (by mode)', twoMode: true },
+  { id: 'rows', label: 'Two rows (by mode)', twoMode: true },
 ];
+
+// The layouts that apply to this drawing: the two-mode arrangements only for
+// two-mode drawings.
+export function layoutsFor(doc) { return LAYOUTS.filter(l => !l.twoMode || !!doc?.twoMode); }
 
 // Box to lay out into. A selection keeps its own bounding box; a degenerate
 // box (one node, or nodes in a line) is grown around its centre so the layout
@@ -266,6 +272,46 @@ export function runLayout(doc, id, ids, opts = {}) {
     case 'tree': return treeLayout(doc, ids, box, opts);
     case 'force': return forceLayout(doc, ids, box, opts);
     case 'concentric': return concentricLayout(doc, ids, box, opts);
+    case 'columns': return twoModeLayout(doc, ids, box, 'columns', { grow: !opts.box && !!opts.all });
+    case 'rows': return twoModeLayout(doc, ids, box, 'rows', { grow: !opts.box && !!opts.all });
     default: throw new Error(`Unknown layout: ${id}`);
   }
+}
+
+// Two-mode drawings: mode 0 in the left column (or top row), mode 1 in the
+// right column (bottom row). The order inside each side comes from a few
+// barycenter sweeps, so each node moves toward the average position of the
+// nodes it is tied to and lines cross less. One-mode drawings (no modes) get
+// everyone on side 0. Deterministic.
+// grow: the whole drawing may extend past the box so neighbours along a side
+// keep 56 px for their labels; a selection stays inside its own box.
+export function twoModeLayout(doc, ids, box, arrange = 'columns', { grow = false } = {}) {
+  const order = orderedIds(doc, ids);
+  const out = new Map();
+  if (!order.length) return out;
+  const set = new Set(order);
+  const adj = adjacency(doc, set);
+  const byId = new Map(doc.nodes.map(n => [n.id, n]));
+  const sides = [[], []];
+  for (const id of order) sides[byId.get(id).mode === 1 ? 1 : 0].push(id);
+  const pos = new Map();
+  const place = side => side.forEach((id, k) => pos.set(id, side.length > 1 ? k / (side.length - 1) : 0.5));
+  place(sides[0]); place(sides[1]);
+  for (let sweep = 0; sweep < 8; sweep++) {
+    const side = sides[sweep % 2 === 0 ? 1 : 0];
+    const bary = new Map(side.map(id => { const nb = adj.get(id); return [id, nb.length ? nb.reduce((t, u) => t + pos.get(u), 0) / nb.length : pos.get(id)]; }));
+    const idx = new Map(side.map((id, k) => [id, k]));
+    side.sort((a, b) => bary.get(a) - bary.get(b) || idx.get(a) - idx.get(b));
+    place(side);
+  }
+  const longest = Math.max(sides[0].length, sides[1].length);
+  const columns = arrange !== 'rows';
+  const along = grow ? Math.max(columns ? box.h : box.w, (longest - 1) * 56) : columns ? box.h : box.w;
+  const across = grow ? Math.max(columns ? box.w : box.h, 160) : columns ? box.w : box.h;
+  const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+  for (const [id, t] of pos) {
+    const a = (t - 0.5) * along, c = (byId.get(id).mode === 1 ? 0.5 : -0.5) * across;
+    out.set(id, columns ? { x: cx + c, y: cy + a } : { x: cx + a, y: cy + c });
+  }
+  return out;
 }

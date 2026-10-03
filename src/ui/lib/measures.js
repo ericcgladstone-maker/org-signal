@@ -68,7 +68,14 @@ export function betweennessPairs(n, directed) {
 // network where they help (A2: hand values against the app's). Shown under
 // the measure's meaning in tooltips and the profile. Null when the glossary
 // meaning says enough.
-export function measureNote(key, { n = 0, directed = false } = {}) {
+export function measureNote(key, { n = 0, directed = false, twoMode = null } = {}) {
+  const tm = twoMode?.labels ? twoMode : null;
+  const [a, b] = tm ? tm.labels.map(x => String(x).toLowerCase()) : ['actors', 'events'];
+  const cnt = tm?.counts;
+  if (key === 'twoModeDegree') return `Ties divided by the number of nodes of the other kind: for one of the ${a}, the share of the ${cnt ? `${cnt[1]} ` : ''}${b} tied to them; for one of the ${b}, the share of the ${cnt ? `${cnt[0]} ` : ''}${a}.`;
+  if (key === 'twoModeBetweenness') return `Shortest routes through this node (each pair once), divided by the most a node of its kind can have given how many ${a} and ${b} there are (Borgatti and Everett 1997). 1 = the most possible for its kind.`;
+  if (key === 'twoModeCloseness') return `The fewest total steps possible for its kind (1 to each node of the other kind, 2 to each of its own) divided by its actual total; scaled down by the share it can reach when the network is in pieces. 1 = as close as possible.`;
+  if (key === 'twoModeClustering') return `For each node two steps away (same kind), the overlap of their ties: shared / either (Latapy et al. 2008); averaged. 0 = shares nothing with anyone, 1 = identical ties.`;
   if (key === 'closeness') {
     return 'Harmonic closeness: for each other person take 1 / (steps to reach them), add these up and divide by n - 1. A neighbor counts 1, two steps 1/2, three steps 1/3, someone unreachable 0. '
       + 'The textbook closeness is (n - 1) / (sum of steps); it gives lower numbers (the end of a 6-person path: 0.333 textbook, 0.457 harmonic) and breaks when someone cannot be reached.';
@@ -86,7 +93,7 @@ export function measureNote(key, { n = 0, directed = false } = {}) {
 }
 
 // Measures on a 0-1 scale (or close to it): always three decimals.
-export const UNIT_MEASURES = new Set(['betweenness', 'betweennessWeighted', 'closeness', 'closenessWeighted', 'pagerank', 'eigenvector', 'clustering', 'reciprocity', 'constraint', 'egoDensity']);
+export const UNIT_MEASURES = new Set(['betweenness', 'betweennessWeighted', 'closeness', 'closenessWeighted', 'pagerank', 'eigenvector', 'clustering', 'reciprocity', 'constraint', 'egoDensity', 'twoModeDegree', 'twoModeBetweenness', 'twoModeCloseness', 'twoModeClustering']);
 
 export function measureFormat(key, values) {
   return columnFormat(values, UNIT_MEASURES.has(key) ? { digits: 3 } : {});

@@ -16,6 +16,7 @@
 import { parseXml, kids, kid, descend, sniffRoot } from './xml.js';
 import { parseCSV, headerRow, entryText, parseTimestamp } from './tabular.js';
 import { peek } from '../core/fileset.js';
+import { MODE_ATTR, DEFAULT_MODE_LABELS, modeValue, declareTwoMode } from '../core/model.js';
 
 const XML_EXT = /\.(graphml|xml|gexf)$/i;
 const TEXT_EXT = /\.(gml|net|paj|dl|txt|dat|edgelist|edges|ncol|el|csv|tsv)$/i;
@@ -286,6 +287,11 @@ export function readGraphML(text) {
     }
     return { data: out, ylabel: label };
   }
+
+  // Graph-level data (networkx keeps it in G.graph). Mode labels of a
+  // two-mode file are our own convention: mode0_label / mode1_label.
+  const gdata = decode(graph, 'graph').data;
+  if (gdata.mode0_label != null || gdata.mode1_label != null) g.modeLabels = [gdata.mode0_label, gdata.mode1_label].map(x => (x == null || x === '' ? null : String(x)));
 
   let nested = 0;
   for (const n of kids(graph, 'node')) {
@@ -610,7 +616,8 @@ export function readPajek(text) {
       const a = {};
       const x = num(tok[2]), y = num(tok[3]), z = num(tok[4]);
       if (!Number.isNaN(x) && !Number.isNaN(y)) { a.x = x; a.y = y; if (!Number.isNaN(z)) a.z = z; }
-      if (n1) a.mode = Number(id) <= n1 ? 1 : 2;
+      // Two-mode: *Vertices N N1, the first N1 are the first mode (spec section 4).
+      if (n1) a.bipartite = Number(id) <= n1 ? 0 : 1;
       vattrs.set(id, a);
     } else if (section === 'arcs' || section === 'edges') {
       if (tok.length < 2) continue;
@@ -623,7 +630,8 @@ export function readPajek(text) {
       tok.forEach((v, j) => { const w = num(v); if (w && !Number.isNaN(w)) edges.push({ s: String(matrixRow), t: String(j + 1), w, times: [], relation, matrix: true }); });
     }
   }
-  for (let i = 1; i <= nVert; i++) if (!vlabel.has(String(i))) vlabel.set(String(i), String(i));
+  for (let i = 1; i <= nVert; i++) if (!vlabel.has(String(i))) { vlabel.set(String(i), String(i)); if (n1) vattrs.set(String(i), { bipartite: i <= n1 ? 0 : 1 }); }
+  if (n1 > 0 && n1 < nVert) g.twoMode = true;
   if (vlabel.size > nVert && nVert) warn(g, 'pajek-vertex-count', `The header says ${nVert} vertices but more were listed.`);
   const labels = [...vlabel.values()];
   const useLabel = new Set(labels).size === labels.length;
@@ -705,16 +713,29 @@ export function readDL(text) {
     i++; // unknown token in header: skip
   }
   if (!h.n && h.nr && h.nc && h.nr === h.nc) h.n = h.nr;
-  if (h.nr && h.nc && h.nr !== h.nc) warn(g, 'dl-two-mode', 'This is a two-mode (rectangular) DL matrix; rows and columns were imported as separate nodes.');
+  // Two-mode (affiliation) DL: a rectangular matrix (NR != NC), a square one
+  // whose row and column labels differ, or EDGELIST2 (the spec's 2-mode edge
+  // list). Rows become mode 0, columns mode 1 (node attribute `bipartite`).
+  const twoMode = h.format === 'edgelist2' || !!(h.nr && h.nc && (h.nr !== h.nc || (h.rowLabels.length && h.colLabels.length && h.rowLabels.some((l, k) => l !== h.colLabels[k]))));
+  if (twoMode) {
+    warn(g, 'dl-two-mode', 'This is a two-mode DL file: rows were imported as one kind of node (actors) and columns as the other (events), with ties only between the two.');
+    g.twoMode = true;
+  }
   const n = h.n || h.nr || 0;
   const rowL = h.rowLabels.length ? h.rowLabels : h.labels;
   const colL = h.colLabels.length ? h.colLabels : h.labels;
   const rel = k => (h.nm > 1 ? (h.matrixLabels[k] ?? `matrix ${k + 1}`) : (h.matrixLabels[0] ?? null));
   const edges = [];
   const nodeOrder = [];
-  const see = id => { if (!g.nodes.has(id)) { addNode(g, id, id); nodeOrder.push(id); } return id; };
-  for (const l of rowL) see(l);
-  for (const l of colL) see(l);
+  // One-mode: a node per label. Two-mode: rows and columns are different
+  // kinds, so a column whose label is also a row label gets its own id.
+  const see = (id, mode = -1) => {
+    if (twoMode && mode === 1 && g.nodes.has(id) && g.nodes.get(id).attrs.bipartite === 0) id = `${id} (column)`;
+    if (!g.nodes.has(id)) { addNode(g, id, id.replace(/ \(column\)$/, ''), twoMode && mode >= 0 ? { bipartite: mode } : null); nodeOrder.push(id); }
+    return id;
+  };
+  for (const l of rowL) see(l, 0);
+  if (!twoMode || h.colLabels.length) for (const l of colL) see(l, 1);
   const dataLines = dataText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
   if (h.format === 'fullmatrix' || h.format === 'upperhalf' || h.format === 'lowerhalf') {
@@ -731,13 +752,14 @@ export function readDL(text) {
       }
       rLab = [];
       for (const r of rows) { if (Number.isNaN(num(r[0]))) { if (rLab.length < nr) rLab.push(r[0]); vals.push(...r.slice(1)); } else vals.push(...r); }
-      for (const l of rLab) see(l); for (const l of cLab) see(l);
+      for (const l of rLab) see(l, 0); for (const l of cLab) see(l, 1);
     } else {
       vals = dataLines.flatMap(l => dlTokens(l).filter(x => x !== '=' && x !== ':'));
     }
-    const label = (arr, k) => arr[k] ?? see(String(k + 1));
-    for (let k = 0; k < nr; k++) see(label(rLab, k));
-    for (let k = 0; k < nc; k++) see(label(cLab, k));
+    // Ids per row and column (see() resolves a column id clashing with a row).
+    const rowIds = Array.from({ length: nr }, (_, k) => see(rLab[k] ?? String(k + 1), 0));
+    const colIds = Array.from({ length: nc }, (_, k) => see(cLab[k] ?? String(k + 1), 1));
+    const label = (arr, k) => (arr === rLab ? rowIds[k] : colIds[k]);
     let p = 0;
     for (let m = 0; m < h.nm; m++) {
       for (let r = 0; r < nr; r++) {
@@ -753,11 +775,13 @@ export function readDL(text) {
     if (p < vals.length) warn(g, 'dl-extra-values', `The DL data had ${vals.length - p} more values than the declared matrix size; they were ignored.`);
     if (h.format !== 'fullmatrix') g.directed = false;
   } else if (h.format === 'edgelist1' || h.format === 'nodelist1' || h.format === 'edgelist2' || h.format === 'nodelist2') {
-    const ref = tk => {
-      if (h.embedded) return see(tk);
+    // EDGELIST2: first column refers to rows, second to columns [UNVERIFIED:
+    // the spec names the format as 2-mode without showing an example].
+    const ref = (tk, mode = -1) => {
+      if (h.embedded) return see(tk, mode);
       const k = Number(tk);
-      if (Number.isInteger(k) && k >= 1) return see(h.labels[k - 1] ?? (h.rowLabels[k - 1] ?? String(k)));
-      return see(tk);
+      if (Number.isInteger(k) && k >= 1) return see((mode === 1 ? h.colLabels[k - 1] : null) ?? h.labels[k - 1] ?? (h.rowLabels[k - 1] ?? String(k)), mode);
+      return see(tk, mode);
     };
     let m = 0;
     for (const l of dataLines) {
@@ -766,7 +790,7 @@ export function readDL(text) {
       if (h.format.startsWith('edgelist')) {
         if (tk.length < 2) continue;
         const w = tk.length > 2 ? num(tk[2].replace(',', '.')) : 1;
-        edges.push({ s: ref(tk[0]), t: ref(tk[1]), w: Number.isNaN(w) ? 1 : w, times: [], relation: rel(m) });
+        edges.push({ s: ref(tk[0], twoMode ? 0 : -1), t: ref(tk[1], twoMode ? 1 : -1), w: Number.isNaN(w) ? 1 : w, times: [], relation: rel(m) });
       } else {
         const ego = ref(tk[0]);
         for (const x of tk.slice(1)) edges.push({ s: ego, t: ref(x), w: 1, times: [], relation: rel(m) });
@@ -775,7 +799,7 @@ export function readDL(text) {
   } else {
     throw new Error(`UCINET DL format "${h.format}" is not supported (fullmatrix, upperhalf, lowerhalf, edgelist1, nodelist1 are).`);
   }
-  if (h.format === 'fullmatrix' || h.format.startsWith('edgelist') || h.format.startsWith('nodelist')) {
+  if (twoMode) { g.directed = false; g.edges = edges; } else if (h.format === 'fullmatrix' || h.format.startsWith('edgelist') || h.format.startsWith('nodelist')) {
     const und = !(h.nr && h.nc && h.nr !== h.nc) ? symmetricCollapse(edges) : null;
     if (und && edges.length) { g.directed = false; g.edges = und; } else g.edges = edges;
   } else g.edges = edges;
@@ -869,6 +893,11 @@ function readEdgeTable(rows, g, { gephi, defaultDirected }) {
 export function readMatrixCSV(rows) {
   const g = newGraph(true);
   const cols = rows[0].slice(1).map(c => String(c).trim());
+  // No row label among the column labels: an incidence matrix (two-mode,
+  // rows = people, columns = events), not an adjacency matrix.
+  const rowLabels = rows.slice(1).map(r => String(r[0] ?? '').trim()).filter(Boolean);
+  const colSet = new Set(cols);
+  if (rowLabels.length && cols.length && !rowLabels.some(l => colSet.has(l))) return readIncidenceCSV(rows, cols);
   for (const c of cols) addNode(g, c, c);
   const edges = [];
   let selfLoops = 0;
@@ -886,6 +915,23 @@ export function readMatrixCSV(rows) {
   if (selfLoops) warn(g, 'self-loops', 'Diagonal cells (a node tied to itself) were ignored.', selfLoops);
   const und = symmetricCollapse(edges);
   if (und) { g.directed = false; g.edges = und; } else g.edges = edges;
+  return g;
+}
+
+function readIncidenceCSV(rows, cols) {
+  const g = newGraph(false);
+  g.twoMode = true;
+  warn(g, 'incidence-matrix', 'Row names and column names do not overlap, so this was read as a two-mode incidence matrix: rows are one kind of node (actors), columns the other (events).');
+  for (const r of rows.slice(1)) { const rl = String(r[0] ?? '').trim(); if (rl) addNode(g, rl, rl, { bipartite: 0 }); }
+  for (const c of cols) addNode(g, c, c, { bipartite: 1 });
+  for (const r of rows.slice(1)) {
+    const rl = String(r[0] ?? '').trim();
+    if (!rl) continue;
+    cols.forEach((c, j) => {
+      const w = num(String(r[j + 1] ?? '').trim().replace(/^(-?\d+),(\d+)$/, '$1.$2'));
+      if (w && !Number.isNaN(w)) g.edges.push({ s: rl, t: c, w, times: [], relation: null });
+    });
+  }
   return g;
 }
 
@@ -909,8 +955,32 @@ export function readEdgeListText(text, directed) {
 
 const FORMAT_OF = { graphml: 'graphml', gexf: 'gexf', gml: 'gml', pajek: 'pajek', dl: 'ucinet-dl', 'gephi-edges': 'gephi-csv', 'csv-edgelist': 'edgelist', edgelist: 'edgelist', matrix: 'gephi-csv' };
 
+// Two-mode (affiliation) graph? A reader may say so (a rectangular DL
+// matrix, Pajek *Vertices N N1); otherwise, as networkx's bipartite files,
+// when every node has `bipartite` 0 or 1 and both occur. Returns the mode per
+// node id, or null.
+function graphModes(g) {
+  const mode = new Map();
+  let c0 = 0, c1 = 0;
+  for (const [id, n] of g.nodes) {
+    const m = modeValue(n.attrs?.[MODE_ATTR]);
+    if (m < 0) return null;
+    mode.set(id, m);
+    if (m) c1++; else c0++;
+  }
+  return c0 && c1 ? mode : null;
+}
+
 function emit(builder, g, { format, rel, fileNames, signal }) {
-  builder.beginSource({ format, family: 'network', medium: 'declared', view: 'full', context: 'custom', tz: 'UTC', fileNames, directed: !!g.directed });
+  const modes = graphModes(g);
+  builder.beginSource({ format, family: 'network', medium: 'declared', view: 'full', context: 'custom', tz: 'UTC', fileNames, directed: modes ? false : !!g.directed });
+  if (modes) {
+    declareTwoMode(builder, [0, 1].map(k => g.modeLabels?.[k] || DEFAULT_MODE_LABELS[k]));
+    // The mode is stored as the number 0 / 1 whatever the file wrote (a
+    // string, a boolean), so twoModeOf and the exporters agree.
+    for (const [id, n] of g.nodes) n.attrs = { ...n.attrs, [MODE_ATTR]: modes.get(id) };
+    if (g.directed) builder.warn('two-mode-undirected', 'A two-mode (affiliation) network has no direction; ties were read as undirected.');
+  }
   for (const w of g.warns) builder.warn(w.code, w.message, w.count);
   const base = builder.context(`net:${rel}`, { name: rel, kind: 'network', visibility: 'unknown', medium: 'declared' });
   const idx = new Map();
@@ -920,7 +990,7 @@ function emit(builder, g, { format, rel, fileNames, signal }) {
     builder.stat('nodes');
   }
   const relCtx = new Map();
-  let self = 0, timed = 0, k = 0;
+  let self = 0, timed = 0, k = 0, sameMode = 0;
   for (const e of g.edges) {
     if ((++k & 0xffff) === 0 && signal?.aborted) throw new DOMException('Import cancelled', 'AbortError');
     if (e.s === e.t) { self++; continue; }
@@ -935,11 +1005,24 @@ function emit(builder, g, { format, rel, fileNames, signal }) {
     }
     const t = e.times.length ? e.times[0] : NaN;
     if (!Number.isNaN(t)) timed++;
+    if (modes) {
+      const ms = modes.get(e.s), mt = modes.get(e.t);
+      if (ms !== mt) {
+        // An affiliation: from the actor (mode 0) to the event (mode 1).
+        const [a, b] = ms === 0 ? [e.s, e.t] : [e.t, e.s];
+        builder.event({ type: 'declared', t, actor: idx.get(a), targets: [[idx.get(b), 'member']], context: c, weight: e.w });
+        builder.stat('affiliations');
+        builder.stat('edges');
+        continue;
+      }
+      sameMode++;
+    }
     builder.event({ type: 'declared', t, actor: idx.get(e.s), targets: [[idx.get(e.t), 'declared']], context: c, weight: e.w });
     builder.stat('edges');
   }
   if (self) { builder.stat('self-loops', self); builder.warn('self-loops', 'Ties from a node to itself cannot be represented and were skipped.', self); }
   if (timed) builder.stat('timed-edges', timed);
+  if (sameMode) builder.warn('same-mode-ties', 'Some ties join two nodes of the same kind in this two-mode file; they are kept, but the two-mode view and its projections leave them out (switch the two-mode view off in the construction settings to see them).', sameMode);
   if (!g.edges.length) builder.warn('no-edges', 'This file has no ties.');
 }
 

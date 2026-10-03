@@ -45,7 +45,8 @@ toFileSet(input) / subsetFileSet(fs, rels) / rootedFileSet(fs, root)
 | `egoKeys` | Survey or Network Canvas sources with several respondents. `egoKey` is then null. |
 | `egoInferredFrom` | Email and calendar: `option`, `delivered-to`, `sent-label` or `most-frequent-recipient`. |
 | `window` | Calendar: the `{ start, end }` used for recurrence expansion. |
-| `tableKind` | Spreadsheet sources: `events`, `edges` or `nodes`. |
+| `tableKind` | Spreadsheet sources: `events`, `edges`, `nodes`, `affiliations` or `incidence`. |
+| `twoMode` | Two-mode (affiliation) sources: `{ labels: [mode0, mode1] }` (`declareTwoMode`, src/core/model.js; see "Two-mode data" below). |
 
 ## Shared conventions
 
@@ -106,14 +107,14 @@ toFileSet(input) / subsetFileSet(fs, rels) / rootedFileSet(fs, root)
 | | `noTieValues` | as listed in the option |
 | | `combine` | `union` (or `intersection`, `respondent`): roster forms, same rules and default as the Roster builder. Nominations stay events; union and intersection make the source `directed: false`, intersection drops one-sided nominations. Stated as info warning `combine-rule`; counts `nominations`, `reciprocatedPairs`, `ties` |
 | tabular | `mapping` | none |
-| | `kind` | `events` / `edges` / `nodes` |
+| | `kind` | `events` / `edges` / `nodes` / `affiliations` / `incidence` |
 | | `view` | `full` |
 
 Extra named exports:
 - **teams.js:** `tarEntries(stream, want)`, `parseGraphTime`, `parseParticipants`.
 - **email.js:** `parseEmailDate` (explicit RFC 5322 parser, obsolete forms included), `parseFromLineDate`, `mboxMessages(stream)`, `classify`, `FROM_LINE`.
 - **calendar.js:** `unfoldBytes`.
-- **network-files.js:** `readGraphML`, `readGEXF`, `readGML`, `readPajek`, `readDL`, `readGephiNodes`, `readMatrixCSV`, `readEdgeListText`.
+- **network-files.js:** `readGraphML`, `readGEXF`, `readGML`, `readPajek`, `readDL`, `readGephiNodes`, `readMatrixCSV`, `readEdgeListText`. Graphs may carry `twoMode: true` and `modeLabels` (see "Two-mode data").
 - **network-canvas.js:** `cleanCell`, `typedValue`, `numericValue`, `normName`, `isoMs`.
 
 ### Spreadsheet mapper (`src/importers/tabular.js`)
@@ -133,6 +134,8 @@ mapping = { actor, targets, targetSeparator, timestamp, timeFormat, timezone, co
   - If it is a role, it becomes the target role.
   - Otherwise it becomes a relation context.
 - A `directed` column holding `Undirected` sets `source.directed = false`.
+- Two-mode kinds (see "Two-mode data"): `affiliations` reads `actor` (the person), `targets` (the event or group; `targetSeparator` splits a list), optional `weight` and `timestamp`; `incidence` reads `actor` (the row name), `events[]` (the event columns: a number is the weight, blank or 0 none, `x`/`yes`/`true` 1) and `attrs[]` (row attributes). Both take `modeLabels: [people, events]` and write affiliations with `addAffiliation`; people keep `<namespace>:<value>` keys, events get `<namespace>:event:<value>`. An incidence row with no membership still adds the person.
+- `suggestMapping` proposes `incidence` for a first column of distinct names followed by mostly 0/1 columns (two or more; other columns become row attributes), and `affiliations` when a person-like column repeats beside an event-like one (event, group, club, committee, board, course, project, meeting ...). Mode labels default to the plural of the column header ("student" -> "Students"). A table with one row per person (unique names) stays `nodes`.
 
 CSV helpers used by every CSV importer:
 - `parseCSV(text, { delimiter })` returns `{ rows, delimiter }`. It uses PapaParse and normalises line endings first.
@@ -212,7 +215,7 @@ Two rules hold for every match:
 ## Import report (`src/core/report.js`)
 
 ```js
-importReport(ds) -> { totals: { nodes, events, contexts, sources, bots, timeRange, warnings: { error, warn, info } }, sources: [...], notes[], groups[] }
+importReport(ds) -> { totals: { nodes, events, contexts, sources, bots, timeRange, warnings: { error, warn, info }, twoMode }, sources: [...], notes[], groups[] }
 warningSeverity(w) -> 'error'|'warn'|'info'
 personalGroupLines(sources) -> { canShow[], cannotShow[] }   // wording for many personal exports read as one group
 ```
@@ -229,6 +232,7 @@ Each entry in `sources` has these fields:
 | `tz` | `{ value, status: exact\|assumed\|zone, note }` |
 | `label`, `title` | the name people know the source by (`formatLabel(format, variant)`: "Gmail", "LinkedIn", "WhatsApp"), and the source's own title (a chat name) or null |
 | `reported` | true when every event is a self-reported tie (surveys, network files); the UI words counts as nominations |
+| `twoMode` | two-mode sources: `{ labels, counts: [n0, n1] }` (nodes of each kind in its events), else null |
 | `counts` | `nodes`, `events`, `eventsByType`, `targetsByRole`, `contexts`, `contextsByVisibility`, `contextsByKind`, `messages`, `messagesWithText` (messages only, never reactions), `undatedEvents`, `eventsWithoutTargets` |
 | `bots` | `{ nodes, events, names }` |
 | `deactivated` | `{ nodes, names, keys }`: people in this source's events with `attrs.deactivated` |
@@ -264,6 +268,28 @@ RULE_NAME = { union: 'union', intersection: 'reciprocated', respondent: 'as repo
 ```
 
 `rederiveSurvey` rewrites the roster with the other rule through `writeRoster`, keeps the response notes (the `combine-rule` line names the new rule), carries over attributes joined since (by node key, `roster:<name>`), the attribute schema and `meta.profileJoins`, and names the result with the rule in parentheses, so saves and exports of each version get their own file names. A project saved without nominations throws with the reason ("import the response files again"). The Data view's import report shows the switch (Union / Reciprocated only / As reported) when `rederivableSource` finds one.
+
+## Two-mode data (import and export)
+
+The representation is in CONTRACTS.md and `src/core/model.js`: node attribute `bipartite` (0/1), `source.twoMode = { labels }`, affiliations as `declared` events with a `member` target.
+
+| Format | Read | Write (two-mode view of two-mode data) |
+|---|---|---|
+| GraphML | `bipartite` node attribute 0/1 on every node (networkx's convention, any type: int, string, boolean); mode labels from graph-level `mode0_label` / `mode1_label` data (our convention) | `bipartite` as `long` (networkx reads `int`), mode labels as graph data |
+| GEXF | `bipartite` attribute on every node | `bipartite` as `long` |
+| GML | `bipartite` key on every node | `bipartite` integer key |
+| Gephi CSV | `bipartite` column of the node table | `bipartite` column |
+| Pajek | `*Vertices N N1`: the first N1 vertices are mode 0 (spec section 4) | `*Vertices N N0`, mode-0 vertices first, each edge actor first |
+| UCINET DL | a rectangular matrix (`NR != NC`), a square one whose row and column labels differ, or `EDGELIST2` [UNVERIFIED: the spec names it 2-mode without an example]: rows mode 0, columns mode 1; a column labelled like a row gets the id `<label> (column)` | `dl nr= nc= format=fullmatrix` with `row labels:` / `column labels:` (up to 250,000 cells; above that the one-mode edge list, and the mode is lost) |
+| Adjacency-matrix CSV (empty top-left cell) | no row name among the column names: an incidence matrix, rows mode 0 | |
+| Spreadsheet mapper | `affiliations` and `incidence` kinds (above) | |
+
+- **Detection.** A reader may mark its graph two-mode (Pajek, DL, incidence CSV); otherwise a file is two-mode when every node has `bipartite` 0 or 1 and both occur. The source is then declared two-mode (default labels Actors / Events unless the file names them) and `directed: false` (an info warning `two-mode-undirected` if the file said directed). The mode is stored as the number 0 / 1 whatever the file wrote.
+- **Ties.** A tie between the modes becomes an affiliation (actor = the mode-0 end, target role `member`), with its weight, time and relation context; counted as `affiliations`. A tie within a mode is kept as a declared tie and reported (`same-mode-ties`); the two-mode view and its projections leave it out.
+- **Warnings:** `dl-two-mode` and `incidence-matrix` (info) say a file was read as two-mode.
+- **Export.** `twoModeExport(net)` (graphml.js) returns `{ labels, mode, order (mode-0 first), n0 }` for the two-mode view, else null. Attribute formats carry `bipartite` like any node attribute. Exporting a projection writes an ordinary one-mode file (every node has the same `bipartite`, so it reads back as one-mode).
+- **Import report.** `totals.twoMode = { labels, counts: [n0, n1] }` (every node) and per source `twoMode = { labels, counts }` (nodes in its events), or null; two-mode sources add a can-show line (who belongs to what, and who shares what with whom) and a cannot-show line (a shared membership is an opportunity to meet, not a tie). The Data view counts both kinds and the affiliations instead of people and nominations.
+- **Validation.** `test/importers-a/twomode.test.js`: networkx-written bipartite GraphML, GEXF and GML fixtures (`test/fixtures/importers-a/network-files/nx-bipartite.*`) read as two-mode; networkx reads our GraphML with `bipartite` as int, the right node sets and the mode labels in `G.graph`; Pajek, DL and incidence-CSV fixtures; the mapper's suggestions and imports. The accuracy campaign's `roundtrip` check adds two-mode cases (`TWO_MODE_FORMATS`, `twoModeRoundTrip` in `tools/accuracy/checks/roundtrip.mjs`): random bipartite datasets through GraphML, GEXF, GML, Pajek, DL and Gephi CSV must come back two-mode with the same mode per node, ties, weights and two-mode measures.
 
 ## Exporters (`src/exporters/*.js`)
 

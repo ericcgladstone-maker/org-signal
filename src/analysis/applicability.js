@@ -8,11 +8,12 @@
 import { VIEWS } from '../core/model.js';
 import { graphOf, components } from './graph.js';
 import { NODE_METRICS } from './metrics.js';
+import { TWO_MODE_METRICS, isTwoModeView } from './twomode.js';
 
 const RANK = { ok: 0, caution: 1, na: 2 };
 const HIERARCHY_KEYS = /^(manager|manager_?id|managerkey|reports_?to|supervisor|supervisor_?id|boss|line_?manager)$/i;
 
-export const APPLICABILITY_KEYS = [...NODE_METRICS,
+export const APPLICABILITY_KEYS = [...NODE_METRICS, ...TWO_MODE_METRICS, 'twoModeDensity', 'robinsAlexander',
   'density', 'reciprocityNetwork', 'transitivity', 'avgClustering', 'avgPathLength', 'degreeCentralization', 'strengthGini', 'degreeAssortativity',
   'communities', 'groups', 'ego', 'nullModel', 'resampleRanks', 'timeSeries', 'detectShifts', 'compareBeforeAfter',
   'affect', 'keywords', 'topics', 'diffusion', 'hierarchy'];
@@ -106,6 +107,30 @@ export function applicability(ds, net) {
   if (on.includes('adjacency')) flag(['reciprocity', 'reciprocityNetwork'], 'caution', 'Turn-taking ties are inferred in both directions by construction, which inflates reciprocity.');
   if (net.directed && sources.some(s => s.directed === false)) flag(['reciprocity', 'reciprocityNetwork', 'inDegree', 'outDegree'], 'caution', 'Some sources record undirected ties (connections, drawn or undirected network files); they enter the directed network in both directions, which inflates reciprocity.');
   if (on.includes('follow') && on.length === 1) flag(['strength', 'inStrength', 'outStrength'], 'caution', 'Follows have no strength; every tie weighs the same.');
+
+  // --- two-mode data ---
+  const tmv = isTwoModeView(net);
+  const twoModeKeys = [...TWO_MODE_METRICS, 'twoModeDensity', 'robinsAlexander'];
+  if (!tmv) {
+    flag(twoModeKeys, 'na', net.twoMode ? 'This is a one-mode projection of two-mode data; two-mode measures apply to the two-mode view (construction settings, Two-mode).' : 'Needs a two-mode (affiliation) network: actors tied only to the events or groups they belong to.');
+  } else {
+    const [l0, l1] = net.twoMode.labels;
+    const kinds = `${l0.toLowerCase()} and ${l1.toLowerCase()}`;
+    flag(['clustering', 'transitivity', 'avgClustering', 'egoDensity'], 'na', `In a two-mode network ties run only between ${kinds}, so there are no triangles and one-mode clustering is always 0. Use two-mode clustering (Latapy) or the Robins-Alexander coefficient, or look at a projection.`);
+    flag(['constraint', 'effectiveSize'], 'na', `Burt's measures ask whether a person's contacts are tied to each other; in a two-mode network contacts are always of the other kind and never tied to each other, so the values are meaningless. Use a projection.`);
+    flag(['density'], 'na', `One-mode density counts ties that cannot exist here (between two ${l0.toLowerCase()} or two ${l1.toLowerCase()}). Use two-mode density, which divides by ${l0.toLowerCase()} x ${l1.toLowerCase()}.`);
+    flag(['degreeCentralization', 'degreeAssortativity'], 'na', 'Defined for one-mode networks; the two modes have different maximum degrees, so the one-mode formula does not apply.');
+    flag(['betweenness', 'closeness', 'betweennessWeighted', 'closenessWeighted', 'eigenvector', 'pagerank', 'coreNumber'], 'caution', `Computed as if ${kinds} were one kind of node: values of the two modes are not comparable. Use the two-mode versions (Borgatti-Everett normalization) to compare within each mode.`);
+    flag(['nullModel'], 'na', 'Rewiring a two-mode network with the one-mode null model would create ties within a mode; compare a projection instead.');
+    flag(['communities'], 'caution', `Communities are found on the projection of ${l0.toLowerCase()} by shared ${l1.toLowerCase()}; each of the ${l1.toLowerCase()} joins the community most of its members are in.`);
+    if (net.twoMode.counts[0] < 2 || net.twoMode.counts[1] < 1) flag(twoModeKeys, 'na', 'Each mode needs nodes in the network.');
+  }
+  if (net.twoMode && net.twoMode.basis >= 0) {
+    const t = net.twoMode, [l0, l1] = t.labels;
+    const me = (t.basis === 0 ? l0 : l1).toLowerCase(), via = (t.basis === 0 ? l1 : l0).toLowerCase();
+    flag(['clustering', 'transitivity', 'avgClustering', 'constraint', 'effectiveSize', 'egoDensity'], 'caution', `In a projection every one of the ${via} becomes a clique of its ${me}, which inflates clustering and constraint by construction.`);
+    flag(['nullModel'], 'caution', `The rewired comparison networks ignore that the projection is made of cliques (one per shared node), so clustering and modularity look significant more easily than they are.`);
+  }
 
   // --- size, isolates, components ---
   const cc = components(g);

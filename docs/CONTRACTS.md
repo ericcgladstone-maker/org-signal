@@ -36,6 +36,13 @@ Org Signal turns raw relational traces (exports, surveys, hand-drawn networks, s
 - Reactions target the reacted-to author with role `subject`. Meetings, Slack huddles and Purview transcripts are `copresence` events with `attendee` targets.
 - `source.defaultTieFilters` (optional): tie-field filters the source asks to apply by default, e.g. a stitched ego survey leaves out ties respondents only perceive between other people. `defaultSettings` copies them into `tieFields.filters`; the user can remove them.
 - After creation, change a label with `builder.setLabel(i, label)` and a context's visibility with `builder.setVisibility(ci, vis)`; never write the builder's arrays directly.
+- **Two-mode (affiliation) data** (`src/core/model.js`, "two-mode"). Actors (mode 0: people, women, directors) are tied only to the things they belong to or attend (mode 1: events, clubs, boards). Representation:
+  - each node's mode is the node attribute `bipartite` (`MODE_ATTR`), `0` or `1` (the networkx attribute, so GraphML/GEXF round-trip);
+  - the source declares `twoMode: { labels: [mode0Label, mode1Label] }` (e.g. `['Women', 'Events']`) and `directed: false`;
+  - an affiliation is a `declared` event from the actor with the mode-1 node as a `member` target, optionally weighted (`weight`), dated (`t`) and with tie fields (`attrs`). Any other `declared` tie between the two modes (a network file) counts too.
+  - Helpers: `declareTwoMode(builder, labels)`, `addModeNode(builder, key, mode, { label, attrs })`, `addAffiliation(builder, actorKey, eventKey, { weight, t, attrs, actorLabel, eventLabel, actorAttrs, eventAttrs, context, key })` (creates both nodes with their modes and declares the current source two-mode if it is not yet), `twoModeOf(ds)` -> `null` or `{ mode: Int8Array (0 / 1 / -1 unknown), labels, counts: [n0, n1], unknown, declared }`. A dataset with no declaration is two-mode when every non-bot node has `bipartite` 0 or 1 and both occur (a networkx file).
+  - Example (Davis's Southern Women): `const b = new DatasetBuilder({ name: 'Southern Women' }); b.beginSource({ format: 'classic', view: 'full', context: 'custom', directed: false }); declareTwoMode(b, ['Women', 'Events']); addAffiliation(b, 'davis:evelyn', 'davis:e1', { actorLabel: 'Evelyn', eventLabel: 'June 27', t: Date.UTC(1936, 5, 27) });`
+  - Construction (`settings.twoMode = { view: 'two-mode' | 'mode0' | 'mode1', projection: 'count' | 'newman' | 'binary', minShared }`) and the two-mode measures are in `docs/api/analysis.md` ("Two-mode networks").
 - `detect()` may return `files` (the entries it claims) so the pipeline can hand unclaimed files (e.g. an HR CSV dropped next to a Slack export) to the profile join.
 
 ## Module ownership
@@ -89,6 +96,10 @@ detectShifts(series, opts) / compareBeforeAfter(ds, settings, date)
 affect(ds, { by }) / keywords(ds, { by, k }) / topics(ds, { k, seed }) / diffusion(ds, net, { terms })
 edgeEvidence(ds, net, a, b, { limit }) -> [event summaries]   // each with attrs (tie fields) or null
 edgeTieAttributes(ds, net) -> { fields: [{ key, label, type }], values: Array(edges) }   // src/analysis/construct.js
+// Two-mode data (twoModeOf(ds) non-null): settings.twoMode = { view: 'two-mode'|'mode0'|'mode1',
+//   projection: 'count'|'newman'|'binary', minShared }; Network.twoMode = { view, labels, mode Uint8Array(n),
+//   counts, basis, projection, ... }; TWO_MODE_METRICS twoModeDegree, twoModeBetweenness, twoModeCloseness,
+//   twoModeClustering (two-mode view only); network twoModeDensity, robinsAlexander; communities barberModularity.
 ```
 
 Every metric is documented in `docs/api/analysis.md` with a one-line plain-language meaning and a reliability note (shown in the UI). Validation: values match networkx (python3 + networkx 3.2 are installed) on reference graphs, recorded as fixtures.

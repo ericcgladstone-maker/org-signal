@@ -6,15 +6,24 @@ import { engine } from '../services/engine.js';
 
 let cache = { version: null, promise: null, data: null };
 
-export function cachedRender(version) {
-  return cache.version === version ? cache.data : null;
+// version: the network build; arrange: the two-mode arrangement ('columns' |
+// 'rows'), or null for the force layout. One layout is kept at a time; the
+// People profile asks for the network version only and takes whatever
+// layout is cached (ties and weights do not depend on it).
+const keyOf = (version, arrange) => `${version}|${arrange || ''}`;
+
+export function cachedRender(version, arrange) {
+  if (arrange === undefined) return cache.version === version ? cache.data : null;
+  return cache.key === keyOf(version, arrange) ? cache.data : null;
 }
 
-export function getRender(version) {
-  if (cache.version === version && cache.promise) return cache.promise;
-  const p = store.actions.runJob('Laying out the network', (signal, progress) => engine.render({ signal, onProgress: progress }))
+export function getRender(version, arrange) {
+  if (arrange === undefined && cache.version === version && cache.promise) return cache.promise;
+  const key = keyOf(version, arrange);
+  if (cache.key === key && cache.promise) return cache.promise;
+  const p = store.actions.runJob('Laying out the network', (signal, progress) => engine.render({ signal, onProgress: progress, ...(arrange ? { arrange } : {}) }))
     .then(data => { if (cache.promise === p) cache.data = data; return data; }, e => { if (cache.promise === p) cache = { version: null, promise: null, data: null }; throw e; });
-  cache = { version, promise: p, data: null };
+  cache = { version, key, promise: p, data: null };
   return p;
 }
 

@@ -14,6 +14,7 @@ What was verified, against what, how often, how tightly, and what was found. The
 | stats | null-model degrees, p calibration, power, bootstrap coverage, shift detection, before/after | 1,275 trials (4,000 null replicates, 600 null draws, 300 bootstrap datasets, 27,000 simulated series, 300 before/after datasets) | 4,218 | 0 |
 | construction | buildNetwork vs a naive reimplementation of every rule | 2,000 datasets x 3 settings | 38,394 | 0 unexplained (5 reported differences) |
 | roundtrip | export, re-import, recompute: GraphML, GEXF, GML, Pajek, UCINET DL (2 layouts), Gephi CSV, edge CSV | 500 graphs x 8 formats | 4,000 round trips | 0 |
+| twomode | two-mode degree, betweenness, closeness, clustering, density, Robins-Alexander, projections (count, Newman, binary, minimum shared), Barber modularity, Davis Southern Women, against networkx.algorithms.bipartite | 1,000 datasets + Davis | 2,052,529 | 0 |
 | content | VADER per message and aggregated, keyword counts and TF-IDF, tokenizer | 300 datasets | 414,205 | 0 |
 | recovery | generator + recoveryCheck over every context, medium and preset; shift false alarms and power | 1,858 generator runs | | see below |
 
@@ -318,6 +319,36 @@ Across all runs: median 0.94, 5th percentile 0.54.
 - **Bot campaigns** on X / Bluesky / Mastodon are missed in 50-60% of seeds.
 - **Generator bug (reported, `src/generator/**`):** with `medium: 'network'` and `output: 'dataset'` the source does not set `directed: false`. Default construction then builds undirected true ties one way, and fidelity drops to 0.60-0.72. Built undirected, it is 1.00; the native GraphML round trip is correct. Pinned as a `todo` in `test/accuracy/recovery.test.js`.
 
+## 8. Two-mode networks
+
+Added 2026-10-03 with two-mode support (`src/analysis/twomode.js`, `settings.twoMode` in `construct.js`). `tools/accuracy/checks/twomode.mjs` builds random bipartite datasets through the real path: `DatasetBuilder` + `declareTwoMode` + `addAffiliation`, with interleaved node order (actors and events mixed in the dataset), affiliation weights 1-4, repeated affiliations (15%), dates, and same-mode noise ties (a survey tie between two people) in 30% of datasets, which the two-mode view must drop. Families: random G(n0, n1, p) with p 0.05-0.6, sparse, dense, complete, star (one event everyone attends and one person at every event), two components, path, tiny (1-3 x 1-3) and one-event; sizes 1-40 x 1-25 with 3% at 100-300 x 50-150. `tools/accuracy/twomode.py` computes the reference with networkx 3.2.1:
+
+| Engine | networkx | Largest error (1,000 datasets, seed 1) |
+|---|---|---|
+| `twoModeDegree` | `bipartite.degree_centrality` | 1.1e-16 |
+| `twoModeBetweenness` (Borgatti-Everett normalization per mode) | `bipartite.betweenness_centrality` | 2.2e-16 |
+| `twoModeCloseness` (Borgatti-Everett, with networkx's reach factor) | `bipartite.closeness_centrality` | 0 |
+| `twoModeClustering` (Latapy, dot) | `bipartite.clustering` | 3.3e-16 |
+| `twoModeDensity` | `bipartite.density` | 0 |
+| `robinsAlexander` | `bipartite.robins_alexander_clustering` | 0 |
+| `twoModeAvgClustering` | `bipartite.average_clustering` | 2.2e-16 |
+| projection `count`, `newman`, `binary` onto each mode | `weighted_projected_graph`, `collaboration_weighted_projected_graph`, `projected_graph` (edge sets exact) | weights 1.1e-15 |
+| projection with `minShared` 2 or 3 | `weighted_projected_graph` filtered | exact |
+| `barberModularity` of the detected partition | hand formula (Barber 2007; networkx has none) | within 1e-9 |
+
+Tolerance 1e-9 (relative above 1, absolute below) for measures; projection edge sets must match exactly and weights to 1e-12. Also checked per case: every node is kept, one tie per affiliation, same-mode ties dropped, each projection keeps every node of its mode (isolates included) and no other, and two-mode communities cover every node. Seed 1: 1,001 cases, 2,052,529 comparisons, 0 failures; seed 2: 1,001 cases, 1,848,218 comparisons, 0 failures (about 45 s each, most of it networkx). `test/accuracy/twomode.test.js` runs 150 datasets plus Davis with python, and the recorded Davis values (`test/fixtures/accuracy/davis-southern-women.json`) without it.
+
+**Round trips.** The roundtrip check (`tools/accuracy/checks/roundtrip.mjs`, `runTwoMode`) exports the two-mode view of 125 random two-mode datasets per format (GraphML, GEXF, GML, Gephi CSV, Pajek, UCINET DL), re-imports and rebuilds them: each comes back two-mode with the same mode per node, ties, weights and two-mode measures. Full scale with the one-mode cases: 4,750 round trips, 0 failures. networkx reads our GraphML with `bipartite` as an int (`test/importers-a/twomode.test.js`).
+
+**Davis Southern Women** (`nx.davis_southern_women_graph()`, 18 women x 14 events, 89 ties) is built through `addAffiliation` and matches every measure and projection: two-mode density 0.3532, Robins-Alexander 0.4678 (networkx's documented 0.468), Evelyn Jefferson two-mode degree 0.5714 (8 of 14 events), betweenness 0.0966, closeness 0.8000; event E8 degree 0.7778 (14 of 18 women). Communities on the women's projection give 2 groups with Barber modularity 0.3159.
+
+**Conventions** (the engine follows networkx; documented in `docs/api/analysis.md`, "Two-mode networks"):
+
+- **Unweighted.** Every two-mode measure, the projections and Barber's modularity treat an affiliation as present or not, as networkx does; affiliation weights still give strength and the two-mode view's tie weights.
+- **Where networkx divides by zero.** `bipartite.betweenness_centrality` fails for the whole graph when one mode's maximum is 0 (one actor and one event, or one node against one). The engine returns NaN for that mode only and normal values for the other; the reference then applies networkx's own per-mode formula to the mode it can (21 of 100 small cases in the first trial run).
+- **Closeness** is networkx's classic closeness with the Borgatti-Everett numerator and its reach factor (reachable - 1) / (N - 1), not the harmonic closeness the one-mode view uses.
+- **Construction.** A `member` target on a `declared` event is an affiliation: rule `declared`, symmetric. The naive construction model (section 6) was extended with that rule, and the first role listed decides symmetry when one event names the same person twice (as the engine's per-event de-duplication does); the construction check stays at 0 unexplained differences (6,000 settings).
+
 ## Discrepancies fixed in this campaign
 
 Each has a regression test in `test/accuracy/`.
@@ -353,4 +384,4 @@ node tools/accuracy/campaign.mjs --out /tmp/accuracy/ref --only reference,invari
 node tools/accuracy/campaign.mjs --out /tmp/accuracy/ref --only reference --count reference=10000
 ```
 
-Checks: `reference, closedforms, invariance, consistency, approx, stats, construction, roundtrip, content, recovery` (`tools/accuracy/checks/*.mjs`; each exports `run({ count, seed })`). The reference check needs python3 with networkx and numpy; it runs python in parallel processes. The exit code is 1 if any check failed. To replay one failing graph, use `makeCase(failure.spec)` from `tools/accuracy/lib.mjs`.
+Checks: `reference, closedforms, invariance, consistency, approx, stats, construction, roundtrip, content, twomode, recovery` (`tools/accuracy/checks/*.mjs`; each exports `run({ count, seed })`). The reference and twomode checks need python3 with networkx (and numpy for reference); it runs python in parallel processes. The exit code is 1 if any check failed. To replay one failing graph, use `makeCase(failure.spec)` from `tools/accuracy/lib.mjs`.

@@ -165,6 +165,9 @@ export const engine = {
       nodeIds: current.nodeIds,
       summary: net?.summary ?? {},
       settings,
+      // Two-mode data (src/analysis/construct.js): { view, labels, mode (per
+      // network node), counts, basis, projection, minShared, ... } or null.
+      twoMode: net?.twoMode ?? null,
       version: Date.now(),
     };
   },
@@ -248,6 +251,10 @@ export function normaliseRender(r) {
       byRule: r.byRule || r.edges?.byRule || {},
       layerMask: toTyped(r.layerMask || r.edges?.layerMask, Uint8Array),
       directed: !!r.directed,
+      // Two-mode networks: the mode of each render node and the mode names.
+      mode: toTyped(r.nodes?.mode || r.mode, Uint8Array),
+      modeLabels: r.modeLabels || null,
+      twoModeView: r.twoModeView || null,
     };
   }
   // Shape B: interleaved positions.

@@ -1,0 +1,33 @@
+<?xml version='1.0' encoding='utf-8'?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"><key id="d1" for="edge" attr.name="weight" attr.type="long"/>
+<key id="d0" for="node" attr.name="bipartite" attr.type="long"/>
+<graph edgedefault="undirected"><node id="Avery Lin">
+  <data key="d0">0</data>
+</node>
+<node id="Jordan Pike">
+  <data key="d0">0</data>
+</node>
+<node id="Sam Ortiz">
+  <data key="d0">0</data>
+</node>
+<node id="Riley Chen">
+  <data key="d0">0</data>
+</node>
+<node id="Chess club">
+  <data key="d0">1</data>
+</node>
+<node id="Choir">
+  <data key="d0">1</data>
+</node>
+<node id="Robotics">
+  <data key="d0">1</data>
+</node>
+<edge source="Avery Lin" target="Chess club"/>
+<edge source="Avery Lin" target="Choir"/>
+<edge source="Jordan Pike" target="Choir"/>
+<edge source="Sam Ortiz" target="Robotics"/>
+<edge source="Sam Ortiz" target="Choir"/>
+<edge source="Riley Chen" target="Robotics">
+  <data key="d1">2</data>
+</edge>
+</graph></graphml>

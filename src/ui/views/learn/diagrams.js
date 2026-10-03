@@ -1,5 +1,5 @@
-// Tiny static figures for the five core ideas in Learn (degree, betweenness,
-// closeness, clustering, constraint). Concept drawings, not data: one person
+// Tiny static figures for the core ideas in Learn (degree, betweenness,
+// closeness, clustering, constraint, two-mode networks and projections). Concept drawings, not data: one person
 // in focus wears the first categorical color (--cat-1), everyone else the
 // site's node ink, ties the edge ink; a tie that matters is drawn in --cat-1
 // at 2px, a missing tie dashed. Text stays in ink tokens. Each figure has a
@@ -71,4 +71,28 @@ function Constraint() {
   </${Fig}>`;
 }
 
-export const DIAGRAMS = { degree: Degree, betweenness: Betweenness, closeness: Closeness, clustering: Clustering, constraint: Constraint };
+// Two-mode figures: people are circles, events squares (as in Build and
+// Network), so the kind of node never rests on color.
+const square = ([x, y], focus = false) => { const s = focus ? RF : R; return html`<rect x=${x - s} y=${y - s} width=${2 * s} height=${2 * s} class=${focus ? 'lf-node lf-node--focus' : 'lf-node'} />`; };
+
+function TwoMode() {
+  const p = [[40, 30], [40, 75], [40, 120]], e = [[200, 48], [200, 102]];
+  return html`<${Fig} h=${150} label="Three people on the left (circles) tied to two events on the right (squares); ties only run between a person and an event." caption="People (circles) tied only to events (squares). The middle person attended both events; nobody is tied to another person directly.">
+    ${tie(p[0], e[0])}${tie(p[1], e[0], 'key')}${tie(p[1], e[1], 'key')}${tie(p[2], e[1])}
+    ${node(p[0])}${node(p[1], true)}${node(p[2])}${square(e[0])}${square(e[1])}
+    ${text([40, 146], 'people')}${text([200, 146], 'events')}
+  </${Fig}>`;
+}
+
+function Projection() {
+  const p = [[30, 34], [30, 96]], e = [[100, 20], [100, 65], [100, 110]];
+  const q = [[180, 34], [180, 96]];
+  return html`<${Fig} h=${140} label="Left: two people who share two events. Right: the projection, one tie between the two people with weight 2." caption="Projecting onto people: two people who share 2 events get one tie of weight 2. The events themselves disappear.">
+    ${tie(p[0], e[0])}${tie(p[0], e[1], 'key')}${tie(p[0], e[2], 'key')}${tie(p[1], e[1], 'key')}${tie(p[1], e[2], 'key')}
+    ${node(p[0], true)}${node(p[1], true)}${e.map(x => square(x))}
+    ${tie(q[0], q[1], 'key')}${node(q[0], true)}${node(q[1], true)}${text([196, 69], '2', 'start')}
+    <path d="M126 65 H152 M146 59 L152 65 L146 71" class="lf-tie" fill="none" />
+  </${Fig}>`;
+}
+
+export const DIAGRAMS = { degree: Degree, betweenness: Betweenness, closeness: Closeness, clustering: Clustering, constraint: Constraint, twoMode: TwoMode, projection: Projection };

@@ -116,7 +116,10 @@ test('Learn: beginner concepts exist, every key is in the glossary, links go to 
   // Every assignment has at least one entry in "Find it in the app".
   for (let i = 1; i <= 12; i++) assert.ok(TASKS.some(t => t.a === `A${i}`), `A${i}`);
   for (const t of TASKS) { assert.ok(ids.has(t.to)); for (const k of t.learn) assert.ok(GLOSSARY[k], k); }
-  assert.deepEqual(EXAMPLES.map(x => x.id), ['two-cliques-broker', 'path-and-star', 'ring-small-world', 'class-friendships', 'ego-10']);
+  assert.deepEqual(EXAMPLES.map(x => x.id), ['two-cliques-broker', 'path-and-star', 'ring-small-world', 'class-friendships', 'clubs-two-mode', 'ego-10']);
   // Learn names each example as Build opens it.
-  assert.deepEqual(EXAMPLES.map(x => x.title), ['Two teams and a broker', 'A path of six people', 'A ring (compare with the small world)', 'Class friendships with majors', 'An ego network: you and 10 people']);
+  assert.deepEqual(EXAMPLES.map(x => x.title), ['Two teams and a broker', 'A path of six people', 'A ring (compare with the small world)', 'Class friendships with majors', 'Students and clubs (two-mode)', 'An ego network: you and 10 people']);
+  // Two-mode concepts and their figures.
+  for (const k of ['twoMode', 'affiliation', 'projection', 'borgattiEverett']) assert.ok(SECTIONS.find(s => s.id === 'twomode').keys.includes(k) && TEACH[k], k);
+  for (const d of ['twoMode', 'projection']) assert.ok(DIAGRAMS[d]);
 });

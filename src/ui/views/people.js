@@ -9,7 +9,7 @@
 import { html, useState, useMemo, useEffect, useRef } from '../../../vendor/preact.js';
 import { store, useStore } from '../store.js';
 import { engine } from '../services/engine.js';
-import { gloss, NODE_METRICS } from '../services/glossary.js';
+import { gloss, NODE_METRICS, TWO_MODE_METRICS } from '../services/glossary.js';
 import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, MetricInfo, Flag, Swatch, ConstructionButton, useEngine, download, applicabilityReason, HowToRead, Verdict, useExplain, useDetailsDismiss } from '../components/common.js';
 import { VirtualTable } from '../components/vtable.js';
 import { Spark } from '../components/charts.js';
@@ -25,9 +25,12 @@ import { departures, hasTimes } from '../lib/departures.js';
 import { stabilityReading, stabilitySummary, resamplingCaveat, TOP_CHOICES } from '../lib/stability.js';
 import { peopleSort, rememberPeopleSort, rememberColumn, applyColumnChoices } from '../lib/viewprefs.js';
 import { EVENT_TYPES } from '../../core/model.js';
+import { twoModeOfNet, isTwoModeView, withoutModeAttr, modeLabelOf } from '../lib/twomode.js';
 
 const DEFAULT_METRICS = ['contacts', 'strength', 'betweenness', 'closeness', 'pagerank'];
-const ORDER = ['contacts', ...NODE_METRICS];
+// Two-mode view: the measures normalized per kind of node come first.
+const TWO_MODE_DEFAULT = ['contacts', 'twoModeDegree', 'twoModeBetweenness', 'twoModeCloseness'];
+const ORDER = ['contacts', ...TWO_MODE_METRICS, ...NODE_METRICS];
 const TOP = 10;
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -65,20 +68,25 @@ function PeopleInner({ ds, net }) {
   const profile = useStore(s => s.ui?.profile ?? null);
   const stability = useStability(net);
   const node = useMemo(() => withContacts(metrics?.node, net.directed), [metrics, net.directed]);
-  const attrs = useMemo(() => preferredAttributes(ds), [ds]);
+  const attrs = useMemo(() => withoutModeAttr(preferredAttributes(ds)), [ds]);
+  const tm = twoModeOfNet(net);
+  const twoModeView = isTwoModeView(net);
+  const tmView = tm?.view ?? null;
   // Ordinal attributes are both groupable and numeric; show each one once.
-  const numAttrs = useMemo(() => numericAttributes(ds).filter(a => !attrs.some(g => g.key === a.key)), [ds, attrs]);
+  const numAttrs = useMemo(() => withoutModeAttr(numericAttributes(ds)).filter(a => !attrs.some(g => g.key === a.key)), [ds, attrs]);
   const metricKeys = distinctMeasures(ORDER.filter(k => node?.[k]), net.directed);
   const naKeys = metricKeys.filter(k => ap[k]?.level === 'na');
-  if (prefs.ds !== ds) {
+  if (prefs.ds !== ds || prefs.view !== tmView) {
     // Measures that do not apply start hidden (C12); the reader's own column
     // and sort choices carry over from the last network (M11, J15).
     const visibleAttrs = attrs.filter(a => !isBookkeeping(a)).slice(0, 2).map(a => `attr:${a.key}`);
     const available = new Set(metricKeys.map(k => `m:${k}`));
     const unweighted = sameValues(node?.strength, node?.contacts);
-    const base = new Set(['community', ...visibleAttrs, ...DEFAULT_METRICS.filter(k => available.has(`m:${k}`) && ap[k]?.level !== 'na' && !(k === 'strength' && unweighted)).map(k => `m:${k}`)]);
+    const base = new Set([...(twoModeView ? ['mode'] : []), 'community', ...visibleAttrs, ...(twoModeView ? TWO_MODE_DEFAULT : DEFAULT_METRICS).filter(k => available.has(`m:${k}`) && ap[k]?.level !== 'na' && !(k === 'strength' && unweighted)).map(k => `m:${k}`)]);
     const has = key => key === 'name' || available.has(key) || base.has(key);
-    prefs = { ds, sort: peopleSort(has) || { key: 'm:contacts', dir: 'desc' }, cols: applyColumnChoices(base, available), q: '' };
+    const cols = applyColumnChoices(base, available);
+    if (twoModeView) cols.add('mode');
+    prefs = { ds, view: tmView, sort: peopleSort(has) || { key: twoModeView ? 'm:twoModeDegree' : 'm:contacts', dir: 'desc' }, cols, q: '', mode: '' };
   } else {
     const pending = peopleSort(key => key.startsWith('m:') && !!node?.[key.slice(2)]);
     if (pending) prefs.sort = pending;
@@ -87,6 +95,9 @@ function PeopleInner({ ds, net }) {
   // dataset loads, so component state would keep the old choices.
   const [, redraw] = useState(0);
   const { q, sort, cols } = prefs;
+  // Two-mode view: show one kind of node, or both ('' = both).
+  const modeSel = twoModeView ? (prefs.mode || '') : '';
+  const setModeSel = v => { prefs.mode = v; redraw(x => x + 1); };
   const setQ = v => { prefs.q = v; redraw(x => x + 1); };
   const setSort = f => { const n = typeof f === 'function' ? f(prefs.sort) : f; prefs.sort = n; rememberPeopleSort(n); redraw(x => x + 1); };
   const setCols = (c, key, on) => { prefs.cols = c; if (key) rememberColumn(key, on); redraw(x => x + 1); };
@@ -99,7 +110,7 @@ function PeopleInner({ ds, net }) {
   const left = departures(ds);
 
   // Dots follow what the Network map is colored by (L6, N21).
-  const colorBy = getColorBy(ds, communities, attrs);
+  const colorBy = getColorBy(ds, communities, attrs, net);
   const dots = useMemo(() => nodeColoring({ ds, net, communities, colorBy, attrs, nodeMetrics: node, label: k => metricLabel(k, net.directed) }), [ds, net, communities, colorBy, node]);
 
   const mlabel = k => metricLabel(k, net.directed);
@@ -108,10 +119,11 @@ function PeopleInner({ ds, net }) {
 
   // Every column that can be shown; `cols` decides which are.
   const allColumns = [
+    ...(twoModeView ? [{ key: 'mode', title: 'Kind', width: 'minmax(6rem,.7fr)', min: 96, group: 'People' }] : []),
     ...(communities ? [{ key: 'community', title: 'Community', width: 'minmax(5.5rem,.7fr)', min: 96, group: 'People' }] : []),
     ...attrs.map(a => ({ key: `attr:${a.key}`, title: a.label, width: 'minmax(7rem,1fr)', min: 110, group: isBookkeeping(a) ? 'Data-collection fields' : 'Attributes' })),
     ...numAttrs.map(a => ({ key: `num:${a.key}`, title: a.label, num: true, width: 'minmax(5.5rem,.8fr)', min: 90, group: 'Attributes' })),
-    ...metricKeys.map(k => ({ key: `m:${k}`, title: mlabel(k), info: html`<${MetricInfo} metric=${k} label=${mlabel(k)} note=${measureNote(k, { n: net.n, directed: net.directed })} />`, num: true, width: 'minmax(8.5rem,.9fr)', min: 136, group: ap[k]?.level === 'na' ? 'Measures that do not apply to this data' : 'Measures' })),
+    ...metricKeys.map(k => ({ key: `m:${k}`, title: mlabel(k), info: html`<${MetricInfo} metric=${k} label=${mlabel(k)} note=${measureNote(k, { n: net.n, directed: net.directed, twoMode: net.twoMode })} />`, num: true, width: 'minmax(8.5rem,.9fr)', min: 136, group: ap[k]?.level === 'na' ? 'Measures that do not apply to this data' : 'Measures' })),
   ];
   const stabCols = Object.keys(stability).filter(m => cols.has(`m:${m}`)).flatMap(m => [
     { key: `iv:${m}`, title: `${mlabel(m).split(' (')[0]} rank range`, num: true, sortable: false, width: 'minmax(7rem,.9fr)', min: 112, after: `m:${m}` },
@@ -136,6 +148,7 @@ function PeopleInner({ ds, net }) {
       const i = ids[v];
       if (s && !(ds.nodes.labels[i] || '').toLowerCase().includes(s) && !ds.nodes.keys[i].toLowerCase().includes(s)) continue;
       if (filterAttr && filterVal !== '' && String(ds.nodes.attrs[i][filterAttr] ?? '') !== filterVal) continue;
+      if (modeSel !== '' && String(tm.mode[v]) !== modeSel) continue;
       out.push(v);
     }
     const key = sort.key;
@@ -143,6 +156,7 @@ function PeopleInner({ ds, net }) {
       const i = ids[v];
       if (key === 'name') return (ds.nodes.labels[i] || '').toLowerCase();
       if (key === 'community') return communities?.membership[v] ?? Infinity;
+      if (key === 'mode') return tm?.mode ? tm.mode[v] : 0;
       if (key.startsWith('attr:')) return String(ds.nodes.attrs[i][key.slice(5)] ?? '￿');
       if (key.startsWith('num:')) { const x = Number(ds.nodes.attrs[i][key.slice(4)]); return Number.isFinite(x) ? x : -Infinity; }
       if (key.startsWith('top:')) { const x = stability[key.slice(4)]?.map.get(i)?.topShare; return Number.isFinite(x) ? x : -Infinity; }
@@ -153,7 +167,7 @@ function PeopleInner({ ds, net }) {
     const cache = new Map(out.map(v => [v, val(v)]));
     out.sort((a, b) => { const x = cache.get(a), y = cache.get(b); return x < y ? -dir : x > y ? dir : a - b; });
     return out;
-  }, [ids, q, sort, filterAttr, filterVal, node, communities, stability]);
+  }, [ids, q, sort, filterAttr, filterVal, node, communities, stability, modeSel, tm]);
 
   const onSort = (k) => setSort(s => (s.key === k ? { key: s.key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: k === 'name' || k.startsWith('attr:') ? 'asc' : 'desc' }));
   const selSet = new Set(selection.map(i => net.nodeIds.indexOf(i)).filter(v => v >= 0));
@@ -177,6 +191,7 @@ function PeopleInner({ ds, net }) {
     // flag is how a departed person passed for a current broker in testing.
     if (c.key === 'name') return html`<span class="vt-name">${dot(v)}<span class="vt-name__text">${nodeLabel(ds, i)}</span>${badges(i)}</span>`;
     if (c.key === 'community') return String(communities.membership[v] + 1);
+    if (c.key === 'mode') return modeLabelOf(net, v) || '–';
     if (c.key.startsWith('attr:')) { const x = ds.nodes.attrs[i][c.key.slice(5)]; return x == null || x === '' ? html`<span class="muted">–</span>` : fmtAttr(c.key.slice(5), x); }
     if (c.key.startsWith('num:')) { const k = c.key.slice(4); const x = ds.nodes.attrs[i][k]; return x == null || x === '' ? html`<span class="muted">–</span>` : fmtAttr(k, Number.isFinite(Number(x)) && !/offset/i.test(k) ? fmtNum(Number(x)) : x); }
     if (c.key.startsWith('iv:')) { const r = stability[c.key.slice(3)]?.map.get(i); return r ? (r.lo === r.hi ? fmtInt(r.lo) : `${fmtInt(r.lo)} to ${fmtInt(r.hi)}`) : '–'; }
@@ -193,6 +208,7 @@ function PeopleInner({ ds, net }) {
         let x;
         if (c.key === 'name') x = nodeLabel(ds, i);
         else if (c.key === 'community') x = communities.membership[v] + 1;
+        else if (c.key === 'mode') x = modeLabelOf(net, v);
         else if (c.key.startsWith('m:')) x = node[c.key.slice(2)][v];
         else if (c.key.startsWith('attr:')) x = ds.nodes.attrs[i][c.key.slice(5)];
         else if (c.key.startsWith('num:')) x = ds.nodes.attrs[i][c.key.slice(4)];
@@ -222,19 +238,21 @@ function PeopleInner({ ds, net }) {
       actions=${html`<div class="tlinks"><${ConstructionButton} /><button type="button" class="tlink tlink--down" onClick=${exportCSV}>Export table</button></div>`} />
     <div class="toolbar">
       <label class="field field--grow"><span>Search</span><input class="input" type="search" placeholder="Name or id" value=${q} onInput=${e => setQ(e.currentTarget.value)} /></label>
+      ${twoModeView && html`<${Select} label="Show" value=${modeSel} onChange=${setModeSel} options=${[{ value: '', label: `${tm.labels[0]} and ${tm.labels[1].toLowerCase()}` }, { value: '0', label: `${tm.labels[0]} only` }, { value: '1', label: `${tm.labels[1]} only` }]} />`}
       ${attrs.length > 0 && html`<${Select} label="Filter by" value=${filterAttr} onChange=${v => { setFilterAttr(v); setFilterVal(''); }} options=${[{ value: '', label: 'Everyone' }, ...attrs.map(a => ({ value: a.key, label: a.label }))]} />`}
       ${filterAttr && html`<${Select} label="Value" value=${filterVal} onChange=${setFilterVal} options=${[{ value: '', label: 'Any' }, ...filterValues.map(v => ({ value: v, label: fmtAttr(filterAttr, v) }))]} />`}
     </div>
     <div class="split">
       <div class="split__main">
         <div class="row row--between" style="margin-bottom:.4rem;gap:.5rem 1.5rem">
-          <p class="meta" style="margin:0">${fmtInt(rows.length)} of ${fmtInt(ids.length)} people</p>
+          <p class="meta" style="margin:0">${fmtInt(rows.length)} of ${fmtInt(ids.length)} ${twoModeView ? 'nodes' : 'people'}</p>
           <div class="tlinks">
             ${canStab && !stability[sortMetric] && html`<button type="button" class="tlink" onClick=${runStability} disabled=${stabBusy}>${stabBusy ? 'Resampling' : `Check how stable the ${mlabel(sortMetric).split(' (')[0].toLowerCase()} ranking is`}</button>`}
             ${!(phone && !showTable) && html`<${ColumnChooser} columns=${allColumns} cols=${cols} setCols=${setCols} />`}
           </div>
         </div>
         <p class="small text2 people-sorted">${sortedBy} <${DotKey} coloring=${dots} /></p>
+        ${twoModeView && html`<p class="small text2 people-twomode">A two-mode network: ${fmtInt(tm.counts[0])} ${tm.labels[0].toLowerCase()} and ${fmtInt(tm.counts[1])} ${tm.labels[1].toLowerCase()}. Two-mode measures are scaled to what is possible for each kind (Borgatti and Everett 1997), so ${modeSel === '' ? html`rank each kind among its own: <button type="button" class="tlink" onClick=${() => setModeSel('0')}>${tm.labels[0]} only</button> or <button type="button" class="tlink" onClick=${() => setModeSel('1')}>${tm.labels[1].toLowerCase()} only</button>.` : `this list ranks the ${tm.labels[Number(modeSel)].toLowerCase()} among themselves.`}</p>`}
         ${sortMetric && stability[sortMetric] && html`<${TopStability} ds=${ds} metric=${sortMetric} label=${mlabel(sortMetric)} result=${stability[sortMetric]} n=${ids.length} values=${node[sortMetric]} fmt=${formats[sortMetric]} net=${net} left=${left} />`}
         ${phone && !showTable ? html`<${RankedList} ds=${ds} ids=${ids} node=${node} rows=${rows} metric=${listMetric} keys=${metricKeys.filter(k => ap[k]?.level !== 'na')} label=${mlabel} fmt=${formats} dot=${dot} badges=${badges}
               onMetric=${k => setSort({ key: `m:${k}`, dir: 'desc' })} onOpen=${open} />
@@ -316,7 +334,7 @@ function RankingHowTo({ ds, net, node, metric, label, fmt }) {
   const tied = order.filter(v => fmt(arr[v]) === fmt(arr[top]));
   const who = tied.length > 1 ? `${tied.slice(0, 3).map(v => nodeLabel(ds, net.nodeIds[v])).join(', ')}${tied.length > 3 ? ` and ${tied.length - 3} more` : ''} share the top value (${fmt(arr[top])})` : `${nodeLabel(ds, net.nodeIds[top])} is first with ${fmt(arr[top])}${order[1] != null ? `, then ${nodeLabel(ds, net.nodeIds[order[1]])} with ${fmt(arr[order[1]])}` : ''}`;
   return html`<${HowToRead} title=${`How to read the ranking by ${label}`}
-    means=${measureNote(metric, { n: net.n, directed: net.directed }) || gloss(metric).meaning}
+    means=${measureNote(metric, { n: net.n, directed: net.directed, twoMode: net.twoMode }) || gloss(metric).meaning}
     scale="Read the order, not the size of the number: values depend on the size of the network, so 0.2 can be high in one network and low in another. A gap between neighbors in the list matters more than the value itself."
     example=${`${who}.`}
     mistake="Calling the person at the top the most important without checking how stable the ranking is: two people a few thousandths apart are tied for any reading." />`;
@@ -424,14 +442,14 @@ function Profile({ ds, net, i, hidden }) {
 
   if (edge) return html`<${Evidence} ds=${ds} a=${edge.a} b=${edge.b} onClose=${() => setEdge(null)} />`;
   const t = tokens();
-  const attrs = Object.entries(ds.nodes.attrs[i]).filter(([k]) => k !== 'deactivated');
+  const attrs = Object.entries(ds.nodes.attrs[i]).filter(([k]) => k !== 'deactivated' && k !== 'bipartite');
   // The plots follow the table: a measure that does not apply here (path
   // measures in one person's exports) is not plotted either.
   const sv = series.data ? sparkSeries(series.data, i, ['degree', 'strength', 'betweenness'].filter(k => ap[k]?.level !== 'na' && !(k === 'strength' && unweighted))) : null;
   return html`<div>
     <h2 class="label">Profile</h2>
     <p class="profile-head" tabindex="-1" ref=${head}>${nodeLabel(ds, i)}</p>
-    <p class="meta" style="margin:.2rem 0 .6rem">${[key, ds.nodes.isBot[i] ? 'bot' : null].filter(Boolean).join(' · ')}${communities && v >= 0 ? html`${key || ds.nodes.isBot[i] ? ' · ' : ''}<${Swatch} color=${comm.color(String(communities.membership[v]))} /> Community ${communities.membership[v] + 1}` : ''}</p>
+    <p class="meta" style="margin:.2rem 0 .6rem">${[v >= 0 ? modeLabelOf(net, v) : null, key, ds.nodes.isBot[i] ? 'bot' : null].filter(Boolean).join(' · ')}${communities && v >= 0 ? html`${key || ds.nodes.isBot[i] || modeLabelOf(net, v) ? ' · ' : ''}<${Swatch} color=${comm.color(String(communities.membership[v]))} /> Community ${communities.membership[v] + 1}` : ''}</p>
     ${isDeactivated(ds, i) && html`<p class="small"><${Flag} level="caution">Deactivated account</${Flag}> <span class="text2">This account was deactivated in the source; its ties end when the person left${dep?.last != null ? ` (last active ${fmtDate(dep.last)})` : ''}. Whole-period measures mix the time before and after, and rank stability cannot show that.</span></p>`}
     ${dep?.kind === 'silent' && html`<p class="small"><${Flag} level="caution">Left?</${Flag}> <span class="text2">No activity after ${fmtDate(dep.last)}: silent for the last ${fmtInt(dep.quietDays)} days of the data. Whole-period measures mix the time before and after, and rank stability cannot show that; compare before and after in Time.</span></p>`}
     ${hidden && html`<p class="small text2"><${Flag} level="info">Not in the table</${Flag}> The current search or filter hides this person.</p>`}
@@ -462,12 +480,12 @@ function Profile({ ds, net, i, hidden }) {
         const iv = stability[k]?.map.get(i);
         const level = ap[k]?.level;
         return html`<div class="metric-row">
-          <span><${MetricName} metric=${k} label=${metricLabel(k, net.directed)} note=${measureNote(k, { n: net.n, directed: net.directed })} gloss=${true} /></span>
+          <span><${MetricName} metric=${k} label=${metricLabel(k, net.directed)} note=${measureNote(k, { n: net.n, directed: net.directed, twoMode: net.twoMode })} gloss=${true} /></span>
           <span class="metric-row__val">${measureFormat(k, arr)(arr[v])}</span>
           <span class="metric-row__sub">
             ${fmtRank(rk)}
             ${iv && html` · <span style="color:var(--text-2)">${stabilityReading(iv, stability[k].top ?? TOP).text}; in the top ${stability[k].top ?? TOP} in ${fmtPct(iv.topShare)} of resamples</span>`}
-            ${explain && (k === 'closeness' || k === 'betweenness') && html`<br /><span class="profile-note">${measureNote(k, { n: net.n, directed: net.directed })}</span>`}
+            ${explain && (k === 'closeness' || k === 'betweenness') && html`<br /><span class="profile-note">${measureNote(k, { n: net.n, directed: net.directed, twoMode: net.twoMode })}</span>`}
             ${level === 'caution' && html`<br/><${Flag} level="caution" /> ${applicabilityReason(ap[k])}`}
           </span>
         </div>`;

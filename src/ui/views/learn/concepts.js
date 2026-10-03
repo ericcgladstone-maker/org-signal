@@ -16,6 +16,7 @@ export const SECTIONS = [
   { id: 'network', title: 'The whole network', intro: 'One number for everyone together.', keys: ['density', 'reciprocityNetwork', 'transitivity', 'avgClustering', 'components', 'largestComponentShare', 'avgPathLength', 'diameter', 'degreeCentralization', 'strengthGini', 'degreeAssortativity', 'modularity'] },
   { id: 'groups', title: 'Groups', intro: 'Do ties stay inside departments, majors or communities?', keys: ['eiIndex', 'assortativity', 'numericAssortativity', 'groupDensity'] },
   { id: 'chance', title: 'Is it more than chance?', intro: 'How the app tells a pattern from noise. Read these before calling anything a finding.', keys: ['nullModel', 'nullZ', 'nullP', 'rankInterval', 'topShare', 'randomSeed'] },
+  { id: 'twomode', title: 'Two-mode (affiliation) networks', intro: 'People and the events, clubs or boards they belong to, tied only across the two kinds (Davis\'s Southern Women: 18 women and the 14 events they attended).', keys: ['twoMode', 'affiliation', 'projection', 'borgattiEverett', 'twoModeDegree', 'twoModeBetweenness', 'twoModeCloseness', 'twoModeClustering', 'twoModeDensity', 'robinsAlexander', 'barberModularity'] },
   { id: 'surveys', title: 'Surveys', intro: 'Collecting a network by asking people.', keys: ['roster'] },
   { id: 'time', title: 'Time and content', intro: 'Change over time, and what people wrote.', keys: ['tieTurnover', 'shiftZ', 'dz', 'sentiment', 'tfidf', 'topics', 'exposedShare'] },
 ];
@@ -147,6 +148,35 @@ export const TEACH = {
   tieTurnover: { where: [TIME], read: 'How many ties appear and disappear between windows.', mistake: 'Reading churn in daily windows as real change: short windows miss ties by chance.' },
   shiftZ: { where: [['Time: Detected shifts', 'time']], read: 'A week far outside the previous 8 weeks is flagged.', mistake: 'Calling every flag an event: holidays and gaps in the data flag too.' },
   dz: { where: [['Time: Before and after', 'time']], read: 'Size of the average per-person change around the date: about 0.2 small, 0.5 moderate, 0.8 large.', mistake: 'Reading it as caused by the date: anything else that changed then counts too.' },
+  twoMode: {
+    where: [['Construction settings: Two-mode', 'network'], ['Network: shapes and colors by mode', 'network'], ['Build: File, Two-mode drawing', 'build']],
+    read: 'Circles are one kind of node (people), squares the other (events, clubs). A line means "belongs to" or "attended"; two people are never tied directly. Measures are read within a mode: compare people with people and events with events.',
+    mistake: 'Reading one-mode measures on it: ordinary clustering is always 0 (no triangles can exist), density and Burt\'s constraint count ties that cannot exist. The app marks them not applicable.',
+    diagram: 'twoMode',
+  },
+  affiliation: {
+    where: [['Build: File, Two-mode drawing', 'build'], ['Data: an incidence list or matrix', 'data']],
+    read: 'One affiliation per person and event. It can carry a weight (hours, a role) and a date; the two-mode measures count it as present or absent.',
+    mistake: 'Treating shared membership as contact. Two people in the same club had the chance to meet; whether they did is another question.',
+  },
+  projection: {
+    where: [['Construction settings: Two-mode, project onto either mode', 'network']],
+    read: 'Project onto people and two people are tied when they share an event; the tie weight is how many they share (or Newman\'s weighting, where a big event counts less). Project onto events and two events are tied by the people they share.',
+    mistake: 'Reading its clustering or constraint as a finding: every event becomes a clique of its members, which raises both by construction. Check the two-mode view and keep the event sizes in mind.',
+    diagram: 'projection',
+  },
+  borgattiEverett: {
+    where: [['People: the two-mode columns, per mode', 'people']],
+    read: 'Each two-mode measure is scaled by what a node of its own mode could reach: a person who attended every event has two-mode degree 1, and so does an event everyone attended.',
+    mistake: 'Comparing a person\'s value with an event\'s as if both were people. The scales line up; the meanings do not.',
+  },
+  twoModeDegree: { where: [PEOPLE], read: 'Share of the other mode a node is tied to: 0.5 for a person at half the events, or an event half the people attended.', mistake: 'Using plain degree to compare people with events: a mode with more nodes allows more ties.' },
+  twoModeBetweenness: { where: [PEOPLE], read: 'Who joins otherwise separate parts: a person in two clubs that share nobody else, an event that brings two crowds together. 1 is the most a node of its mode could have.', mistake: 'Ranking events and people together on raw betweenness, which ignores how many of each there are.' },
+  twoModeCloseness: { where: [PEOPLE], read: 'How few steps a node needs to reach everyone, against the fewest possible for its mode (1 step to every node of the other mode, 2 to its own).', mistake: 'Comparing it with harmonic closeness: this is the classic form, and in a disconnected network the share reachable dominates.' },
+  twoModeClustering: { where: [PEOPLE], read: 'How much a node shares its ties with the nodes two steps away: people who keep going to the same events as each other score high.', mistake: 'Reading it as ordinary clustering. In a two-mode network that is always 0.' },
+  twoModeDensity: { where: [NETWORK], read: 'Share of possible person-event ties present: ties / (people x events).', mistake: 'Comparing it with one-mode density, which divides by pairs that cannot be tied.' },
+  robinsAlexander: { where: [NETWORK], read: 'Of the people who share one event, how often they also share another: closure in a two-mode network.', mistake: 'Ignoring event sizes: a few very large events create many four-cycles.' },
+  barberModularity: { where: [['Groups: Communities', 'groups'], NETWORK], read: 'How well the communities found on the projection split people and events, compared with random two-mode mixing.', mistake: 'Treating it as the best possible split: the communities were found on the projection, not by maximizing this score.' },
   sentiment: { where: [['Content: Tone', 'content']], read: 'Average tone from -1 to +1; compare groups or weeks, not single messages.', mistake: 'Trusting it on sarcasm, jargon or other languages.' },
   tfidf: { where: [CONTENT], read: 'Words this person or group uses more than the others.', mistake: 'Reading lists for units with very little text.' },
   topics: { where: [CONTENT], read: 'Clusters of words that tend to appear together; name them yourself from their words.', mistake: 'Treating them as fixed: change the number of topics or the seed and they change.' },
@@ -184,6 +214,7 @@ export const EXAMPLES = [
   { id: 'path-and-star', what: 'In the path the middle people score highest and the ends 0. Then open the star (File, Start from an example): its center has betweenness 1. Compare with your hand values.', learn: ['betweenness', 'closeness', 'degree'] },
   { id: 'ring-small-world', what: 'Then open the small world (File, Start from an example): a few shortcuts cut the average path length sharply while clustering barely moves.', learn: ['avgPathLength', 'clustering'] },
   { id: 'class-friendships', what: 'Friendships mostly within majors: positive assortativity, far from what random networks give.', learn: ['assortativity', 'eiIndex', 'nullModel'] },
+  { id: 'clubs-two-mode', what: 'Six students and four clubs. Compare plain and two-mode degree, find the two bridging students by two-mode betweenness, then project onto students: Ana and Ben share two clubs.', learn: ['twoMode', 'projection', 'borgattiEverett', 'twoModeBetweenness'] },
   { id: 'ego-10', what: 'Two circles that do not know each other: low constraint, effective size close to size.', learn: ['constraint', 'effectiveSize', 'ego'] },
 // The title is the one the example opens under in Build, so Learn and the
 // header name match ("Example: <title>").

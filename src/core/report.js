@@ -5,7 +5,7 @@
 // index) plus the counts and warnings importers recorded on each source, so
 // the report is reproducible from a saved project.
 
-import { EVENT_TYPES, ROLES, VISIBILITY, VIEWS } from './model.js';
+import { EVENT_TYPES, ROLES, VISIBILITY, VIEWS, twoModeOf } from './model.js';
 
 // Warning severity. Importers may set w.severity themselves; otherwise the
 // code decides: first the table of codes our importers emit, then patterns.
@@ -109,6 +109,11 @@ function familyLines(s, stats) {
       : 'Observed behavior: these are self-reports, and people who did not respond named nobody.');
   }
   if (s.family === 'network') cannot.push('How the ties were measured: the file holds declared ties whose origin and time window are not recorded.');
+  if (s.twoMode) {
+    const [a, b] = (s.twoMode.labels || ['Actors', 'Events']).map(x => String(x).toLowerCase());
+    can.push(`Two-mode (affiliation) structure: which of the ${a} belong to or attended which of the ${b}, and through that who shares ${b} with whom.`);
+    cannot.push(`Whether ${a} who share one of the ${b} actually interacted: a shared membership is an opportunity to meet, not a tie in itself.`);
+  }
   if (stats.undated === stats.events && stats.events > 0) cannot.push('Change over time: no event has a timestamp.');
   if (stats.events > 0 && stats.withText === 0 && stats.byType.message > 0) cannot.push('Content measures (tone, topics, keywords): the messages carry no text.');
   if (stats.byType.copresence > 0) can.push('Who was together in the same meetings or conversations (co-presence), which is weaker evidence of a tie than a direct message.');
@@ -174,6 +179,9 @@ export function importReport(ds) {
   }
 
   const isDeactivated = i => !!(ds.nodes.attrs[i] && ds.nodes.attrs[i].deactivated);
+  // Two-mode data: nodes of each kind, overall and per source (src/core/model.js twoModeOf).
+  const tm = twoModeOf(ds);
+  const modeCounts = (set) => { const c = [0, 0]; if (tm) for (const i of set) if (tm.mode[i] >= 0) c[tm.mode[i]]++; return c; };
   // Distinct labels, sorted (two bot accounts can share a name).
   const namesOf = list => [...new Set(list.map(i => ds.nodes.labels[i]))].sort((a, b) => String(a).localeCompare(String(b)));
   const sources = ds.meta.sources.map((s, sid) => {
@@ -204,6 +212,8 @@ export function importReport(ds) {
       id: sid,
       format: s.format, family: s.family, medium: s.medium, view: s.view, context: s.context,
       variant: s.variant ?? null, directed: s.directed ?? null,
+      // Two-mode source: its mode labels and how many nodes of each kind take part.
+      twoMode: tm && s.twoMode ? { labels: tm.labels, counts: modeCounts(p.nodes) } : null,
       // How a survey's two answers about a pair were combined (union, intersection, respondent).
       combine: s.combine ?? s.mergeRule ?? null,
       label: formatLabel(s.format, s.variant), title: s.title ?? null,
@@ -304,6 +314,8 @@ export function importReport(ds) {
       deactivated: gone.length, deactivatedInEvents: goneInEvents.length, deactivatedNames: namesOf(goneInEvents).slice(0, 50),
       timeRange: Number.isFinite(tMin) ? { start: tMin, end: tMax } : null,
       warnings: { error: 0, warn: 0, info: 0, ...countSev(sources) },
+      // Two-mode data: { labels, counts: [n0, n1] } over every node, else null.
+      twoMode: tm ? { labels: tm.labels, counts: tm.counts } : null,
     },
     sources, notes, groups,
   };

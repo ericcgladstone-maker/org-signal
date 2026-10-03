@@ -9,7 +9,7 @@
 // bootstrap resampling (event multiplicities) and time windows (event subsets),
 // so all of them agree exactly on what counts as a tie.
 
-import { EVENT_TYPES, ROLES, VISIBILITY, VIEWS, inferEventAttributeSchema } from '../core/model.js';
+import { EVENT_TYPES, ROLES, VISIBILITY, VIEWS, inferEventAttributeSchema, twoModeOf } from '../core/model.js';
 
 export const RULES = ['reply', 'mention', 'dm', 'to', 'cc', 'bcc', 'adjacency', 'copresence', 'declared', 'repost', 'like', 'follow', 'reaction'];
 export const RULE_INFO = {
@@ -21,7 +21,7 @@ export const RULE_INFO = {
   bcc: 'A blind-copied B (Bcc)',
   adjacency: 'A posted right after B in the same conversation (turn-taking, inferred)',
   copresence: 'A and B attended the same meeting or event',
-  declared: 'A named B (survey or hand-drawn tie)',
+  declared: 'A named B (survey or hand-drawn tie), or A belongs to B (affiliation)',
   repost: 'A reposted something by B',
   like: 'A liked something by B',
   follow: 'A follows B',
@@ -93,7 +93,9 @@ export function defaultSettings(ds) {
   // ties are entered in both directions (see forEachEvidence).
   const total = RULES.reduce((s, r) => s + (rules[r].on ? evidence[r] : 0), 0);
   const undirectedShare = (evidence.copresence + undirectedEvidence) / (total || 1);
-  const directed = total === 0 ? !undirectedSource.length || !undirectedSource.every(Boolean) : undirectedShare < 0.5;
+  // Two-mode data: affiliation has no direction (see twoModeDefaults).
+  const tm = twoModeOf(ds);
+  const directed = tm ? false : total === 0 ? !undirectedSource.length || !undirectedSource.every(Boolean) : undirectedShare < 0.5;
   const visibility = [...new Set(Array.from(ds.contexts.visibility, v => VISIBILITY[v]))];
   if (!visibility.includes('unknown')) visibility.push('unknown');
   let hasBots = false;
@@ -116,9 +118,22 @@ export function defaultSettings(ds) {
     // a stitched ego survey leaves out the ties respondents only perceive
     // between other people until the user includes them (ui-build, C2).
     tieFields: { weight: null, filters: defaultTieFilters(ds) },
+    // Two-mode data (twoModeOf): which network to build. null for one-mode data.
+    twoMode: tm ? twoModeDefaults() : null,
     _hasBots: hasBots,
   };
 }
+
+// settings.twoMode for two-mode datasets:
+//   view: 'two-mode' (actors and events, ties only across) | 'mode0' (actors
+//         tied by shared events) | 'mode1' (events tied by shared actors)
+//   projection: how a projection weighs a pair: 'count' of shared
+//         affiliations (default), 'newman' (each shared event adds
+//         1 / (its size - 1), Newman 2001), 'binary' (1)
+//   minShared: a projected pair needs at least this many shared affiliations
+export const TWO_MODE_VIEWS = ['two-mode', 'mode0', 'mode1'];
+export const PROJECTIONS = ['count', 'newman', 'binary'];
+export function twoModeDefaults() { return { view: 'two-mode', projection: 'count', minShared: 1 }; }
 
 function defaultTieFilters(ds) {
   const out = [];
@@ -133,7 +148,17 @@ export function normalizeSettings(ds, s = {}) {
   const d = defaultSettings(ds);
   const rules = {};
   for (const r of RULES) rules[r] = { ...d.rules[r], ...(s.rules?.[r] || {}) };
-  return { ...d, ...s, rules, time: { ...d.time, ...(s.time || {}) }, tieFields: { ...d.tieFields, ...(s.tieFields || {}) } };
+  // twoMode: null (explicitly) builds an ordinary one-mode network of
+  // everyone even from two-mode data; otherwise partial settings are filled.
+  const twoMode = !d.twoMode || (s && 'twoMode' in s && s.twoMode === null) ? null : { ...d.twoMode, ...(s.twoMode || {}) };
+  if (twoMode) {
+    if (!TWO_MODE_VIEWS.includes(twoMode.view)) twoMode.view = 'two-mode';
+    if (!PROJECTIONS.includes(twoMode.projection)) twoMode.projection = 'count';
+    twoMode.minShared = Math.max(1, Math.floor(Number(twoMode.minShared) || 1));
+  }
+  const out = { ...d, ...s, rules, time: { ...d.time, ...(s.time || {}) }, tieFields: { ...d.tieFields, ...(s.tieFields || {}) }, twoMode };
+  if (twoMode) out.directed = false;
+  return out;
 }
 
 // ---- tie fields -----------------------------------------------------------------
@@ -312,7 +337,7 @@ export function forEachEvidence(ds, settings, emit, opts = {}) {
       // so note it before filtering: a reply to an excluded account must not be
       // redirected to whoever wrote the parent message.
       if (role === R.reply) hasReplyTarget = true;
-      else if (role === R.subject || (role === R.declared && ty === T.declared)) hasSubject = true;
+      else if (role === R.subject || ((role === R.declared || role === R.member) && ty === T.declared)) hasSubject = true;
       if (!nodeOk[x] || x === actor) continue;
       let rule = -1;
       switch (role) {
@@ -323,12 +348,15 @@ export function forEachEvidence(ds, settings, emit, opts = {}) {
         case R.cc: rule = broadcast ? -1 : RI.cc; break;
         case R.bcc: rule = broadcast ? -1 : RI.bcc; break;
         case R.declared: rule = RI.declared; break;
+        // Affiliation (two-mode data, addAffiliation): A belongs to / attended B.
+        case R.member: rule = ty === T.declared ? RI.declared : -1; break;
         case R.subject: rule = subjectRule(ty); break;
         default: rule = -1;
       }
       if (rule < 0 || !on[rule]) continue;
       if (done) { const k = rule * N + x; if (done.has(k)) continue; done.add(k); }
-      emit(actor, x, rule, amt, i, vis, symSource[ev.source[i]] === true);
+      // Membership has no direction: symmetric, like co-attendance.
+      emit(actor, x, rule, amt, i, vis, role === R.member || symSource[ev.source[i]] === true);
     }
     // A reply, repost, like or reaction whose parent is in the data but whose
     // importer did not name the parent's author as a target.
@@ -384,7 +412,10 @@ function subjectRule(ty) {
 export function buildNetwork(ds, settingsIn, opts = {}) {
   const s = normalizeSettings(ds, settingsIn);
   const N = ds.nodes.count;
-  const directed = !!s.directed;
+  // Two-mode data: ties only between the modes, undirected; nodes whose
+  // mode is unknown stay out (see twoModeOf).
+  const tm = s.twoMode ? twoModeOf(ds) : null;
+  const directed = tm ? false : !!s.directed;
   const ruleW = RULES.map(r => (s.rules[r]?.on ? Number(s.rules[r].weight ?? 1) : 0));
   const activeRules = RULES.filter(r => s.rules[r]?.on);
   const ruleSlot = RULES.map(r => activeRules.indexOf(r));
@@ -404,15 +435,22 @@ export function buildNetwork(ds, settingsIn, opts = {}) {
     ev[e * R_ + ruleSlot[rule]] += amt;
     mask[e] |= 1 << vis;
   };
+  let sameMode = 0, unknownMode = 0;
   const drop = forEachEvidence(ds, s, (a, b, rule, amt, i, vis, sym) => {
+    if (tm) {
+      const ma = tm.mode[a], mb = tm.mode[b];
+      if (ma < 0 || mb < 0) { unknownMode++; return; }
+      if (ma === mb) { sameMode++; return; }
+    }
     if (!directed) { if (a < b) add(a, b, rule, amt, vis); else add(b, a, rule, amt, vis); }
     else { add(a, b, rule, amt, vis); if (sym) add(b, a, rule, amt, vis); }
   }, opts);
 
   // Keep ties with positive weight above the threshold.
   const minW = Number(s.minWeight) || 0;
-  const keep = [];
+  let keep = [];
   for (let e = 0; e < ea.length; e++) if (raw[e] > 0 && raw[e] >= minW) keep.push(e);
+  const droppedWeak = ea.length - keep.length;
 
   // Network nodes: every eligible person (includeIsolates) or only those with ties.
   const inNet = new Uint8Array(N);
@@ -420,36 +458,125 @@ export function buildNetwork(ds, settingsIn, opts = {}) {
     for (let i = 0; i < N; i++) inNet[i] = 1;
     if (s.excludeBots) for (let i = 0; i < N; i++) if (ds.nodes.isBot[i]) inNet[i] = 0;
     for (const x of s.excludeNodes || []) if (x >= 0 && x < N) inNet[x] = 0;
+    if (tm) for (let i = 0; i < N; i++) if (tm.mode[i] < 0) inNet[i] = 0;
   }
-  for (const e of keep) { inNet[ea[e]] = 1; inNet[eb[e]] = 1; }
+
+  // One-mode projection: the ties become pairs of same-mode nodes sharing
+  // affiliations, and the network keeps only that mode.
+  const view = tm ? s.twoMode.view : null;
+  const basis = view === 'mode0' ? 0 : view === 'mode1' ? 1 : -1;
+  let proj = null;
+  if (basis >= 0) {
+    proj = projectTies(ea, eb, raw, mask, keep, tm.mode, basis, N, s.twoMode);
+    for (let i = 0; i < N; i++) if (tm.mode[i] !== basis) inNet[i] = 0;
+    for (let k = 0; k < proj.a.length; k++) { inNet[proj.a[k]] = 1; inNet[proj.b[k]] = 1; }
+  } else {
+    for (const e of keep) { inNet[ea[e]] = 1; inNet[eb[e]] = 1; }
+  }
   const index = new Int32Array(N).fill(-1);
   let n = 0;
   for (let i = 0; i < N; i++) if (inNet[i]) index[i] = n++;
   const nodeIds = new Int32Array(n);
   for (let i = 0; i < N; i++) if (index[i] >= 0) nodeIds[index[i]] = i;
 
-  // Canonical edge order (src, dst) so results never depend on event order.
-  keep.sort((x, y) => index[ea[x]] - index[ea[y]] || index[eb[x]] - index[eb[y]]);
-  const m = keep.length;
-  const src = new Int32Array(m), dst = new Int32Array(m), w = new Float64Array(m), rawW = new Float64Array(m), layerMask = new Uint8Array(m);
-  const byRule = {};
-  for (const r of activeRules) byRule[r] = new Float64Array(m);
   const transform = s.weighting === 'log' ? (x) => Math.log1p(x) : s.weighting === 'binary' ? () => 1 : (x) => x;
-  for (let k = 0; k < m; k++) {
-    const e = keep[k];
-    src[k] = index[ea[e]]; dst[k] = index[eb[e]];
-    rawW[k] = raw[e]; w[k] = transform(raw[e]); layerMask[k] = mask[e];
-    for (let r = 0; r < R_; r++) byRule[activeRules[r]][k] = ev[e * R_ + r];
+  let edges;
+  if (proj) {
+    const m = proj.a.length;
+    const order = Array.from({ length: m }, (_, k) => k).sort((x, y) => index[proj.a[x]] - index[proj.a[y]] || index[proj.b[x]] - index[proj.b[y]]);
+    edges = { count: m, src: new Int32Array(m), dst: new Int32Array(m), w: new Float64Array(m), raw: new Float64Array(m), byRule: {}, layerMask: new Uint8Array(m), shared: new Float64Array(m) };
+    order.forEach((k, j) => {
+      edges.src[j] = index[proj.a[k]]; edges.dst[j] = index[proj.b[k]];
+      edges.raw[j] = proj.w[k]; edges.w[j] = transform(proj.w[k]);
+      edges.layerMask[j] = proj.mask[k]; edges.shared[j] = proj.shared[k];
+    });
+  } else {
+    // Canonical edge order (src, dst) so results never depend on event order.
+    keep.sort((x, y) => index[ea[x]] - index[ea[y]] || index[eb[x]] - index[eb[y]]);
+    const m = keep.length;
+    const src = new Int32Array(m), dst = new Int32Array(m), w = new Float64Array(m), rawW = new Float64Array(m), layerMask = new Uint8Array(m);
+    const byRule = {};
+    for (const r of activeRules) byRule[r] = new Float64Array(m);
+    for (let k = 0; k < m; k++) {
+      const e = keep[k];
+      src[k] = index[ea[e]]; dst[k] = index[eb[e]];
+      rawW[k] = raw[e]; w[k] = transform(raw[e]); layerMask[k] = mask[e];
+      for (let r = 0; r < R_; r++) byRule[activeRules[r]][k] = ev[e * R_ + r];
+    }
+    edges = { count: m, src, dst, w, raw: rawW, byRule, layerMask };
   }
 
   const net = {
     n, nodeIds, index, directed,
-    edges: { count: m, src, dst, w, raw: rawW, byRule, layerMask },
+    edges,
     settings: s,
     summary: null,
   };
-  net.summary = summarize(net, drop, ea.length - m);
+  if (tm) {
+    // Per network node: its mode (0 / 1). counts: nodes of each mode in the network.
+    const mode = new Uint8Array(n);
+    const counts = [0, 0];
+    for (let v = 0; v < n; v++) { mode[v] = tm.mode[nodeIds[v]]; counts[mode[v]]++; }
+    net.twoMode = {
+      view, labels: tm.labels, mode, counts, basis,
+      projection: basis >= 0 ? s.twoMode.projection : null, minShared: basis >= 0 ? s.twoMode.minShared : null,
+      affiliations: keep.length, sameModeEvidence: sameMode, unknownModeEvidence: unknownMode,
+      belowMinShared: proj ? proj.belowMinShared : 0,
+    };
+  }
+  net.summary = summarize(net, drop, droppedWeak);
+  if (tm) {
+    const t = net.twoMode;
+    net.summary.twoMode = { view: t.view, labels: t.labels, counts: t.counts, projection: t.projection, minShared: t.minShared, affiliations: t.affiliations, sameModeEvidence: t.sameModeEvidence, unknownModeEvidence: t.unknownModeEvidence, belowMinShared: t.belowMinShared };
+  }
   return net;
+}
+
+// Project two-mode ties onto one mode. Inputs are buildNetwork's tie arrays
+// (dataset node ids) and the kept tie indices. Each affiliation counts once
+// however strong it is (as networkx's projections): a pair's `shared` is the
+// number of mode-(1 - basis) nodes both belong to.
+//   count:  weight = shared                       (weighted_projected_graph)
+//   newman: weight = sum over shared y of 1 / (deg(y) - 1)
+//                                     (collaboration_weighted_projected_graph)
+//   binary: weight = 1                            (projected_graph)
+// Pairs with shared < minShared are dropped (counted in belowMinShared).
+function projectTies(ea, eb, raw, mask, keep, mode, basis, N, tmSettings) {
+  const members = new Map();   // other-mode node -> [[basis node, tie]]
+  for (const e of keep) {
+    const a = ea[e], b = eb[e];
+    const x = mode[a] === basis ? a : b, y = x === a ? b : a;
+    let L = members.get(y);
+    if (!L) members.set(y, (L = []));
+    L.push(x, e);
+  }
+  const pair = new Map();
+  const A = [], B = [], S = [], W = [], M = [];
+  const ys = [...members.keys()].sort((p, q) => p - q);
+  for (const y of ys) {
+    const L = members.get(y);
+    const k = L.length / 2;
+    if (k < 2) continue;
+    const inv = 1 / (k - 1);
+    for (let p = 0; p < k; p++) for (let q = p + 1; q < k; q++) {
+      let a = L[2 * p], b = L[2 * q];
+      const mk = mask[L[2 * p + 1]] | mask[L[2 * q + 1]];
+      if (a > b) { const t = a; a = b; b = t; }
+      const key = a * N + b;
+      let j = pair.get(key);
+      if (j === undefined) { j = A.length; pair.set(key, j); A.push(a); B.push(b); S.push(0); W.push(0); M.push(0); }
+      S[j] += 1; W[j] += inv; M[j] |= mk;
+    }
+  }
+  const minShared = tmSettings.minShared || 1;
+  const how = tmSettings.projection;
+  const out = { a: [], b: [], w: [], shared: [], mask: [], belowMinShared: 0 };
+  for (let j = 0; j < A.length; j++) {
+    if (S[j] < minShared) { out.belowMinShared++; continue; }
+    out.a.push(A[j]); out.b.push(B[j]); out.shared.push(S[j]); out.mask.push(M[j]);
+    out.w.push(how === 'newman' ? W[j] : how === 'binary' ? 1 : S[j]);
+  }
+  return out;
 }
 
 function summarize(net, drop, droppedWeak) {
@@ -490,6 +617,24 @@ function summarize(net, drop, droppedWeak) {
 // Returns an array of event summaries, oldest first, at most `limit`.
 export function edgeEvidence(ds, net, a, b, { limit = 50, bothDirections = false } = {}) {
   const out = [];
+  // A projected tie (two-mode data) has no events of its own: it stands for
+  // the affiliations a and b share. Return the evidence of those, each with
+  // `via` = the shared node (dataset index).
+  const tm = net.twoMode;
+  if (tm && tm.basis >= 0) {
+    const mode = twoModeOf(ds)?.mode;
+    const seenA = new Map(), seenB = new Map();
+    if (mode) forEachEvidence(ds, net.settings, (x, y, rule, amt, i) => {
+      for (const [p, q] of [[x, y], [y, x]]) {
+        if (mode[q] !== 1 - tm.basis || mode[p] !== tm.basis) continue;
+        if (p === a) { if (!seenA.has(q)) seenA.set(q, []); seenA.get(q).push({ i, rule: RULES[rule], amount: amt, from: x, to: y, via: q }); }
+        if (p === b) { if (!seenB.has(q)) seenB.set(q, []); seenB.get(q).push({ i, rule: RULES[rule], amount: amt, from: x, to: y, via: q }); }
+      }
+    });
+    for (const [q, list] of seenA) if (seenB.has(q)) out.push(...list, ...seenB.get(q));
+    out.sort((p, q) => (ds.events.t[p.i] || 0) - (ds.events.t[q.i] || 0) || p.i - q.i);
+    return out.slice(0, limit).map(o => ({ ...summarizeEvent(ds, o), via: o.via, viaLabel: ds.nodes.labels[o.via] }));
+  }
   const any = !net.directed || bothDirections;
   forEachEvidence(ds, net.settings, (x, y, rule, amt, i, vis, sym) => {
     const fwd = x === a && y === b, rev = x === b && y === a;

@@ -8,12 +8,12 @@
 
 import { html, useState, useEffect, useRef, useMemo, useLayoutEffect } from '../../../../vendor/preact.js';
 import * as D from '../../../builders/draw.js';
-import { runLayout, LAYOUTS, concentricKeys } from '../../../builders/draw-layout.js';
+import { runLayout, LAYOUTS, layoutsFor, concentricKeys } from '../../../builders/draw-layout.js';
 import { snapPoint } from '../../../builders/draw-snap.js';
 import { uid, slug } from '../../../builders/common.js';
 import { storage, downloadText, pickFile, readFileText, prefersReducedMotion, useHandOff, HandOffBar } from '../shared.js';
 import { notify } from '../service.js';
-import { Canvas, clampK, NODE_R, DASHES } from './canvas.js';
+import { Canvas, clampK, NODE_R, DASHES, ModeShape } from './canvas.js';
 import { Inspector } from './inspector.js';
 import { TableEditor } from './table.js';
 import { HelpOverlay } from './help.js';
@@ -58,6 +58,8 @@ export function DrawEditor({ example = null } = {}) {
   const [help, setHelp] = useState(false);
   const [layout, setLayout] = useState(() => kept?.layout || { id: 'force', root: '', key: 'degree', scope: 'auto' });
   const [edgeDefaults, setEdgeDefaults] = useState(() => kept?.edgeDefaults || { type: D.DEFAULT_EDGE_TYPE, directed: false });
+  // Two-mode drawings: which mode a new node gets (0 or 1).
+  const [addMode, setAddMode] = useState(() => kept?.addMode || 0);
   const [announce, setAnnounce] = useState('');
   const [saved, setSaved] = useState(null);
   const [spaceDown, setSpaceDown] = useState(false);
@@ -68,11 +70,11 @@ export function DrawEditor({ example = null } = {}) {
 
   // Latest state for gesture and key handlers (avoids stale closures).
   const st = useRef();
-  st.current = { doc, sel, view, mode, settings, live, pending, focusId, spaceDown, size, edgeDefaults };
+  st.current = { doc, sel, view, mode, settings, live, pending, focusId, spaceDown, size, edgeDefaults, addMode };
 
   const apply = (fn, label) => setHist(h => D.commit(h, fn(h.present), label));
   const say = t => setAnnounce(t);
-  useEffect(() => { kept = { hist, sel, mode, view, table, layout, edgeDefaults }; });
+  useEffect(() => { kept = { hist, sel, mode, view, table, layout, edgeDefaults, addMode }; });
 
   // ---- autosave ----
   useEffect(() => {
@@ -90,6 +92,7 @@ export function DrawEditor({ example = null } = {}) {
     if (focusId && !nodeIds.has(focusId)) setFocus(null);
     if (pending && !nodeIds.has(pending)) setPending(null);
     if (edgeDefaults.type && !doc.edgeTypes.includes(edgeDefaults.type)) setEdgeDefaults({ ...edgeDefaults, type: doc.edgeTypes[0] });
+    if (!layoutsFor(doc).some(l => l.id === layout.id)) setLayout(x => ({ ...x, id: 'force' }));
   }, [doc]);
 
   // ---- canvas size, initial fit ----
@@ -163,17 +166,21 @@ export function DrawEditor({ example = null } = {}) {
     const up = v => (g ? Math.ceil(v / g) * g : v);
     q = D.freeSpot(s.doc.nodes, { x: q.x, y: q.y }, { r: NODE_R, clearX: up(56), clearY: up(44) });
     const id = uid('n');
-    const label = D.nextLabel(s.doc);
-    apply(d => D.addNode(d, { id, x: q.x, y: q.y, label }), 'Add person');
+    const m = s.doc.twoMode ? s.addMode : 0;
+    const label = D.nextLabel(s.doc, m);
+    apply(d => D.addNode(d, { id, x: q.x, y: q.y, label, mode: m }), s.doc.twoMode ? `Add ${D.modeNoun(s.doc.twoMode.labels[m]).toLowerCase()}` : 'Add person');
     setSel({ nodes: [id], edges: [] });
     setFocus(id);
-    say(`Added ${label}. Type a name and press Enter.`);
+    say(`Added ${label}${s.doc.twoMode ? ` (${D.modeNoun(s.doc.twoMode.labels[m]).toLowerCase()})` : ''}. Type a name and press Enter.`);
     if (rename && !table) setTimeout(() => setEditing({ id, value: label }), 0);
     return id;
   }
 
   function addEdge(source, target) {
     const s = st.current;
+    // Two-mode drawings: a tie must join the two modes; say why not, visibly.
+    const why = D.canConnect(s.doc, source, target);
+    if (why) { say(why); notify('warn', why); return; }
     const before = s.doc.edges.length;
     const d2 = D.addEdge(s.doc, { source, target, type: s.edgeDefaults.type, directed: s.edgeDefaults.directed });
     if (d2.edges.length === before) { say('That tie already exists.'); return; }
@@ -297,6 +304,20 @@ export function DrawEditor({ example = null } = {}) {
   }
   useEffect(() => { if (example?.id) loadExample(example.id); }, [example?.nonce]);
 
+  // Turn the drawing two-mode or back; say what happened to existing ties.
+  function toggleTwoMode(on, labels) {
+    const r = D.setTwoMode(st.current.doc, on, labels);
+    if (r.doc === st.current.doc) return;
+    apply(() => r.doc, on ? 'Two-mode drawing' : 'One-mode drawing');
+    let msg;
+    if (!on) msg = 'The drawing is one-mode again: everyone is one kind of node and every tie counts.';
+    else if (!st.current.doc.nodes.length) msg = `Two-mode drawing: place ${r.doc.twoMode.labels[0].toLowerCase()} and ${r.doc.twoMode.labels[1].toLowerCase()} (choose which in the toolbar, or press M) and tie them across.`;
+    else if (r.assigned === 'colouring') msg = `Two-mode drawing: the ties already alternate between two sides, so those became ${r.doc.twoMode.labels[0].toLowerCase()} and ${r.doc.twoMode.labels[1].toLowerCase()}. Change any node's mode in the panel.`;
+    else msg = `Two-mode drawing: everyone starts as ${r.doc.twoMode.labels[0].toLowerCase()}. ${r.sameMode ? `The ${r.sameMode} existing ${r.sameMode === 1 ? 'tie joins' : 'ties join'} two of the same mode, so ${r.sameMode === 1 ? 'it is' : 'they are'} kept but left out of the analysis until you change modes or delete ${r.sameMode === 1 ? 'it' : 'them'}.` : ''} Set each node's mode in the panel or the table.`;
+    notify('info', msg);
+    say(msg);
+  }
+
   async function importFile() {
     const f = await pickFile('.json,application/json');
     if (!f) return;
@@ -333,7 +354,8 @@ export function DrawEditor({ example = null } = {}) {
     if (!onCanvas) return;
     switch (key) {
       case 'v': case 'V': handled(); setMode('select'); say('Select mode.'); break;
-      case 'b': case 'B': handled(); setMode('node'); say('Add-person mode: click the canvas to place a person.'); break;
+      case 'b': case 'B': handled(); setMode('node'); say(s.doc.twoMode ? `Add mode: click the canvas to place a ${D.modeNoun(s.doc.twoMode.labels[s.addMode]).toLowerCase()}.` : 'Add-person mode: click the canvas to place a person.'); break;
+      case 'm': case 'M': if (s.doc.twoMode) { handled(); const m = 1 - s.addMode; setAddMode(m); say(`New nodes are now ${s.doc.twoMode.labels[m].toLowerCase()}.`); } break;
       case 'c': case 'C': handled(); setMode('edge'); say('Connect mode: drag from one person to another.'); break;
       case 'h': case 'H': handled(); setMode('pan'); say('Pan mode.'); break;
       case 'n': case 'N': handled(); addNodeAt(viewCentre()); break;
@@ -350,6 +372,7 @@ export function DrawEditor({ example = null } = {}) {
         if (ids.length === 1 && s.focusId && s.focusId !== ids[0]) ids = [ids[0], s.focusId];
         if (ids.length < 2) { say('Select two or more people to connect (Space adds the focused person).'); break; }
         if (ids.length === 2) addEdge(ids[0], ids[1]);
+        else if (s.doc.twoMode) { const n0 = s.doc.edges.length; const d2 = D.connectPath(s.doc, ids, { type: s.edgeDefaults.type }); apply(() => d2, 'Connect'); say(`Connected ${d2.edges.length - n0} pairs in order; pairs of the same mode were skipped.`); }
         else { apply(d => D.connectPath(d, ids, { type: s.edgeDefaults.type, directed: s.edgeDefaults.directed }), 'Connect'); say(`Connected ${ids.length} people in order.`); }
         break;
       }
@@ -380,7 +403,7 @@ export function DrawEditor({ example = null } = {}) {
         setFocus(n.id);
         if (!pinned.current) setSel({ nodes: [n.id], edges: [] });
         ensureVisible(n);
-        say(`${n.label}, person ${j + 1} of ${ns.length}${n.group ? ', group ' + (D.groupById(s.doc, n.group)?.name ?? '') : ''}, ${s.doc.edges.filter(x => x.source === n.id || x.target === n.id).length} ties.`);
+        say(`${n.label}, ${s.doc.twoMode ? D.modeNoun(s.doc.twoMode.labels[D.nodeMode(n)]).toLowerCase() : 'person'} ${j + 1} of ${ns.length}${n.group ? ', group ' + (D.groupById(s.doc, n.group)?.name ?? '') : ''}, ${s.doc.edges.filter(x => x.source === n.id || x.target === n.id).length} ties.`);
         break;
       }
       case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown': {
@@ -440,7 +463,11 @@ export function DrawEditor({ example = null } = {}) {
   const usedTypes = doc.edgeTypes.filter(t => doc.edges.some(e => e.type === t));
   // One-way and two-way ties together make a directed network that counts
   // each two-way tie twice (L1); the note under the canvas says so.
-  const mixed = doc.edges.some(e => e.directed) && doc.edges.some(e => !e.directed);
+  const mixed = !doc.twoMode && doc.edges.some(e => e.directed) && doc.edges.some(e => !e.directed);
+  const sameMode = D.sameModeEdges(doc);
+  const tm = doc.twoMode;
+  const nouns = tm ? tm.labels.map(D.modeNoun) : null;
+  const modeCount = m => doc.nodes.filter(n => D.nodeMode(n) === m).length;
   const fileMenu = useRef(null);
   const fileAction = fn => () => { if (fileMenu.current) fileMenu.current.open = false; fn(); };
 
@@ -449,7 +476,7 @@ export function DrawEditor({ example = null } = {}) {
     <div class="ob-row" role="group" aria-label="Layout" style="gap:.4rem">
       <label class="visually-hidden" for="ob-draw-layout">Layout (L)</label>
       <select id="ob-draw-layout" class="select select--sm" style="width:auto" ref=${layoutSel} value=${layout.id} onChange=${e => setLayout({ ...layout, id: e.currentTarget.value })}>
-        ${LAYOUTS.map(l => html`<option value=${l.id}>${l.label}</option>`)}</select>
+        ${layoutsFor(doc).map(l => html`<option value=${l.id}>${l.label}</option>`)}</select>
       ${layout.id === 'tree' ? html`<select class="select select--sm" style="width:auto;max-width:9rem" aria-label="Tree root" value=${layout.root} onChange=${e => setLayout({ ...layout, root: e.currentTarget.value })}>
         <option value="">Root: first selected</option>${doc.nodes.map(n => html`<option value=${n.id}>${n.label}</option>`)}</select>` : null}
       ${layout.id === 'concentric' ? html`<select class="select select--sm" style="width:auto" aria-label="Rings by" value=${layout.key} onChange=${e => setLayout({ ...layout, key: e.currentTarget.value })}>
@@ -471,8 +498,12 @@ export function DrawEditor({ example = null } = {}) {
     <div class="ob-toolbar" role="toolbar" aria-label="Drawing tools">
       ${table ? null : html`<div class="seg" role="group" aria-label="Mode">
         ${MODES.map(([id, label, k]) => html`<button type="button" aria-pressed=${String(mode === id)} title=${`${label} (${k})`}
-          onClick=${() => { setMode(id); setPending(null); }}>${label}</button>`)}
+          onClick=${() => { setMode(id); setPending(null); }}>${id === 'node' && tm ? 'Add' : label}</button>`)}
       </div>`}
+      ${tm ? html`<div class="seg ob-addmode" role="group" aria-label="Kind of node to add (M switches)">
+        ${[0, 1].map(m => html`<button type="button" aria-pressed=${String(addMode === m)} title=${`New nodes are ${tm.labels[m].toLowerCase()} (M switches)`}
+          onClick=${() => { setAddMode(m); if (!table) setMode('node'); say(`New nodes are now ${tm.labels[m].toLowerCase()}.`); }}><${ModeShape} mode=${m} /> ${nouns[m]}</button>`)}
+      </div>` : null}
       <div class="ob-row ob-iconrow" style="gap:.25rem">
         <button type="button" class="btn btn--sm ob-icon" disabled=${!D.canUndo(hist)} onClick=${doUndo}
           aria-label=${D.undoLabel(hist) ? 'Undo ' + D.undoLabel(hist) : 'Undo'} title=${(D.undoLabel(hist) ? 'Undo ' + D.undoLabel(hist) : 'Undo') + ' (Cmd/Ctrl+Z)'}>${ICON.undo}</button>
@@ -491,6 +522,8 @@ export function DrawEditor({ example = null } = {}) {
           <button type="button" class="tlink" onClick=${fileAction(newDrawing)}>New drawing</button>
           <span class="label ob-menu__label">Start from an example</span>
           ${DRAW_EXAMPLES.map(x => html`<button type="button" class="tlink" onClick=${fileAction(() => loadExample(x.id))}>${x.title}</button>`)}
+          <span class="label ob-menu__label">Kind of drawing</span>
+          <button type="button" class="tlink" onClick=${fileAction(() => toggleTwoMode(!tm))}>${tm ? 'Make it one-mode' : 'Two-mode drawing (people and events)'}</button>
           <span class="label ob-menu__label">Files</span>
           <button type="button" class="tlink" onClick=${fileAction(importFile)}>Import JSON</button>
           <button type="button" class="tlink" disabled=${!doc.nodes.length} onClick=${fileAction(() => downloadText(`${slug(doc.name)}.drawing.json`, D.exportJSON(doc), 'application/json'))}>Export JSON</button>
@@ -503,7 +536,7 @@ export function DrawEditor({ example = null } = {}) {
     ${doc.example && exampleById(doc.example) ? html`<${ExampleNote} ex=${exampleById(doc.example)} />` : null}
     <div class="ob-editor">
       ${table
-        ? html`<div class="ob-draw-tablecol" key="table" ref=${canvasRef}><${TableEditor} doc=${doc} apply=${apply} edgeDefaults=${edgeDefaults} /></div>`
+        ? html`<div class="ob-draw-tablecol" key="table" ref=${canvasRef}><${TableEditor} doc=${doc} apply=${apply} edgeDefaults=${edgeDefaults} say=${say} /></div>`
         : html`<div class=${'ob-canvas mode-' + mode + (spaceDown ? ' panning' : '')} key="canvas" ref=${canvasRef}>
           <${Canvas} doc=${doc} live=${live} sel=${sel} focusId=${focusId} pending=${pending} view=${view} size=${size}
             settings=${settings} guides=${guides} marquee=${marquee} rubber=${rubber} ctl=${ctl} mode=${mode} dashed=${usedTypes.length > 1} />
@@ -517,7 +550,8 @@ export function DrawEditor({ example = null } = {}) {
             onKeyDown=${e => { if (e.key === 'Enter') { e.preventDefault(); commitRename(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); commitRename(false); } }}
             onBlur=${() => commitRename(true)} />` : null}
           ${usedTypes.length > 1 ? html`<${TypeKey} types=${doc.edgeTypes} used=${usedTypes} />` : null}
-          <div class="ob-status" aria-hidden="true">${modeLabel}${pending ? ' · from ' + (D.nodeById(doc, pending)?.label ?? '') : ''} · ${Math.round(view.k * 100)}%${settings.grid ? ' · grid ' + settings.gridSize : ''}</div>
+          ${tm ? html`<div class="ob-modekey" aria-label="Key: shapes show the mode">${[0, 1].map(m => html`<span><${ModeShape} mode=${m} /> ${tm.labels[m]} (${modeCount(m)})</span>`)}</div>` : null}
+          <div class="ob-status" aria-hidden="true">${mode === 'node' && tm ? `Add ${nouns[addMode].toLowerCase()}` : modeLabel}${pending ? ' · from ' + (D.nodeById(doc, pending)?.label ?? '') : ''} · ${Math.round(view.k * 100)}%${settings.grid ? ' · grid ' + settings.gridSize : ''}</div>
           <div class="ob-zoom">
             <button type="button" class="btn btn--sm" aria-label="Zoom out" onClick=${() => zoomBy(0.8)}>−</button>
             <button type="button" class="btn btn--sm" aria-label="Zoom in" onClick=${() => zoomBy(1.25)}>+</button>
@@ -525,14 +559,15 @@ export function DrawEditor({ example = null } = {}) {
           </div>
         </div>`}
       <aside class="ob-inspector" aria-label="Selection details">
-        <${Inspector} doc=${doc} sel=${sel} apply=${apply} setSel=${setSel} edgeDefaults=${edgeDefaults} setEdgeDefaults=${setEdgeDefaults} onRename=${startRename} />
+        <${Inspector} doc=${doc} sel=${sel} apply=${apply} setSel=${setSel} edgeDefaults=${edgeDefaults} setEdgeDefaults=${setEdgeDefaults} onRename=${startRename} onTwoMode=${toggleTwoMode} />
         ${table ? null : arrange}
       </aside>
     </div>
 
     <p id="ob-draw-live" class="visually-hidden" aria-live="polite">${announce}</p>
-    <p class="ob-note">${doc.nodes.length} ${doc.nodes.length === 1 ? 'person' : 'people'}, ${doc.edges.length} ${doc.edges.length === 1 ? 'tie' : 'ties'}. ${saved === false ? 'Autosave is not available in this browser; export the drawing to keep it.' : 'Draft saved in this browser.'}
-      ${doc.nodes.length ? ' Analyzing makes a full network of declared ties.' : ''}</p>
+    <p class="ob-note">${tm ? `${modeCount(0)} ${tm.labels[0].toLowerCase()}, ${modeCount(1)} ${tm.labels[1].toLowerCase()}` : `${doc.nodes.length} ${doc.nodes.length === 1 ? 'person' : 'people'}`}, ${doc.edges.length} ${doc.edges.length === 1 ? 'tie' : 'ties'}. ${saved === false ? 'Autosave is not available in this browser; export the drawing to keep it.' : 'Draft saved in this browser.'}
+      ${doc.nodes.length ? (tm ? ` Analyzing makes a two-mode network: ${tm.labels[0].toLowerCase()} tied to the ${tm.labels[1].toLowerCase()} they belong to; the construction settings also offer each projection.` : ' Analyzing makes a full network of declared ties.') : ''}</p>
+    ${sameMode.length ? html`<p class="ob-note ob-warn" role="status">${sameMode.length} ${sameMode.length === 1 ? 'tie joins' : 'ties join'} two nodes of the same mode (${sameMode.slice(0, 3).map(e => `${D.nodeById(doc, e.source)?.label} and ${D.nodeById(doc, e.target)?.label}`).join('; ')}${sameMode.length > 3 ? '; ...' : ''}). A two-mode network ties only ${tm.labels[0].toLowerCase()} to ${tm.labels[1].toLowerCase()}, so ${sameMode.length === 1 ? 'it is' : 'they are'} left out of the analysis. Change a node's mode or delete the tie.</p>` : null}
     ${mixed ? html`<p class="ob-note ob-warn" role="status">This drawing mixes one-way ties (arrows) and two-way ties, so it is analyzed as a directed network in which each two-way tie counts as two: the ${doc.edges.length} ties drawn here become ${doc.edges.length + doc.edges.filter(e => !e.directed).length} in Network. Make every tie two-way (or every tie one-way) to keep the counts the same.</p>` : null}
     <${HandOffBar} compact=${true} handoff=${handoff} disabled=${!nodeIds.length} build=${() => D.toDataset(doc, { name: doc.name })} />
     ${help ? html`<${HelpOverlay} onClose=${() => setHelp(false)} />` : null}

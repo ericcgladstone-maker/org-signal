@@ -4,10 +4,18 @@
 //   { version, name, nodes[{ id, label, x, y, group, attrs{} }],
 //     edges[{ id, source, target, type, weight, directed }],
 //     groups[{ id, name }], attrColumns[{ key, type }], edgeTypes[],
-//     groupKey?, example? }
+//     groupKey?, example?, twoMode? }
 // groupKey names the attribute the groups become in the Dataset ('group'
 // unless set, e.g. 'major'); example is the id of the worked example the
 // drawing started from (src/builders/examples.js).
+//
+// Two-mode drawings (people and the events, clubs or boards they belong to):
+// doc.twoMode = { labels: [mode-0 label, mode-1 label] } (default 'People',
+// 'Events') and every node carries mode: 0 | 1. Ties may only join the two
+// modes; addEdge refuses a same-mode tie (canConnect says why). A drawing
+// turned two-mode keeps any same-mode ties it had, toDataset leaves them out
+// with a warning, and sameModeEdges lists them for the editor. One-mode
+// drawings have neither field, so older drawings are unchanged.
 //
 // Every edit is a pure function doc -> new doc. Unchanged arrays and objects
 // are shared between versions, so the undo history can simply keep the
@@ -19,7 +27,7 @@
 // Pure module: runs in Node for tests. Snapping lives in draw-snap.js and
 // layouts in draw-layout.js.
 
-import { DatasetBuilder } from '../core/model.js';
+import { DatasetBuilder, declareTwoMode, addModeNode, addAffiliation } from '../core/model.js';
 import { uid, slug, coerce, ATTR_TYPES } from './common.js';
 import { exampleById } from './examples.js';
 
@@ -77,17 +85,118 @@ export function nodeById(doc, id) { return doc.nodes.find(n => n.id === id) ?? n
 export function edgeById(doc, id) { return doc.edges.find(e => e.id === id) ?? null; }
 export function groupById(doc, id) { return doc.groups.find(g => g.id === id) ?? null; }
 
-export function nextLabel(doc) {
+// mode: in a two-mode drawing, new names follow the mode ('Event 3').
+export function nextLabel(doc, mode = 0) {
+  const noun = doc.twoMode ? modeNoun(doc.twoMode.labels[mode === 1 ? 1 : 0]) : 'Person';
   const taken = new Set(doc.nodes.map(n => n.label));
-  let i = doc.nodes.length + 1;
-  while (taken.has(`Person ${i}`)) i++;
-  return `Person ${i}`;
+  let i = (doc.twoMode ? doc.nodes.filter(n => (n.mode || 0) === (mode === 1 ? 1 : 0)).length : doc.nodes.length) + 1;
+  while (taken.has(`${noun} ${i}`)) i++;
+  return `${noun} ${i}`;
+}
+
+// ---- two-mode drawings ------------------------------------------------------
+
+export const DEFAULT_TWO_MODE_LABELS = ['People', 'Events'];
+
+// One of a mode, for names and messages: People -> Person, Clubs -> Club,
+// Companies -> Company. Labels that are not plural stay as they are.
+export function modeNoun(label) {
+  const l = String(label || '').trim();
+  if (!l) return 'Node';
+  if (/^people$/i.test(l)) return l[0] === 'p' ? 'person' : 'Person';
+  if (/[^aeiou]ies$/i.test(l)) return l.slice(0, -3) + 'y';
+  if (/(ss|us|is)$/i.test(l)) return l;
+  if (/s$/i.test(l)) return l.slice(0, -1);
+  return l;
+}
+
+export const isTwoMode = doc => !!doc?.twoMode;
+export const nodeMode = n => (n?.mode === 1 ? 1 : 0);
+
+// Ties joining two nodes of the same mode (kept in the drawing, left out of
+// the analysis).
+export function sameModeEdges(doc) {
+  if (!doc.twoMode) return [];
+  const m = new Map(doc.nodes.map(n => [n.id, nodeMode(n)]));
+  return doc.edges.filter(e => m.get(e.source) === m.get(e.target));
+}
+
+// Two-colour the drawing when its ties allow it (every tie joins the two
+// sides): Map id -> 0 | 1, or null when some tie closes an odd cycle. In
+// each connected piece the first node in drawing order goes on side 0.
+export function twoColouring(doc) {
+  const adj = new Map(doc.nodes.map(n => [n.id, []]));
+  for (const e of doc.edges) { adj.get(e.source)?.push(e.target); adj.get(e.target)?.push(e.source); }
+  const side = new Map();
+  for (const n of doc.nodes) {
+    if (side.has(n.id)) continue;
+    side.set(n.id, 0);
+    const q = [n.id];
+    while (q.length) {
+      const v = q.shift();
+      for (const u of adj.get(v)) {
+        if (!side.has(u)) { side.set(u, 1 - side.get(v)); q.push(u); }
+        else if (side.get(u) === side.get(v)) return null;
+      }
+    }
+  }
+  return side;
+}
+
+// Turn a drawing two-mode (on) or back to one mode. Turning it on keeps every
+// node and tie: if the ties already alternate between two sides (a drawing of
+// people and clubs made before the option existed), the sides become the
+// modes; otherwise everyone starts in mode 0 and every existing tie is a
+// same-mode tie until modes are changed. Returns { doc, assigned:
+// 'colouring' | 'all-mode-0' | null, sameMode: number of same-mode ties }.
+export function setTwoMode(doc, on, labels = doc.twoMode?.labels || DEFAULT_TWO_MODE_LABELS) {
+  if (!on) {
+    if (!doc.twoMode) return { doc, assigned: null, sameMode: 0 };
+    const { twoMode: _, ...rest } = doc;
+    return { doc: { ...rest, nodes: doc.nodes.map(({ mode: __, ...n }) => n) }, assigned: null, sameMode: 0 };
+  }
+  const lab = [String(labels[0] || DEFAULT_TWO_MODE_LABELS[0]), String(labels[1] || DEFAULT_TWO_MODE_LABELS[1])];
+  if (doc.twoMode) return { doc: { ...doc, twoMode: { labels: lab } }, assigned: null, sameMode: sameModeEdges(doc).length };
+  const col = doc.edges.length ? twoColouring(doc) : null;
+  const nodes = doc.nodes.map(n => ({ ...n, mode: col ? col.get(n.id) : 0 }));
+  // Directed ties have no meaning in an affiliation network.
+  const edges = doc.edges.some(e => e.directed) ? doc.edges.map(e => (e.directed ? { ...e, directed: false } : e)) : doc.edges;
+  const next = { ...doc, twoMode: { labels: lab }, nodes, edges };
+  return { doc: next, assigned: col ? 'colouring' : 'all-mode-0', sameMode: sameModeEdges(next).length };
+}
+
+export function setModeLabels(doc, labels) {
+  if (!doc.twoMode) return doc;
+  const lab = [0, 1].map(i => String(labels?.[i] ?? '').trim() || doc.twoMode.labels[i]);
+  if (lab[0] === doc.twoMode.labels[0] && lab[1] === doc.twoMode.labels[1]) return doc;
+  return { ...doc, twoMode: { labels: lab } };
+}
+
+export function setNodeMode(doc, ids, mode) {
+  if (!doc.twoMode) return doc;
+  const s = new Set(ids), m = mode === 1 ? 1 : 0;
+  let changed = false;
+  const nodes = doc.nodes.map(n => { if (!s.has(n.id) || nodeMode(n) === m) return n; changed = true; return { ...n, mode: m }; });
+  return changed ? { ...doc, nodes } : doc;
+}
+
+// Why a tie between a and b cannot be drawn, in words, or null when it can.
+export function canConnect(doc, a, b) {
+  if (!a || !b || a === b) return 'A tie needs two different nodes.';
+  const na = nodeById(doc, a), nb = nodeById(doc, b);
+  if (!na || !nb) return 'Both ends must be in the drawing.';
+  if (doc.twoMode && nodeMode(na) === nodeMode(nb)) {
+    const lab = doc.twoMode.labels[nodeMode(na)];
+    return `In a two-mode drawing ties only join ${doc.twoMode.labels[0].toLowerCase()} with ${doc.twoMode.labels[1].toLowerCase()}; ${na.label} and ${nb.label} are both ${lab.toLowerCase()}.`;
+  }
+  return null;
 }
 
 // ---- node operations -------------------------------------------------------
 
-export function addNode(doc, { id = uid('n'), label, x = 0, y = 0, group = null, attrs = {} } = {}) {
-  const node = { id, label: label ?? nextLabel(doc), x: +x || 0, y: +y || 0, group: group || null, attrs: { ...attrs } };
+export function addNode(doc, { id = uid('n'), label, x = 0, y = 0, group = null, attrs = {}, mode = 0 } = {}) {
+  const node = { id, label: label ?? nextLabel(doc, mode), x: +x || 0, y: +y || 0, group: group || null, attrs: { ...attrs } };
+  if (doc.twoMode) node.mode = mode === 1 ? 1 : 0;
   return { ...doc, nodes: [...doc.nodes, node] };
 }
 
@@ -137,9 +246,10 @@ export function findEdge(doc, source, target, type) {
 
 // Self-loops and exact duplicates (same pair, same type) are refused: a drawn
 // tie is a declared relation, and drawing it twice should not double its weight.
+// In a two-mode drawing a tie must join the two modes and is never directed.
 export function addEdge(doc, { id = uid('e'), source, target, type = doc.edgeTypes[0] || DEFAULT_EDGE_TYPE, weight = 1, directed = false } = {}) {
-  if (!source || !target || source === target) return doc;
-  if (!nodeById(doc, source) || !nodeById(doc, target)) return doc;
+  if (canConnect(doc, source, target)) return doc;
+  if (doc.twoMode) directed = false;
   if (findEdge(doc, source, target, type) || (!directed && findEdge(doc, target, source, type))) return doc;
   const w = Number(weight);
   const edge = { id, source, target, type, weight: Number.isFinite(w) && w > 0 ? w : 1, directed: !!directed };
@@ -153,7 +263,7 @@ export function updateEdge(doc, id, patch) {
     if (e.id !== id) return e;
     const next = { ...e, ...patch };
     if ('weight' in patch) { const w = Number(patch.weight); next.weight = Number.isFinite(w) && w > 0 ? w : e.weight; }
-    if ('directed' in patch) next.directed = !!patch.directed;
+    if ('directed' in patch) next.directed = !!patch.directed && !doc.twoMode;
     changed = Object.keys(patch).some(k => next[k] !== e[k]);
     return next;
   });
@@ -268,8 +378,16 @@ export function paste(doc, clip, { offset = 30 } = {}) {
   if (!clip?.nodes?.length) return { doc, ids: [] };
   const map = new Map(clip.nodes.map(n => [n.id, uid('n')]));
   const groups = new Set(doc.groups.map(g => g.id));
-  const nodes = clip.nodes.map(n => ({ ...n, id: map.get(n.id), x: n.x + offset, y: n.y + offset, group: groups.has(n.group) ? n.group : null, attrs: { ...n.attrs } }));
-  const edges = clip.edges.filter(e => map.has(e.source) && map.has(e.target)).map(e => ({ ...e, id: uid('e'), source: map.get(e.source), target: map.get(e.target) }));
+  const nodes = clip.nodes.map(n => {
+    const { mode, ...rest } = n;
+    const out = { ...rest, id: map.get(n.id), x: n.x + offset, y: n.y + offset, group: groups.has(n.group) ? n.group : null, attrs: { ...n.attrs } };
+    if (doc.twoMode) out.mode = mode === 1 ? 1 : 0;
+    return out;
+  });
+  const modeOf = new Map(nodes.map(n => [n.id, n.mode]));
+  // Into a two-mode drawing only cross-mode ties come along.
+  const edges = clip.edges.filter(e => map.has(e.source) && map.has(e.target)).map(e => ({ ...e, id: uid('e'), source: map.get(e.source), target: map.get(e.target), ...(doc.twoMode ? { directed: false } : {}) }))
+    .filter(e => !doc.twoMode || modeOf.get(e.source) !== modeOf.get(e.target));
   const edgeTypes = [...doc.edgeTypes];
   for (const e of edges) if (!edgeTypes.includes(e.type)) edgeTypes.push(e.type);
   return { doc: { ...doc, nodes: [...doc.nodes, ...nodes], edges: [...doc.edges, ...edges], edgeTypes }, ids: nodes.map(n => n.id) };
@@ -354,6 +472,10 @@ export function validateDoc(obj) {
   const doc = emptyDoc(typeof obj.name === 'string' && obj.name.trim() ? obj.name : 'Imported drawing');
   if (typeof obj.groupKey === 'string' && /^[A-Za-z_][\w]*$/.test(obj.groupKey)) doc.groupKey = obj.groupKey;
   if (typeof obj.example === 'string' && obj.example) doc.example = obj.example;
+  if (obj.twoMode && typeof obj.twoMode === 'object') {
+    const l = Array.isArray(obj.twoMode.labels) ? obj.twoMode.labels : [];
+    doc.twoMode = { labels: [0, 1].map(i => (typeof l[i] === 'string' && l[i].trim() ? l[i].trim() : DEFAULT_TWO_MODE_LABELS[i])) };
+  }
   doc.groups = (Array.isArray(obj.groups) ? obj.groups : []).filter(g => g && g.id != null).map(g => ({ id: String(g.id), name: String(g.name ?? g.id) }));
   const groupIds = new Set(doc.groups.map(g => g.id));
   doc.attrColumns = (Array.isArray(obj.attrColumns) ? obj.attrColumns : []).filter(c => c && c.key)
@@ -368,8 +490,14 @@ export function validateDoc(obj) {
     if (!Number.isFinite(x) || !Number.isFinite(y)) warnings.push(`Person "${id}" had no position; placed at the origin.`);
     let group = n.group == null || n.group === '' ? null : String(n.group);
     if (group && !groupIds.has(group)) { doc.groups.push({ id: group, name: group }); groupIds.add(group); }
-    doc.nodes.push({ id, label: String(n.label ?? id), x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0, group,
-      attrs: n.attrs && typeof n.attrs === 'object' ? { ...n.attrs } : {} });
+    const node = { id, label: String(n.label ?? id), x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0, group,
+      attrs: n.attrs && typeof n.attrs === 'object' ? { ...n.attrs } : {} };
+    if (doc.twoMode) {
+      const m = n.mode === 1 || n.mode === '1' ? 1 : n.mode === 0 || n.mode === '0' ? 0 : null;
+      if (m === null) warnings.push(`"${node.label}" had no mode; placed among the ${doc.twoMode.labels[0].toLowerCase()}.`);
+      node.mode = m ?? 0;
+    }
+    doc.nodes.push(node);
   });
   const types = new Set(Array.isArray(obj.edgeTypes) ? obj.edgeTypes.map(String) : []);
   (Array.isArray(obj.edges) ? obj.edges : []).forEach((e, i) => {
@@ -380,8 +508,10 @@ export function validateDoc(obj) {
     const w = Number(e.weight ?? 1);
     const type = String(e.type ?? DEFAULT_EDGE_TYPE);
     types.add(type);
-    doc.edges.push({ id: String(e.id ?? uid('e')), source: s, target: t, type, weight: Number.isFinite(w) && w > 0 ? w : 1, directed: !!e.directed });
+    doc.edges.push({ id: String(e.id ?? uid('e')), source: s, target: t, type, weight: Number.isFinite(w) && w > 0 ? w : 1, directed: !!e.directed && !doc.twoMode });
   });
+  const same = sameModeEdges(doc).length;
+  if (same) warnings.push(`${same} ${same === 1 ? 'tie joins' : 'ties join'} two nodes of the same mode; ${same === 1 ? 'it is' : 'they are'} kept in the drawing but left out of the analysis.`);
   doc.edgeTypes = types.size ? [...types] : [DEFAULT_EDGE_TYPE];
   // Attribute keys present on nodes but not declared become text columns.
   const declared = new Set(doc.attrColumns.map(c => c.key));
@@ -406,22 +536,21 @@ export function importJSON(text) {
 // says so). In a mixed drawing an undirected tie emits both directions, so a
 // directed analysis reads it as the mutual tie the user drew rather than as a
 // one-way tie in an arbitrary direction.
+//
+// Two-mode drawings become two-mode datasets (src/core/model.js): each node
+// keeps its mode, each cross-mode tie is an affiliation (declared event from
+// the mode-0 node with the mode-1 node as member), undirected, weighted, in
+// its tie type's context. Same-mode ties are skipped with a warning.
 export function toDataset(doc, { name } = {}) {
   if (!doc.nodes.length) throw new Error('The drawing has no people yet.');
+  if (doc.twoMode) return toTwoModeDataset(doc, { name });
   const directed = doc.edges.some(e => e.directed);
   const b = new DatasetBuilder({ name: name || doc.name || 'Drawing' });
   b.beginSource({ format: 'draw', family: 'custom', medium: 'canvas', view: 'full', context: 'custom', directed, fileNames: [] });
-  const types = new Map(doc.attrColumns.map(c => [c.key, c.type]));
-  const groupName = new Map(doc.groups.map(g => [g.id, g.name]));
+  const attrsOf = nodeAttrs(doc);
   const idx = new Map();
   for (const n of doc.nodes) {
-    const attrs = {};
-    for (const [k, v] of Object.entries(n.attrs || {})) {
-      const c = coerce(v, types.get(k) || 'text');
-      if (c !== undefined) attrs[k] = c;
-    }
-    if (n.group && groupName.has(n.group)) attrs[doc.groupKey || 'group'] = groupName.get(n.group);
-    idx.set(n.id, b.node(`draw:${n.id}`, { label: n.label || n.id, attrs }));
+    idx.set(n.id, b.node(`draw:${n.id}`, { label: n.label || n.id, attrs: attrsOf(n) }));
     b.stat('nodes');
   }
   const ctx = new Map();
@@ -437,6 +566,50 @@ export function toDataset(doc, { name } = {}) {
     if (directed && !e.directed) b.event({ type: 'declared', actor: t, targets: [[s, 'declared']], context: c, weight: e.weight ?? 1, key: `draw:${e.id}:rev` });
     b.stat('ties');
   }
+  return finish(doc, b);
+}
+
+function nodeAttrs(doc) {
+  const types = new Map(doc.attrColumns.map(c => [c.key, c.type]));
+  const groupName = new Map(doc.groups.map(g => [g.id, g.name]));
+  return n => {
+    const attrs = {};
+    for (const [k, v] of Object.entries(n.attrs || {})) {
+      const c = coerce(v, types.get(k) || 'text');
+      if (c !== undefined) attrs[k] = c;
+    }
+    if (n.group && groupName.has(n.group)) attrs[doc.groupKey || 'group'] = groupName.get(n.group);
+    return attrs;
+  };
+}
+
+function toTwoModeDataset(doc, { name } = {}) {
+  const b = new DatasetBuilder({ name: name || doc.name || 'Drawing' });
+  b.beginSource({ format: 'draw', family: 'custom', medium: 'canvas', view: 'full', context: 'custom', directed: false, fileNames: [] });
+  declareTwoMode(b, doc.twoMode.labels);
+  const attrsOf = nodeAttrs(doc);
+  const mode = new Map();
+  for (const n of doc.nodes) {
+    addModeNode(b, `draw:${n.id}`, nodeMode(n), { label: n.label || n.id, attrs: attrsOf(n) });
+    mode.set(n.id, nodeMode(n));
+    b.stat(nodeMode(n) === 0 ? 'mode0' : 'mode1');
+  }
+  const ctx = new Map();
+  const ctxFor = type => {
+    if (!ctx.has(type)) ctx.set(type, b.context(`draw:type:${slug(type)}`, { name: type, kind: 'canvas', visibility: 'unknown', medium: 'canvas' }));
+    return ctx.get(type);
+  };
+  for (const e of doc.edges) {
+    if (!mode.has(e.source) || !mode.has(e.target)) { b.warn('dangling-tie', 'Ties to people who are no longer in the drawing were skipped'); continue; }
+    if (mode.get(e.source) === mode.get(e.target)) { b.warn('same-mode-tie', `Ties between two ${doc.twoMode.labels[0].toLowerCase()} or two ${doc.twoMode.labels[1].toLowerCase()} were left out (a two-mode network ties only across the modes)`); continue; }
+    const [a, x] = mode.get(e.source) === 0 ? [e.source, e.target] : [e.target, e.source];
+    addAffiliation(b, `draw:${a}`, `draw:${x}`, { weight: e.weight ?? 1, context: ctxFor(e.type || DEFAULT_EDGE_TYPE), key: `draw:${e.id}` });
+    b.stat('ties');
+  }
+  return finish(doc, b);
+}
+
+function finish(doc, b) {
   const ds = b.build();
   // The hand layout travels with the dataset (by node index) so a network
   // view can start from the user's own drawing. Optional extension of meta;

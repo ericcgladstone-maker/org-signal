@@ -265,6 +265,64 @@ if (!process.env.QA_SKIP_REAL) {
   await p.close();
 }
 
+// 3. Two-mode data through the real engine (Davis's Southern Women, built
+//    from the networkx fixture with addAffiliation): the two-mode view in
+//    columns with the mode legend and per-mode standouts, People's mode
+//    filter, and the drawer's Two-mode section switching to a projection.
+if (!process.env.QA_SKIP_REAL) {
+  for (const width of [1440, 390]) {
+    const p = await page(width);
+    await p.goto(`${BASE}/index.html#data`, { waitUntil: 'load' });
+    await idle(p, 400);
+    await p.evaluate(async () => {
+      const M = await import('/src/core/model.js');
+      const D = await (await fetch('/test/fixtures/accuracy/davis-southern-women.json')).json();
+      const b = new M.DatasetBuilder({ name: 'Southern Women (Davis 1941)' });
+      b.beginSource({ format: 'classic', view: 'full', context: 'custom', directed: false });
+      M.declareTwoMode(b, ['Women', 'Events']);
+      for (const [x, y] of D.edges) { const [w, e] = D.mode[x] === 0 ? [x, y] : [y, x]; M.addAffiliation(b, `davis:${w}`, `davis:${e}`, { actorLabel: D.names[w], eventLabel: D.names[e] }); }
+      const { store } = await import('/src/ui/store.js');
+      await store.actions.loadDataset(b.build());
+    });
+    await go(p, 'network'); await idle(p, 1500);
+    const net = await p.evaluate(() => ({
+      intro: document.querySelector('.view__intro')?.textContent || '',
+      legend: document.querySelector('.net-legend')?.textContent || '',
+      standouts: document.querySelectorAll('.standout__mode').length,
+      layout: [...document.querySelectorAll('label.field')].find(l => l.textContent.startsWith('Layout'))?.querySelector('select')?.value,
+      density: /Two-mode density/.test(document.querySelector('.net-summary')?.textContent || ''),
+    }));
+    if (!/18 women and 14 events, 89 ties/.test(net.intro)) problems.push(`two-mode ${width}: intro is "${net.intro}"`);
+    if (!/Women \(circles\)/.test(net.legend) || !/Events \(squares\)/.test(net.legend)) problems.push(`two-mode ${width}: mode legend missing`);
+    if (net.standouts !== 2) problems.push(`two-mode ${width}: ${net.standouts} per-mode standout blocks, expected 2`);
+    if (net.layout !== 'columns') problems.push(`two-mode ${width}: layout ${net.layout}, expected columns`);
+    if (width > 600 && !net.density) problems.push(`two-mode ${width}: two-mode density not in the whole-network summary`);
+    await overflow(p, `two-mode ${width} network`); await shot(p, `twomode-${width}-network`);
+    await go(p, 'people'); await idle(p, 600);
+    await p.evaluate(() => { const s = [...document.querySelectorAll('label.field')].find(l => l.textContent.startsWith('Show'))?.querySelector('select'); if (s) { s.value = '1'; s.dispatchEvent(new Event('change', { bubbles: true })); } });
+    await sleep(400);
+    const count = await p.evaluate(() => [...document.querySelectorAll('#main .meta')].map(e => e.textContent.trim()).find(t => /^\d+ of \d+/.test(t)) || '');
+    if (!/^14 of 32/.test(count.trim())) problems.push(`two-mode ${width}: People mode filter shows "${count}"`);
+    await overflow(p, `two-mode ${width} people`); await shot(p, `twomode-${width}-people`);
+    await p.evaluate(async () => { const { store } = await import('/src/ui/store.js'); store.actions.openDrawer(); });
+    await sleep(500);
+    const hasSec = await p.evaluate(() => !!document.querySelector('input[name=tm-view][value=mode0]'));
+    if (!hasSec) problems.push(`two-mode ${width}: drawer has no Two-mode section`);
+    await overflow(p, `two-mode ${width} drawer`); await shot(p, `twomode-${width}-drawer`);
+    if (hasSec) {
+      await p.evaluate(() => document.querySelector('input[name=tm-view][value=mode0]').click());
+      await sleep(200);
+      await p.evaluate(() => [...document.querySelectorAll('.drawer__foot button')].find(b => b.textContent.includes('Apply')).click());
+      await idle(p, 1000);
+      await go(p, 'network'); await idle(p, 1500);
+      const intro = await p.evaluate(() => document.querySelector('.view__intro')?.textContent || '');
+      if (!/18 women and 139 ties/.test(intro) || !/share at least one of the events/.test(intro)) problems.push(`two-mode ${width}: projection intro is "${intro}"`);
+      await overflow(p, `two-mode ${width} projection`); await shot(p, `twomode-${width}-projection`);
+    }
+    await p.close();
+  }
+}
+
 if (process.env.QA_BIG) {
   const p = await page(1440);
   const t0 = Date.now();

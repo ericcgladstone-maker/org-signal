@@ -23,6 +23,14 @@ const FALLBACK = {
   constraint: { label: 'Constraint', meaning: 'How much this person’s contacts are tied to each other (low means brokerage opportunities).', reliability: 'Needs complete ties among contacts; ego exports usually lack them.' },
   effectiveSize: { label: 'Effective size', meaning: 'Number of non-redundant contacts.', reliability: 'Needs ties among contacts.' },
   egoDensity: { label: 'Ego density', meaning: 'Share of possible ties among this person’s contacts that exist.', reliability: 'Noisy for small ego networks.' },
+  // two-mode networks (src/analysis/twomode.js)
+  twoModeDegree: { label: 'Two-mode degree', meaning: 'Share of the other kind of node this one is tied to (Borgatti and Everett).', reliability: 'Compare within a kind of node.' },
+  twoModeBetweenness: { label: 'Two-mode betweenness', meaning: 'How often this node is on the shortest routes between others, against the most possible for its kind.', reliability: 'Sensitive to missing affiliations.' },
+  twoModeCloseness: { label: 'Two-mode closeness', meaning: 'Fewest possible steps to everyone for its kind, divided by its actual steps.', reliability: 'Classic closeness; dominated by reach in disconnected networks.' },
+  twoModeClustering: { label: 'Two-mode clustering', meaning: 'How much this node shares its ties with the nodes two steps away (Latapy).', reliability: 'Unweighted.' },
+  twoModeDensity: { label: 'Two-mode density', meaning: 'Share of all possible ties between the two kinds that exist.', reliability: 'Falls as either kind grows.' },
+  robinsAlexander: { label: 'Two-mode clustering (Robins-Alexander)', meaning: 'How often two nodes that share one tie partner also share another.', reliability: 'Large events create many four-cycles.' },
+  barberModularity: { label: 'Bipartite modularity (Barber)', meaning: 'How cleanly both kinds of node split into groups that keep to themselves.', reliability: 'Scores the communities found on the projection.' },
   community: { label: 'Community', meaning: 'Group found by modularity optimisation (Louvain).', reliability: 'One of many near-equal partitions; small communities can change with the seed.' },
   // network metrics
   density: { label: 'Density', meaning: 'Share of possible ties that exist.', reliability: 'Falls with size by construction; compare only networks of similar size.' },
@@ -51,4 +59,7 @@ export function gloss(key) {
   return { key, label: e?.label || f?.label || humanize(key), meaning: e?.meaning || e?.description || f?.meaning || '', reliability: e?.reliability || e?.note || f?.reliability || '' };
 }
 
+// Two-mode measures (src/analysis/twomode.js): the engine computes them only on
+// a two-mode network, so asking for them elsewhere returns nothing.
+export const TWO_MODE_METRICS = ['twoModeDegree', 'twoModeBetweenness', 'twoModeCloseness', 'twoModeClustering'];
 export const NODE_METRICS = ['degree', 'inDegree', 'outDegree', 'strength', 'inStrength', 'outStrength', 'betweenness', 'closeness', 'eigenvector', 'pagerank', 'clustering', 'coreNumber', 'reciprocity', 'constraint', 'effectiveSize', 'egoDensity'];

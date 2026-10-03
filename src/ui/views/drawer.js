@@ -6,12 +6,13 @@
 
 import { html, useState, useEffect, useRef, useMemo } from '../../../vendor/preact.js';
 import { store, useStore } from '../store.js';
-import { Icon, Flag, Select, ErrorLine } from '../components/common.js';
+import { Icon, Flag, Select, ErrorLine, Term } from '../components/common.js';
 import { Histogram } from '../components/charts.js';
 import { RULES, RULE_TEXT, ruleEvidence, activityHistogram, visibilityPresent, mediaPresent, botCount, timeExtent } from '../lib/dsutil.js';
 import { fmtInt, isoDay, fmtDate } from '../lib/format.js';
 import { RULE_LABEL } from '../actions.js';
-import { inferEventAttributeSchema } from '../../core/model.js';
+import { inferEventAttributeSchema, twoModeOf } from '../../core/model.js';
+import { viewOptions, projectionOptions, projectionSentence } from '../lib/twomode.js';
 
 const ruleName = r => { const l = RULE_LABEL[r] || r; return l.charAt(0).toUpperCase() + l.slice(1); };
 const MEDIA_TEXT = { chat: 'Chat', email: 'Email', meeting: 'Meetings', calendar: 'Calendar', social: 'Social media', survey: 'Surveys', sms: 'Text messages', forum: 'Forums', canvas: 'Drawn' };
@@ -95,7 +96,9 @@ export function SettingsDrawer() {
     <div class="drawer__body">
       <p class="small text2" style="padding-top:.9rem">A tie between two people is built from the evidence below. Each rule is a choice you can defend or change; every tie can be traced back to its events in the Network view.</p>
 
-      <div class="section" style="border-top:0">
+      ${s.twoMode && html`<${TwoModeSection} ds=${ds} s=${s} setS=${setS} />`}
+
+      <div class="section" style=${s.twoMode ? '' : 'border-top:0'}>
         <p class="label">Rules with evidence in this data</p>
         ${rulesWith.map(r => html`<div class=${`rule-row${rule(r).on ? '' : ' rule-row--off'}`}>
           <label class="check"><input type="checkbox" checked=${!!rule(r).on} onChange=${e => setRule(r, { on: e.currentTarget.checked })} /><span style="color:var(--text)">${ruleName(r)}</span></label>
@@ -112,12 +115,12 @@ export function SettingsDrawer() {
       <div class="section">
         <p class="label">Ties</p>
         <div class="grid-2" style="gap:.75rem 1rem">
-          <${Select} label="Direction" value=${s.directed ? 'directed' : 'undirected'} onChange=${v => setS(x => ({ ...x, directed: v === 'directed' }))} options=${[{ value: 'directed', label: 'Directed (A to B)' }, { value: 'undirected', label: 'Undirected' }]} />
+          <${Select} label="Direction" disabled=${!!s.twoMode} value=${s.directed && !s.twoMode ? 'directed' : 'undirected'} onChange=${v => setS(x => ({ ...x, directed: v === 'directed' }))} options=${[{ value: 'directed', label: 'Directed (A to B)' }, { value: 'undirected', label: 'Undirected' }]} />
           <${Select} label="Tie weight" value=${s.weighting || 'count'} onChange=${v => setS(x => ({ ...x, weighting: v }))} options=${[{ value: 'count', label: 'Count of evidence' }, { value: 'log', label: 'Log of count' }, { value: 'binary', label: 'Present or absent' }]} />
           <label class="field"><span>Minimum tie weight</span><input class="input tnum" type="number" min="0" step="0.5" value=${s.minWeight ?? 0} onInput=${e => setS(x => ({ ...x, minWeight: Math.max(0, Number(e.currentTarget.value) || 0) }))} /></label>
           <label class="field"><span>Broadcast cutoff (recipients)</span><input class="input tnum" type="number" min="0" value=${s.maxRecipients ?? 25} onInput=${e => setS(x => ({ ...x, maxRecipients: Math.max(0, Number(e.currentTarget.value) || 0) }))} /></label>
         </div>
-        <p class="basis">Messages addressed to more people than the cutoff are treated as broadcasts and create no ties. 0 means no cutoff.</p>
+        <p class="basis">${s.twoMode ? 'Two-mode data is always undirected: belonging to a group or attending an event has no direction. ' : ''}Messages addressed to more people than the cutoff are treated as broadcasts and create no ties. 0 means no cutoff.</p>
         <label class="check" style="margin-top:.6rem"><input type="checkbox" checked=${s.includeIsolates !== false} onChange=${e => setS(x => ({ ...x, includeIsolates: e.currentTarget.checked }))} />Keep people with no ties (isolates)</label>
       </div>
 
@@ -200,5 +203,33 @@ function TieFieldsSection({ ds, s, setS }) {
           onInput=${e => { const v = e.currentTarget.value; setFilter(f.key, v === '' ? null : { min: Number(v), keepMissing: false }); }} /></label>`; })}
     </div>`}
     <p class="basis">A filter drops the events whose field does not match; a tie with no evidence left disappears. "Not recorded" keeps ties where the field was left blank.</p>
+  </div>`;
+}
+
+// Two-mode (affiliation) data: build the two-mode network itself, or one of
+// its one-mode projections, with the projection's weighting and a minimum
+// number shared (settings.twoMode, src/analysis/construct.js).
+function TwoModeSection({ ds, s, setS }) {
+  const labels = useStore(st => st.network?.twoMode?.labels) || twoModeOf(ds)?.labels || ['Actors', 'Events'];
+  const tm = s.twoMode;
+  const set = patch => setS(x => ({ ...x, twoMode: { ...x.twoMode, ...patch } }));
+  const views = viewOptions(labels);
+  const basis = tm.view === 'mode1' ? 1 : 0;
+  const projected = tm.view === 'mode0' || tm.view === 'mode1';
+  const sentence = projected ? projectionSentence({ ...tm, labels, basis }) : null;
+  return html`<div class="section twomode-sec" style="border-top:0">
+    <p class="label">Two-mode</p>
+    <p class="small text2">This is <${Term} k="twoMode">two-mode</${Term}> data: ${labels[0].toLowerCase()} tied to the ${labels[1].toLowerCase()} they belong to or attend (<${Term} k="affiliation">affiliations</${Term}>). Analyze it as it is, or as a <${Term} k="projection">projection</${Term}> onto one kind.</p>
+    <fieldset class="radios" style="margin-top:.5rem">
+      <legend>Network to analyze</legend>
+      ${views.map(o => html`<label class="radio"><input type="radio" name="tm-view" value=${o.value} checked=${tm.view === o.value} onChange=${() => set({ view: o.value })} /><span>${o.label}</span><span class="radio__desc">${o.desc}</span></label>`)}
+    </fieldset>
+    ${projected ? html`<fieldset class="radios" style="margin-top:.6rem">
+        <legend>Projected tie weight</legend>
+        ${projectionOptions(labels, basis).map(o => html`<label class="radio"><input type="radio" name="tm-proj" value=${o.value} checked=${(tm.projection || 'count') === o.value} onChange=${() => set({ projection: o.value })} /><span>${o.label}</span><span class="radio__desc">${o.desc}</span></label>`)}
+      </fieldset>
+      <label class="field" style="margin-top:.5rem;max-width:16rem"><span>Minimum number shared</span><input class="input tnum" type="number" min="1" step="1" value=${tm.minShared ?? 1} onInput=${e => set({ minShared: Math.max(1, Math.floor(Number(e.currentTarget.value) || 1)) })} /></label>
+      <p class="basis">${sentence} Every shared one makes a clique, which inflates clustering and constraint in a projection.</p>`
+      : html`<p class="basis">Measures on the two-mode network use the <${Term} k="borgattiEverett">Borgatti-Everett normalization</${Term}>: each node is scored against what is possible for its kind. Clustering, density and Burt's measures for one-mode networks do not apply and are hidden.</p>`}
   </div>`;
 }

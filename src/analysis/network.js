@@ -3,6 +3,7 @@
 import { graphOf, components, strongComponents } from './graph.js';
 import { triangles, brandes } from './metrics.js';
 import { createRng, sampleWithoutReplacement } from './rng.js';
+import { twoModeNetworkMetrics } from './twomode.js';
 
 export function computeNetworkMetrics(net, opts = {}) {
   const g = graphOf(net);
@@ -49,6 +50,9 @@ export function computeNetworkMetrics(net, opts = {}) {
   res.strengthGini = gini(strength);
   res.meanDegree = n ? (directed ? m / n : (2 * m) / n) : 0;
   res.degreeAssortativity = degreeAssortativity(g);
+  // Two-mode network: density over possible cross-mode ties, bipartite clustering.
+  const tm = twoModeNetworkMetrics(net);
+  if (tm) Object.assign(res, tm);
   progress(1, 'done');
   return res;
 }
