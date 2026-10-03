@@ -37,7 +37,7 @@ export function reportPlan(scope, target, ds) {
     return [
       ['network_summary', {}],
       ['applicability', {}],
-      ['null_model', { stats: ['transitivity', 'avgClustering', ...(directed ? ['reciprocity'] : [])], reps: 100 }],
+      ['null_model', { stats: ['transitivity', 'avgClustering', ...(directed ? ['reciprocity'] : [])] }],
       ['top_nodes', { metric: 'degree', k: 5, uncertainty: true }],
       ['top_nodes', { metric: 'betweenness', k: 5, uncertainty: true }],
       ['top_nodes', { metric: 'constraint', k: 5, ascending: true }],

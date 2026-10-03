@@ -385,9 +385,12 @@ const HANDLERS = {
     return { method: 'Louvain', resolution, seed, count: c.count ?? sizes.size, modularity: c.modularity, communities: list.slice(0, 20) };
   },
 
-  async null_model({ engine }, { stats, reps = 100 }) {
-    const r = await engine.nullModel({ stats, reps, seed: 1 });
-    return { method: 'degree-preserving rewiring', reps, results: r };
+  // Without an explicit count the engine's default (200) is used, so the
+  // analyst shares the cached run the views show instead of computing a
+  // second, different one.
+  async null_model({ engine }, { stats, reps }) {
+    const r = await engine.nullModel({ stats, ...(reps ? { reps } : {}), seed: 1 });
+    return { method: 'degree-preserving rewiring', reps: r?.meta?.reps ?? reps ?? null, results: r };
   },
 
   async time_series({ engine, ds }, { metric, window, node }) {
