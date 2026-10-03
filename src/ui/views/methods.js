@@ -6,8 +6,10 @@
 import { isDeactivated } from '../lib/measures.js';
 import { html, useState, useEffect, useRef } from '../../../vendor/preact.js';
 import { store, useStore } from '../store.js';
-import { toJSON, fromJSON, MODEL_VERSION } from '../../core/model.js';
 import { FORMATS, available, exportAs, fileBase } from '../services/exporters.js';
+import { projectText, readProject, openProject } from './data/project.js';
+import { summaryResults, wholeNetworkLines } from '../../llm/methods.js';
+import { withContacts, metricLabel } from '../lib/measures.js';
 import { methodsAppendix } from '../services/llm.js';
 import { gloss } from '../services/glossary.js';
 import { ViewHead, Loading, ErrorLine, Flag, download, Unavailable, applicabilityReason } from '../components/common.js';
@@ -26,16 +28,15 @@ export function MethodsView() {
   </div>`;
 }
 
-// Save a file and say so (D17): a download otherwise happens silently.
+// download() confirms the save itself.
 function save(text, filename, mime) {
   download(text, filename, mime);
-  store.actions.notify('info', `Downloaded ${filename}.`);
 }
 
 // What the appendix describes: the construction actually used, the measures
 // computed, and only the optional analyses that were run on this network
-// (store.methodsLog, recorded by the engine adapter), with their own
-// replicate counts.
+// (store.methodsLog, recorded by the engine adapter), each with its own
+// replicate count and the results the views showed (`result`, N4, N5).
 export function appendixInput(state) {
   const { dataset, settings, network, metrics, communities } = state;
   const log = state.methodsLog || {};
@@ -43,24 +44,34 @@ export function appendixInput(state) {
   for (const [k, m] of Object.entries(metrics?.meta || {})) if (m?.approximate) approx[k] = m.method || 'approximate (sampled)';
   const attrs = groupableAttributes(dataset);
   const attributeLabels = Object.fromEntries(attrs.map(a => [a.key, a.label || a.key]));
-  const groups = [...new Set([...(log.groups || []).map(g => g.attr), ...(log.nullModel || []).map(n => n.attr)].filter(a => a && a !== 'community'))];
+  // The detected communities are grouped under an internal key ('__community');
+  // the appendix names them in words (N12).
+  const isComm = a => a === 'community' || a === '__community';
+  const groups = [];
+  for (const g of log.groups || []) if (g.attr) groups.push({ attr: isComm(g.attr) ? '__community' : g.attr, result: g.result });
+  for (const n of log.nullModel || []) if (n.attr && !groups.some(g => g.attr === n.attr)) groups.push({ attr: n.attr });
   const content = {};
   if (log.affect?.length) content.affect = log.affect[log.affect.length - 1];
   if (log.keywords?.length) content.keywords = log.keywords[log.keywords.length - 1];
   if (log.topics?.length) content.topics = log.topics[log.topics.length - 1];
+  // People view's measure list leads with contacts (decision 4).
+  const nodeKeys = Object.keys(metrics?.node || {});
   return {
     dataset, settings,
     network: network ? { n: network.n, directed: network.directed, edges: { count: network.edgeCount }, summary: network.summary } : null,
-    metrics: Object.keys(metrics?.node || {}),
+    metrics: nodeKeys.includes('degree') ? ['contacts', ...nodeKeys] : nodeKeys,
     networkStats: Object.keys(metrics?.network || {}).filter(k => typeof metrics.network[k] === 'number'),
     approx,
-    communities: communities ? { resolution: communities.resolution ?? 1, seed: communities.seed ?? 1, runs: 1 } : undefined,
+    communities: communities ? { resolution: communities.resolution ?? 1, seed: communities.seed ?? 1, runs: 1, count: communities.count, modularity: communities.modularity } : undefined,
     groups, attributeLabels,
     // The import report's short names, by source index (report.sources[i].id).
     sourceLabels: (dataset?.meta?.sources || []).map((_, i) => state.report?.sources?.find(x => x.id === i)?.label || null),
-    nullModels: log.nullModel || [],
+    nullModels: (log.nullModel || []).map(n => ({ ...n, attr: n.attr && isComm(n.attr) ? undefined : n.attr })),
     resampling: (log.resampling || []).map(r => ({ ...r, scheme: 'events resampled with replacement' })),
-    time: (log.time || []).map(t => ({ window: t.window, metrics: t.metrics, start: t.start, end: t.end, purpose: t.purpose })),
+    time: (log.time || []).map(t => ({ window: t.window, metrics: t.metrics, start: t.start, end: t.end, purpose: t.purpose, result: t.result })),
+    shifts: log.shifts || [],
+    beforeAfter: log.beforeAfter || [],
+    diffusion: log.diffusion || [],
     content: Object.keys(content).length ? content : undefined,
     software: { name: 'Org Signal', version: '2' },
   };
@@ -83,6 +94,8 @@ function Loaded({ ds }) {
   const [err, setErr] = useState(null);
   const [avail, setAvail] = useState(null);
   const [busy, setBusy] = useState(null);
+  // Leave out contact details (N19): on by default, for files handed in or shared.
+  const [omitContacts, setOmitContacts] = useState(true);
   const logKey = JSON.stringify(state.methodsLog || {});
   useEffect(() => {
     let live = true;
@@ -95,7 +108,7 @@ function Loaded({ ds }) {
   const doExport = async (id) => {
     setBusy(id);
     try {
-      const r = await exportAs(id, { ds, settings: state.settings, nodeMetrics: state.metrics?.node, communities: state.communities });
+      const r = await exportAs(id, { ds, settings: state.settings, nodeMetrics: state.metrics?.node, communities: state.communities, omitContacts });
       save(r.text, r.filename, r.mime);
     } catch (e) { store.actions.notify('error', e.message); } finally { setBusy(null); }
   };
@@ -115,7 +128,9 @@ function Loaded({ ds }) {
   return html`
     <section class="section" style="border-top:0" aria-labelledby="exp-h">
       <h2 id="exp-h" class="section__title">Network files</h2>
-      <p class="small text2" style="margin-bottom:.6rem">The network as currently constructed, with attributes, measures and communities. Ids are the dataset's person keys, so files can be joined back.</p>
+      <p class="small text2" style="margin-bottom:.6rem">The network as currently constructed, with attributes, measures (contacts, ${state.network?.directed ? 'total ties in + out, ' : ''}betweenness and the rest) and communities numbered from 1 as in the app. Each tie carries its evidence per construction rule as evidence_reply, evidence_mention and so on, in every format.</p>
+      <label class="check mx-privacy"><input type="checkbox" checked=${omitContacts} onChange=${e => setOmitContacts(e.currentTarget.checked)} />
+        <span>Leave out contact details: email addresses, handles, phone numbers and account ids. People keep their names; ids become p1, p2, ... ${omitContacts ? '' : 'With this off, ids are the dataset\'s person keys, so files can be joined back to the data.'}</span></label>
       <div class="table-wrap"><table class="tbl tbl--files">
         <tbody>${FORMATS.map(f => html`<tr>
           <td class="name">${f.label}</td>
@@ -131,7 +146,7 @@ function Loaded({ ds }) {
         <button type="button" class="tlink tlink--down" onClick=${summary} disabled=${md === null}>Summary report (HTML, prints to PDF)</button>
         <a class="tlink tlink--arrow" href="#network" onClick=${e => { e.preventDefault(); store.actions.setView('network'); }}>The current network view as SVG or PNG</a>
       </div>
-      <p class="basis">The summary report contains the data description, whole-network measures with their meanings, the most central people with applicability notes, and the methods appendix. No language model is involved.</p>
+      <p class="basis">The summary report contains the data description, whole-network measures with their meanings, the random-network and group comparisons run so far (with null means, z and p), the most central people with applicability notes, and the methods appendix. No language model is involved.</p>
     </section>
     <${Project} />
     <section class="section" aria-labelledby="meth-h">
@@ -156,7 +171,10 @@ function topBy(state, metric, k = 10) {
   return Array.from(arr.keys()).filter(v => Number.isFinite(arr[v])).sort((a, b) => arr[b] - arr[a]).slice(0, k).map(v => ({ i: ids[v], value: arr[v] }));
 }
 
-function summaryMarkdown(state, appendix) {
+// The printable summary: data, whole network (network-level wording), the
+// random-network and group comparisons that were run (verdict first, N13),
+// the most central people by contacts and betweenness, then the appendix.
+export function summaryMarkdown(state, appendix) {
   const { dataset: ds, network, metrics, communities, applicability: ap = {}, report } = state;
   const L = [];
   L.push(`# ${ds.meta.name}`, '');
@@ -164,30 +182,34 @@ function summaryMarkdown(state, appendix) {
   L.push(`${fmtInt(ds.nodes.count)} people and ${fmtInt(ds.events.count)} events from ${ds.meta.sources.length} ${ds.meta.sources.length === 1 ? 'source' : 'sources'}${t?.timeRange ? `, ${fmtRange(t.timeRange.start, t.timeRange.end)}` : ''}. The network has ${fmtInt(network.n)} people and ${fmtInt(network.edgeCount)} ${network.directed ? 'directed' : 'undirected'} ties.`, '');
   L.push('## Sources', '');
   for (const s of report?.sources || []) {
-    L.push(`- **${s.format}** (${s.view} view): ${fmtInt(s.counts?.events)} events, ${fmtInt(s.counts?.nodes)} people. Cannot show: ${(s.cannotShow || []).join(' ')}`);
+    L.push(`- **${s.label || s.format}** (${s.view} view): ${fmtInt(s.counts?.events)} events, ${fmtInt(s.counts?.nodes)} people. Cannot show: ${(s.cannotShow || []).join(' ')}`);
   }
   L.push('', '## Whole network', '');
-  for (const [k, v] of Object.entries(metrics?.network || {})) {
-    if (typeof v !== 'number' || !Number.isFinite(v)) continue;
-    const g = gloss(k);
-    if (g.meaning === 'No description available.') continue;
-    L.push(`- **${g.label}: ${fmtNum(v)}.** ${g.meaning} ${g.reliability ? `Reliability: ${g.reliability}` : ''}`);
-  }
-  if (communities) L.push(`- **Communities: ${communities.count}** (modularity ${fmtNum(communities.modularity)}). ${gloss('community').reliability}`);
+  L.push(...wholeNetworkLines(metrics?.network || {}, k => gloss(k).label));
+  if (communities) L.push(`- **Communities: ${communities.count}** (modularity ${fmtNum(communities.modularity)}), numbered from 1 by size. ${gloss('community').reliability || ''}`.trim());
+  L.push('');
+  const results = summaryResults(appendixInput(state));
+  if (results.length) L.push(...results);
   // Rank intervals from the People view's stability check, when it was run on this network.
   const stab = state.stability?.version === network.version ? state.stability.byMetric || {} : {};
-  const anyStab = ['degree', 'betweenness'].some(m => stab[m]);
-  L.push('', '## Most central people', '', anyStab ? 'Ranks are descriptive. Where shown, the rank interval comes from resampling events and rebuilding the network; a wide interval means the rank is not a finding.' : 'Ranks are descriptive. Check rank intervals (People view, "Check stability of this ranking") before treating a ranking as a finding.', '');
-  for (const m of ['degree', 'betweenness']) {
-    if (ap[m]?.level === 'na') { L.push(`- ${gloss(m).label}: not applicable here. ${applicabilityReason(ap[m])}`); continue; }
-    const top = topBy(state, m, 8);
+  const anyStab = ['degree', 'contacts', 'betweenness'].some(m => stab[m]);
+  L.push('## Most central people', '', anyStab ? 'Ranks are descriptive. Where shown, the rank interval comes from resampling events and rebuilding the network; a wide interval means the rank is not a finding, and a narrow one cannot show that the ties themselves were measured without error.' : 'Ranks are descriptive. Check rank intervals (People view, "Check stability of this ranking") before treating a ranking as a finding.', '');
+  const node = withContacts(metrics?.node, network.directed) || {};
+  const local = { ...state, metrics: { ...metrics, node } };
+  for (const m of ['contacts', 'betweenness']) {
+    const apKey = m === 'contacts' ? 'degree' : m;
+    if (ap[apKey]?.level === 'na') { L.push(`- ${metricLabel(m, network.directed)}: not applicable here. ${applicabilityReason(ap[apKey])}`); continue; }
+    const top = topBy(local, m, 8);
     if (!top.length) continue;
-    const iv = x => { const r = stab[m]?.map?.get(x.i); return r && Number.isFinite(r.lo) ? `; rank ${r.lo}-${r.hi}${Number.isFinite(r.topShare) ? `, top ${stab[m].top} in ${Math.round(r.topShare * 100)}% of ${stab[m].reps} resamples` : ''}` : ''; };
-    L.push(`- **${gloss(m).label}** (${gloss(m).meaning}) ${top.map(x => `${nodeLabel(ds, x.i)}${isDeactivated(ds, x.i) ? ' [deactivated account]' : ''} (${fmtNum(x.value)}${iv(x)})`).join(', ')}.${ap[m]?.level === 'caution' ? ` Caution: ${applicabilityReason(ap[m])}` : ''}`);
+    const st = stab[m] || (m === 'contacts' ? stab.degree : null);
+    const iv = x => { const r = st?.map?.get(x.i); return r && Number.isFinite(r.lo) ? `; rank ${r.lo}-${r.hi}${Number.isFinite(r.topShare) ? `, top ${st.top} in ${Math.round(r.topShare * 100)}% of ${st.reps} resamples` : ''}` : ''; };
+    const name = metricLabel(m, network.directed);
+    const meaning = m === 'contacts' ? 'number of distinct people each person has a tie with' : 'share of shortest paths between other people that pass through each person';
+    L.push(`- **${name}** (${meaning}): ${top.map(x => `${nodeLabel(ds, x.i)}${isDeactivated(ds, x.i) ? ' [deactivated account]' : ''} (${m === 'contacts' ? fmtInt(x.value) : fmtNum(x.value)}${iv(x)})`).join(', ')}.${ap[apKey]?.level === 'caution' ? ` Caution: ${applicabilityReason(ap[apKey])}` : ''}`);
   }
   // A departed person can still rank high on what they did before leaving;
   // say so where a reader would otherwise take the ranking at face value.
-  const gone = [...new Set(['degree', 'betweenness'].flatMap(m => (ap[m]?.level === 'na' ? [] : topBy(state, m, 8)).map(x => x.i)))].filter(i => isDeactivated(ds, i));
+  const gone = [...new Set(['contacts', 'betweenness'].flatMap(m => (ap[m === 'contacts' ? 'degree' : m]?.level === 'na' ? [] : topBy(local, m, 8)).map(x => x.i)))].filter(i => isDeactivated(ds, i));
   if (gone.length) L.push('', `${gone.map(i => nodeLabel(ds, i)).join(', ')} ${gone.length === 1 ? 'is a deactivated account' : 'are deactivated accounts'} in the export: ${gone.length === 1 ? 'their' : 'these'} ranks reflect activity before they left, not the current organization.`);
   L.push('');
   if (appendix) L.push(appendix.replace(/^# /m, '## '));
@@ -222,7 +244,7 @@ export function staticNetworkSVG(ds, data, communities, metrics) {
 <g stroke="${t.edge}" stroke-opacity="${edgeA}" stroke-width="0.6">${lines.join('')}</g>
 <g>${circles.join('')}</g>
 <g fill="${t.text2}">${legend}</g>
-<text x="${W - pad}" y="${H - 14}" text-anchor="end" fill="${t.muted}">${esc(ds.meta.name)} · ${fmtInt(n)} people, ${fmtInt(data.src.length)} ties · size: degree · Org Signal</text>
+<text x="${W - pad}" y="${H - 14}" text-anchor="end" fill="${t.muted}">${esc(ds.meta.name)} · ${fmtInt(n)} people, ${fmtInt(data.src.length)} ties · node size: number of ties · Org Signal</text>
 </svg>`;
 }
 
@@ -231,27 +253,18 @@ function Project() {
   const ref = useRef(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
-  const saveProject = () => {
-    const ds = state.dataset;
-    const head = JSON.stringify({ format: 'org-signal-project', version: 1, modelVersion: MODEL_VERSION, savedAt: new Date().toISOString(), name: ds.meta.name, settings: state.settings });
-    const body = `${head.slice(0, -1)},"dataset":${toJSON(ds)}}`;
-    save(body, `${fileBase(ds, 'project')}.orgsignal.json`, 'application/json');
-  };
+  const saveProject = () => save(projectText(state), `${fileBase(state.dataset, 'project')}.orgsignal.json`, 'application/json');
   const open = async (file) => {
     setErr(null); setBusy(true);
     try {
-      const obj = fromJSON(await file.text());
-      if (obj?.format !== 'org-signal-project' || !obj.dataset?.nodes) throw new Error('This is not an Org Signal project file.');
-      if (obj.modelVersion > MODEL_VERSION) throw new Error(`This project was saved by a newer version of Org Signal (data model ${obj.modelVersion}).`);
-      await store.actions.loadDataset(obj.dataset, { mode: 'replace' });
-      if (obj.settings) await store.actions.rebuild({ ...store.get().settings, ...obj.settings }, { quiet: true });
-      store.actions.notify('info', `Opened ${obj.name || 'project'}.`);
+      await openProject(await readProject(file));
       store.actions.focus('#proj-h');
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };
+  const survey = (state.dataset?.meta?.sources || []).some(x => x.nominations?.respondents);
   return html`<section class="section" aria-labelledby="proj-h">
     <h2 id="proj-h" class="section__title" tabindex="-1">Project file</h2>
-    <p class="small text2" style="margin-bottom:.9rem">Loaded data and results are not kept in the browser: closing this tab erases them (only Build drafts and an opted-in API key are saved). A project file saves the combined data (after identity merges and joins) and the construction settings to your computer, and opening it restores the same network and measures. It contains everything imported, including message text; store it as carefully as the original exports.</p>
+    <p class="small text2" style="margin-bottom:.9rem">Loaded data and results are not kept in the browser: closing this tab erases them (only Build drafts and an opted-in API key are saved). A project file saves the combined data (after identity merges and joins) and the construction settings to your computer, and opening it here or dropping it on Data restores the same network and measures. It contains everything imported, including message text and contact details; store it as carefully as the original exports.${survey ? ' For this survey it also keeps who named whom, so whoever opens it can see each person\'s nominations: share it only with people allowed to see the raw answers.' : ''}</p>
     <div class="tlinks">
       ${state.dataset && html`<button type="button" class="btn btn--primary" onClick=${saveProject}>Save project</button>`}
       <button type="button" class="tlink" onClick=${() => ref.current.click()} disabled=${busy}>${busy ? 'Opening' : 'Open a project'}</button>

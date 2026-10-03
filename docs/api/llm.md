@@ -166,24 +166,38 @@ How the sample is drawn and coded:
 
 ```
 input = { dataset | meta, settings, network, metrics: [nodeMetricNames], networkStats: [names], approx: { [metric]: text },
-          communities: { resolution, seed, runs }, groups: [attrKeys], nullModel: { stats, reps, seed, pDefinition? },
-          resampling: { metric, reps, top, seed, scheme }, time: { window, start, end, metrics },
-          content: { affect: { by }, keywords: { by, k }, topics: { k, seed, method }, coding: { codebook, sample, settings, agreement } },
+          sourceLabels: [short name per source],
+          communities: { resolution, seed, runs, count, modularity },
+          groups: [attrKey | { attr, result }], attributeLabels: { key: label },
+          nullModel | nullModels: [{ stats?, reps, seed, attr, communities, pDefinition?, result }],
+          resampling: [{ metric, reps, top, seed, scheme, result }],
+          time: [{ window, start, end, metrics, purpose, result }], shifts: [{ method, threshold, baseline, result }],
+          beforeAfter: [{ date, metrics, attr, result }], diffusion: [{ terms, reps, result }],
+          content: { affect: { by, attr }, keywords: { by, k }, topics: { k, seed, method }, coding: { codebook, sample, settings, agreement } },
           software: { name, version } }
+summarizeRun(kind, result, { labels }) -> summary | null   // kind: nullModel, groups, resampling, time, shifts, beforeAfter, diffusion
+summaryResults(input) -> [markdown lines]                    // the summary report's "Compared with random networks" and "Groups"
+wholeNetworkLines(networkStats, label) -> [markdown lines]   // whole-network values with network-level wording
+NETWORK_STAT_TEXT                                            // { stat: [network-level description, refs] }
 ```
 
-The appendix describes only what was used:
-- sources and their views, with import warnings;
-- active construction rules with weights;
-- direction, weighting, filters and time range;
-- metric definitions with references;
-- Louvain community detection, with its seed and caveat;
-- group mixing (assortativity and the E-I index);
-- the null model and resampling;
-- time windows;
-- content methods;
-- limitations implied by the data's views;
+`result` is a `summarizeRun` summary. The engine adapter (`src/ui/services/engine.js`) records one with each run in `store.methodsLog`, and `appendixInput(state)` in `src/ui/views/methods.js` passes them on, so the appendix and the summary report quote the numbers the views showed. Without `result` a run is described by its parameters only.
+
+The appendix describes only what was used, with its results (N4, N5):
+- sources and their views, with import notes; survey sources as roster surveys with their combine rule (`source.combine` or `source.mergeRule`), who responded, "9 response files read", and no time zone (C10);
+- attribute joins, including columns left out because no matched row had a value;
+- active construction rules with weights; direction, weighting (a survey tie field when it is the weight), filters and the time range ("up to but not including" the exclusive end). Survey-only data leaves out the broadcast cutoff, bots and visibility layers;
+- measure definitions with references and no bare "Degree" (decision 4): Contacts, Total ties (in + out) or Contacts (degree), Betweenness (normalized, with the divisor and how to get the raw count), Closeness (harmonic, and how it differs from 1 / sum of distances), eigenvector on the undirected network with weights summed in both directions, PageRank with damping 0.85 following tie direction (N23);
+- Louvain with its seed, the count and modularity, and communities numbered from 1;
+- group mixing per attribute with assortativity, E-I and within/between tie counts; the detected communities are named in words, never by the internal key `__community` (N12);
+- every null-model run with its model and swap rate and, per statistic, observed value, random mean, sd, 95% interval, z and p, with "none of the R randomized networks came this close (p ≤ 1/(R + 1))" at the floor and how modularity's null was built; the p definition once;
+- rank stability with the top five rank intervals and the caveat that resampling events cannot test whether a tie exists (N14);
+- change over time: window counts with the first start and the inclusive last day, the data's own range and how many edge windows are partly covered (N7); shift detection with its method, baseline, the three thresholds (network, group, person), the skipped windows and the largest shifts; before/after with both periods, the randomization test described once (events relabelled before or after; N6), per measure means, d_z and p, and the tie turnover;
+- content methods, and diffusion with exposure, the shuffled-time null, one-sided p and a ceiling warning when the shuffled baseline is 90% or more;
+- limitations implied by the data: one person's slice for several personal exports (C3), snapshot attributes in time analyses, self-reports for surveys;
 - a reference list containing only the works cited.
+
+The summary report (`summaryMarkdown` in `src/ui/views/methods.js`) adds `summaryResults` after the whole-network values: one verdict-first line per statistic ("The network splits into communities far more clearly than chance."), then the number with its scale, the random mean and interval, z and p; a test reused by several views is listed once. Most central people are listed by Contacts and Betweenness (normalized), using `metricLabel`.
 
 `REFERENCES` holds the verified entries.
 

@@ -65,7 +65,10 @@ function asRecords(rows) {
 }
 
 // joinProfiles(ds, rows, { keyColumn, matchOn, columns?, overwrite = true })
-// -> { dataset, report: { matched, unmatchedRows, unmatchedNodes, ambiguous, columnTypes, overwritten } }
+// -> { dataset, report: { matched, unmatchedRows, unmatchedNodes, ambiguous, columnTypes, overwritten, emptyColumns } }
+// A column with no value in any matched row (an HR export's empty Manager
+// column) is not added; it is listed in emptyColumns and in the join record,
+// so the report and the methods appendix can say so (N18).
 // dataset is a new object sharing everything with ds except node attrs and
 // attributeSchema, so the original stays usable (undo).
 export function joinProfiles(ds, rows, { keyColumn, matchOn = 'email', columns, overwrite = true } = {}) {
@@ -103,6 +106,7 @@ export function joinProfiles(ds, rows, { keyColumn, matchOn = 'email', columns, 
 
   const attrs = ds.nodes.attrs.map(a => ({ ...a }));
   const matched = [];
+  const filled = Object.fromEntries(cols.map(c => [c, 0]));
   let overwritten = 0;
   for (const [ni, cs] of byNode) {
     if (cs.length > 1) {
@@ -113,6 +117,7 @@ export function joinProfiles(ds, rows, { keyColumn, matchOn = 'email', columns, 
     for (const c of cols) {
       const v = convert(records[ri][c], columnTypes[c]);
       if (v === undefined) continue;
+      filled[c]++;
       if (c in attrs[ni] && attrs[ni][c] !== v) { if (!overwrite) continue; overwritten++; }
       attrs[ni][c] = v;
     }
@@ -123,11 +128,12 @@ export function joinProfiles(ds, rows, { keyColumn, matchOn = 'email', columns, 
   for (let i = 0; i < ds.nodes.count; i++) if (!matchedNodes.has(i)) unmatchedNodes.push({ index: i, key: ds.nodes.keys[i], label: ds.nodes.labels[i], isBot: !!ds.nodes.isBot[i] });
 
   const dataset = { ...ds, nodes: { ...ds.nodes, attrs }, attributeSchema: inferAttributeSchema(attrs) };
-  dataset.meta = { ...ds.meta, profileJoins: [...(ds.meta.profileJoins || []), { keyColumn, matchOn, columns: cols, matched: matched.length, rows: records.length, at: Date.now() }] };
+  const emptyColumns = cols.filter(c => !filled[c]);
+  dataset.meta = { ...ds.meta, profileJoins: [...(ds.meta.profileJoins || []), { keyColumn, matchOn, columns: cols.filter(c => filled[c]), emptyColumns, matched: matched.length, rows: records.length, at: Date.now() }] };
   return {
     dataset,
     report: {
-      matched, unmatchedRows, unmatchedNodes, ambiguous, columnTypes, overwritten,
+      matched, unmatchedRows, unmatchedNodes, ambiguous, columnTypes, overwritten, emptyColumns,
       summary: `${matched.length} of ${records.length} rows matched one person each; ${ambiguous.length} ambiguous; ${unmatchedRows.length} rows and ${unmatchedNodes.length} people unmatched.`,
     },
   };

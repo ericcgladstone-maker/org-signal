@@ -19,7 +19,8 @@ const CODES = {
   info: ['auto-mapping', 'multiple-egos', 'matrix-duplicate', 'pair-values-as-weights', 'self-nominations', 'self-loops',
     'direction-assumed', 'interval-end-dropped', 'edge-attrs-dropped', 'node-times-dropped', 'dynamic-attr-flattened',
     'slack-usergroup-mentions', 'teams-channel-visibility-unknown', 'mbox-preamble', 'empty-mbox', 'empty-file', 'duplicate-sessions-skipped',
-    'combine-rule', 'survey-responded', 'survey-nonrespondents', 'survey-earlier-version', 'survey-perceived', 'spam-trash-excluded', 'automated-excluded', 'automated-included', 'owner-from-chat-title', 'nested-zip'],
+    'combine-rule', 'survey-responded', 'survey-nonrespondents', 'survey-earlier-version', 'survey-perceived', 'spam-trash-excluded', 'automated-excluded', 'automated-included', 'owner-from-chat-title', 'nested-zip',
+    'roster-tie-weight', 'css-consensus-weight'],
 };
 const CODE_SEV = new Map(Object.entries(CODES).flatMap(([sev, list]) => list.map(c => [c, sev])));
 const SEVERITY = {
@@ -117,6 +118,31 @@ function familyLines(s, stats) {
   return { can, cannot };
 }
 
+// Several chats or exports from one person's phone or account, read as one
+// group (56 WhatsApp chats): one person's slice of their social life. The
+// owner is in every conversation, so they connect everyone by construction
+// and path measures for them describe the export, not the person (C3).
+export function personalGroupLines(list) {
+  const n = list.length;
+  const chats = list.every(s => s.view === VIEWS.CHAT);
+  const noun = chats ? 'chats' : 'exports';
+  const owners = [...new Set(list.map(s => s.ego?.label).filter(Boolean))];
+  const owner = owners.length === 1 ? owners[0] : 'the owner';
+  const groupChats = list.filter(s => (s.counts?.nodes || 0) > 2).length;
+  return {
+    canShow: [
+      `Whom ${owner} talks with across these ${n} ${noun}, how often and when: ${owner === 'the owner' ? "the owner's" : `${owner}'s`} personal network and its size.`,
+      ...(groupChats ? [`Which contacts appear together in the ${groupChats} group ${groupChats === 1 ? 'chat' : 'chats'}, so the parts of ${owner === 'the owner' ? "the owner's" : `${owner}'s`} life show up as clusters (communities).`] : []),
+    ],
+    cannotShow: [
+      `Anyone's position in a wider network: this is one person's slice. ${owner === 'the owner' ? 'The owner' : owner} is in every ${chats ? 'chat' : 'export'}, so ${owner === 'the owner' ? 'they connect' : 'connects'} everyone by construction; betweenness, closeness, constraint and effective size describe the export, not the person.`,
+      `How ${owner === 'the owner' ? "the owner's" : `${owner}'s`} contacts know each other outside these ${noun}.`,
+    ],
+  };
+}
+
+const isPersonal = s => s.view === VIEWS.EGO || (s.view === VIEWS.CHAT && s.family === 'personal');
+
 export function importReport(ds) {
   const e = ds.events;
   const S = ds.meta.sources.length;
@@ -178,6 +204,8 @@ export function importReport(ds) {
       id: sid,
       format: s.format, family: s.family, medium: s.medium, view: s.view, context: s.context,
       variant: s.variant ?? null, directed: s.directed ?? null,
+      // How a survey's two answers about a pair were combined (union, intersection, respondent).
+      combine: s.combine ?? s.mergeRule ?? null,
       label: formatLabel(s.format, s.variant), title: s.title ?? null,
       // Every event is a self-report (survey nominations, declared network
       // files): the UI words counts as responses and reported ties.
@@ -213,13 +241,30 @@ export function importReport(ds) {
   const notes = [];
   // Personal exports: ego views plus single chats exported from one phone.
   // Several chats from one app are one export to the person who made them.
-  const personal = sources.filter(s => s.view === VIEWS.EGO || (s.view === VIEWS.CHAT && s.family === 'personal'));
+  const personal = sources.filter(isPersonal);
   if (personal.length > 1) {
     const kinds = new Map();
     for (const s of personal) kinds.set(s.label, (kinds.get(s.label) || 0) + 1);
     const parts = [...kinds].map(([label, n]) => (n > 1 && personal.find(s => s.label === label).view === VIEWS.CHAT ? `${n} ${label} chats` : n > 1 ? `${n} ${label} exports` : label));
-    notes.push(`${parts.length > 1 ? `${listJoin(parts)} are` : `${parts[0]} are`} personal exports. Each holds only the conversations its owner (usually you) took part in, so the combined network centers on the owners and shows little of how their contacts know each other.`);
+    notes.push(`${parts.length > 1 ? `${listJoin(parts)} are` : `${parts[0]} are`} personal exports: one person's slice. Each holds only the conversations its owner (usually you) took part in, so the owner is tied to everyone and bridges them by construction, and the data shows little of how their contacts know each other.`);
   }
+  // Like sources read as one group (the Data view shows three or more of
+  // one format and view as one card): distinct people across the group, since
+  // summing per-chat counts counts the owner and shared contacts many times.
+  const byGroup = new Map();
+  sources.forEach((src, sid) => {
+    const k = `${src.label}|${src.view}`;
+    if (!byGroup.has(k)) byGroup.set(k, { key: k, sources: [], people: new Set() });
+    const g = byGroup.get(k);
+    g.sources.push(sid);
+    for (const i of per[sid].nodes) g.people.add(i);
+  });
+  const groups = [...byGroup.values()].filter(g => g.sources.length > 1).map(g => {
+    const list = g.sources.map(i => sources[i]);
+    const out = { key: g.key, sources: g.sources, people: g.people.size };
+    if (list.every(isPersonal)) Object.assign(out, personalGroupLines(list));
+    return out;
+  });
   if (new Set(sources.map(s => s.view)).size > 1) notes.push('Sources with different views were combined. Measures are checked against the narrowest view before they are shown.');
   if (ds.meta.merges?.length) {
     let groups = 0, folded = 0;
@@ -260,7 +305,7 @@ export function importReport(ds) {
       timeRange: Number.isFinite(tMin) ? { start: tMin, end: tMax } : null,
       warnings: { error: 0, warn: 0, info: 0, ...countSev(sources) },
     },
-    sources, notes,
+    sources, notes, groups,
   };
 }
 

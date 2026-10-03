@@ -149,7 +149,7 @@ Time helpers:
 
 ```js
 joinProfiles(ds, rows, { keyColumn, matchOn: 'key'|'platformId'|'email'|'name', columns?, overwrite = true })
-  -> { dataset, report: { matched[], unmatchedRows[], unmatchedNodes[], ambiguous[], columnTypes, overwritten, summary } }
+  -> { dataset, report: { matched[], unmatchedRows[], unmatchedNodes[], ambiguous[], columnTypes, overwritten, emptyColumns[], summary } }
 inferColumnType(values) -> 'boolean'|'numeric'|'date'|'id'|'categorical'|'text'|'empty'
 ```
 
@@ -158,7 +158,8 @@ inferColumnType(values) -> 'boolean'|'numeric'|'date'|'id'|'categorical'|'text'|
 - Ambiguous cases are reported and never applied:
   - a row that matches several people;
   - a person matched by several rows.
-- Returns a new dataset; the input dataset is unchanged. Each join is logged in `meta.profileJoins`.
+- Returns a new dataset; the input dataset is unchanged. Each join is logged in `meta.profileJoins` as `{ keyColumn, matchOn, columns, emptyColumns, matched, rows, at }`.
+- A requested column with no value in any matched row (an HR export's empty Manager column) is not added: it is listed in `report.emptyColumns` and the join record's `emptyColumns`, and the Data view and the methods appendix say so. The Data view also leaves columns that are empty in every row unticked.
 
 ## Identity and merging
 
@@ -211,8 +212,9 @@ Two rules hold for every match:
 ## Import report (`src/core/report.js`)
 
 ```js
-importReport(ds) -> { totals: { nodes, events, contexts, sources, bots, timeRange, warnings: { error, warn, info } }, sources: [...], notes[] }
+importReport(ds) -> { totals: { nodes, events, contexts, sources, bots, timeRange, warnings: { error, warn, info } }, sources: [...], notes[], groups[] }
 warningSeverity(w) -> 'error'|'warn'|'info'
+personalGroupLines(sources) -> { canShow[], cannotShow[] }   // wording for many personal exports read as one group
 ```
 
 Each entry in `sources` has these fields:
@@ -221,6 +223,7 @@ Each entry in `sources` has these fields:
 |---|---|
 | `id`, `format`, `family`, `medium`, `view`, `context` | as recorded by the importer |
 | `variant`, `directed`, `fileNames` | as recorded by the importer |
+| `combine` | a survey's combine rule (`union`, `intersection`, `respondent`) from `source.combine` or `source.mergeRule`, else null |
 | `ego`, `egos` | `ego` is `{ key, label, inferredFrom }`; `egos` is the respondent count |
 | `timeRange` | `{ start, end }` |
 | `tz` | `{ value, status: exact\|assumed\|zone, note }` |
@@ -234,7 +237,9 @@ Each entry in `sources` has these fields:
 | `worst` | the most severe warning level present |
 | `canShow`, `cannotShow` | plain-language lines derived from view, family and data coverage |
 
-`totals` also has `nodesInEvents`, `messages`, `messagesWithText`, `contextsByVisibility`, `botsInEvents`, `botNames`, `deactivated`, `deactivatedInEvents`, `deactivatedNames`. Notes name personal exports ("Gmail, LinkedIn and 56 WhatsApp chats are personal exports..."), deactivated accounts, merges ("N records were folded into M people") and empty sources by name. A source with no events can show nothing.
+`totals` also has `nodesInEvents`, `messages`, `messagesWithText`, `contextsByVisibility`, `botsInEvents`, `botNames`, `deactivated`, `deactivatedInEvents`, `deactivatedNames`. The Data view uses `botsInEvents` for "151 people; 1 bot left out of the network, which shows 150" when the construction leaves bots out. Notes name personal exports ("56 WhatsApp chats are personal exports: one person's slice ... the owner is tied to everyone and bridges them by construction"), deactivated accounts, merges ("N records were folded into M people") and empty sources by name. A source with no events can show nothing.
+
+`groups` has one entry per format-and-view with more than one source (`key` = `label|view`, as the Data view groups cards): `{ key, sources[], people }` where `people` counts distinct people across the group (per-source counts summed would count the owner of 56 chats 56 times). When every source in the group is a personal export, the entry also has `canShow` and `cannotShow` from `personalGroupLines`: one person's slice; the owner is in every chat and connects everyone by construction, so betweenness, closeness, constraint and effective size describe the export, not the person (C3). The single-chat lines ("within this one conversation") are never shown for a group.
 
 `formatLabel(format, variant)` is exported for the UI.
 
@@ -248,10 +253,22 @@ Severity comes from `w.severity` if the importer set it. Otherwise it comes from
 
 All response files in one input are recombined together (merge rules need both people's answers; non-respondents need the whole set), so the Data view groups loose response files dropped or picked together into one input (`groupSharedResponses` in `src/ui/views/data/io.js`). The reference survey is a survey file in the drop if there is one, else the survey most responses answered. One `shared-survey` source (two for stitched ego interviews: own ties directed, perceived ties undirected; one per respondent for plain ego interviews) with `source.survey = { id, title, kind, responded[], missing[], duplicates[], rejected, invalid }` and warnings `survey-responded`, `survey-nonrespondents`, `survey-earlier-version`, `survey-perceived` (info), `survey-duplicates`, `survey-other-survey`, `survey-off-roster` (warn), `survey-invalid` (error), `combine-rule` (info). Option `mergeRule` overrides the survey's own combine rule for roster surveys.
 
+Roster surveys also keep who named whom on the source, so a saved project can be recombined later (C9):
+
+```js
+source.nominations = { version: 1, title, people: [{ id, label }], relations, respondents: [{ personId, label, ties: { [relationId]: { 'me|them': value } }, attrs }] }
+source.title = the survey's title           // names the data: "SOC 101 friendship (union)"
+rederivableSource(ds) -> source | null      // exactly one source with events, carrying nominations
+rederiveSurvey(ds, 'union'|'intersection'|'respondent') -> Dataset
+RULE_NAME = { union: 'union', intersection: 'reciprocated', respondent: 'as reported' }
+```
+
+`rederiveSurvey` rewrites the roster with the other rule through `writeRoster`, keeps the response notes (the `combine-rule` line names the new rule), carries over attributes joined since (by node key, `roster:<name>`), the attribute schema and `meta.profileJoins`, and names the result with the rule in parentheses, so saves and exports of each version get their own file names. A project saved without nominations throws with the reason ("import the response files again"). The Data view's import report shows the switch (Union / Reciprocated only / As reported) when `rederivableSource` finds one.
+
 ## Exporters (`src/exporters/*.js`)
 
 ```js
-exportGraphML(ds, net, { nodeMetrics, communities, attrs })            -> string
+exportGraphML(ds, net, { nodeMetrics, communities, attrs, omitContacts })            -> string
 exportGEXF(ds, net, { nodeMetrics, communities, attrs, dynamic, timeformat: 'dateTime'|'date' }) -> string   // 1.2draft namespace and types
 exportGML(ds, net, opts) / exportPajek(ds, net, opts)                  -> string
 exportUCINET(ds, net, { format: 'edgelist1'|'fullmatrix' })            -> string   // fullmatrix only for n <= 500
@@ -263,8 +280,12 @@ exportCSV(ds, net, opts) -> { nodes, edges, metrics }; also exportNodesCSV, expo
 - **`communities`:** an `Int32Array` or `{ membership }`.
 - **`attrs`:** node attribute keys to include. Default: all keys in `ds.attributeSchema`.
 - **Node ids and labels:** node ids are the dataset keys. GML and Pajek de-duplicate labels with a suffix.
+- **Measures (N10, decision 4):** `metricColumns(nodeMetrics, directed)` names them. Every export carries `contacts` (distinct people tied in either direction; derived from `degree` and node `reciprocity` when not passed) first. Degree is never written as a bare `degree`: on a directed network it is `total_ties_in_out` (in + out); on an undirected one it equals contacts and is not repeated. Count columns (`contacts`, `total_ties_in_out`, `inDegree`, `outDegree`, `coreNumber`) are integers, the rest doubles.
+- **Communities (N1):** numbered from 1, as in the app (`community` 1..k; people without a community have no value).
+- **Rule evidence (N11):** one edge attribute per active construction rule, named `evidence_<rule>` (`evidence_reply`, `evidence_mention`, `evidence_dm` ...) in GraphML, GEXF, GML and the edges CSV alike (`evidenceName(rule)`). GML keys follow networkx's `[A-Za-z][A-Za-z0-9_]*`, which keeps the underscore.
+- **Contact details (N19):** `{ omitContacts: true }` (the Methods & Export default) leaves out attributes that reach a person (`isContactAttr(key)`: email, mail, handle(s), user name, screen name, phone, mobile, team, user, account or platform id, DID, acct, website, url, address; matched on the key with non-alphanumerics as `_`, so "Work Email" counts), and replaces ids that carry an account id or address with `p1`, `p2`, ... in network order (`exportIds(ds, net, opts)`; keys from rosters, surveys, drawn networks and interviews, which hold names only, are kept). GML's `key` attribute and both CSV tables use the same ids, so the tables still join. Names (labels) stay.
 - **Encoding:** XML-illegal control characters are stripped, and `\n`, `\r` and `\t` in attributes are written as character references. Non-ASCII text survives: UTF-8 in GraphML, GEXF and Pajek; `&#N;` entities in GML.
-- **Tie fields:** when the dataset has tie fields (`events.attrs`), GraphML and GEXF get one edge attribute per field and the edges CSV one column per field, after the rule columns. Values come from `edgeTieAttributes(ds, net)` (src/analysis/construct.js): the events behind each tie under the network's own settings, numbers averaged, choices and text as distinct values joined by `; `. Numeric fields are `double`, the rest `string`; names avoid the fixed edge columns by a `_2` suffix. GML, Pajek and UCINET are unchanged.
+- **Tie fields:** when the dataset has tie fields (`events.attrs`), GraphML, GEXF and GML get one edge attribute per field and the edges CSV one column per field, after the rule columns. Values come from `edgeTieAttributes(ds, net)` (src/analysis/construct.js): the events behind each tie under the network's own settings, numbers averaged, choices and text as distinct values joined by `; `. Numeric fields are `double`, the rest `string`; names avoid the fixed edge columns by a `_2` suffix. Pajek and UCINET are unchanged.
 - **Validation:** every format is read back by our importer and by networkx 3.2.1 (`read_graphml`, `read_gexf`, `read_gml`, `read_pajek`). UCINET has no networkx reader, so it is checked by round trip only.
 
 ## Native round trips (generator exports)

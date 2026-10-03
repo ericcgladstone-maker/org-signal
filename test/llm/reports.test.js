@@ -68,7 +68,7 @@ test('methods appendix: full analysis with every component', () => {
     content: { affect: { by: 'group' }, keywords: { by: 'context', k: 10 }, topics: { k: 8, seed: 1 } },
     software: { name: 'Org Signal', version: '2.0.0-dev' },
   });
-  for (const h of ['Data sources', 'Network construction', 'Measures', 'Community detection', 'Group comparison', 'Statistical comparison and robustness', 'Time windows', 'Content analysis', 'Limitations', 'References']) {
+  for (const h of ['Data sources', 'Network construction', 'Measures', 'Community detection', 'Group comparison', 'Statistical comparison and robustness', 'Change over time', 'Content analysis', 'Limitations', 'References']) {
     assert.match(md, new RegExp(`^## ${h}$`, 'm'), h);
   }
   assert.match(md, /Replies: a reply links the replier.*weight 2\./);
@@ -76,7 +76,7 @@ test('methods appendix: full analysis with every component', () => {
   assert.ok(!/- Direct messages:/.test(md), 'disabled rules are not listed');
   assert.match(md, /log-transformed/);
   assert.match(md, /more than 25 recipients/);
-  assert.match(md, /from 1 Jan 2026 to 30 Jun 2026/);
+  assert.match(md, /from 1 Jan 2026 up to but not including 30 Jun 2026/);
   assert.match(md, /\(Freeman, 1977; Brandes, 2001\) Approximation: sampled from 256 pivot nodes\./);
   assert.match(md, /Louvain method \(Blondel et al., 2008\)/);
   assert.match(md, /seed 42/);
@@ -99,7 +99,7 @@ test('methods appendix: minimal settings, ego view limitations, no inference sec
   assert.match(md, /Import note: Messages without a date \(3\)\./);
   assert.match(md, /treated as undirected; tie weights were binary/);
   assert.match(md, /Ego-view sources record only the export owner's own interactions/);
-  for (const h of ['Community detection', 'Statistical comparison', 'Time windows', 'Content analysis']) assert.ok(!md.includes(`## ${h}`), h);
+  for (const h of ['Community detection', 'Statistical comparison', 'Change over time', 'Content analysis']) assert.ok(!md.includes(`## ${h}`), h);
   assert.match(md, /Freeman, L\. C\. \(1978\)/);
 });
 

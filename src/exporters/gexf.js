@@ -16,7 +16,7 @@
 //     activity). networkx reads these spells as strings.
 
 import { xmlEscape } from '../importers/xml.js';
-import { nodeColumns, fmtNum, nodeLabel, nodeKey, edgeColumns } from './graphml.js';
+import { nodeColumns, fmtNum, nodeLabel, edgeColumns, exportIds, evidenceName } from './graphml.js';
 
 const GEXF_TYPE = { string: 'string', double: 'double', long: 'long', boolean: 'boolean' };
 
@@ -49,6 +49,7 @@ function edgeTimes(ds, net) {
 
 export function exportGEXF(ds, net, opts = {}) {
   const cols = nodeColumns(ds, net, opts);
+  const ids = exportIds(ds, net, opts);
   const dynamic = !!opts.dynamic;
   const today = new Date().toISOString().slice(0, 10);
   const out = [];
@@ -67,10 +68,10 @@ export function exportGEXF(ds, net, opts = {}) {
   // tie can be filtered or styled by what created it in Gephi.
   const rules = Object.keys(net.edges.byRule || {}).filter(r => net.edges.byRule[r]?.length === net.edges.count);
   // Tie fields (survey tie type, strength ...) as further edge attributes.
-  const ecols = edgeColumns(ds, net, { taken: rules.map(r => `evidence_${r}`) });
+  const ecols = edgeColumns(ds, net, { taken: rules.map(evidenceName) });
   if (rules.length || ecols.length) {
     out.push('    <attributes class="edge" mode="static">');
-    rules.forEach((r, k) => out.push(`      <attribute id="e${k}" title="evidence_${xmlEscape(r)}" type="double"/>`));
+    rules.forEach((r, k) => out.push(`      <attribute id="e${k}" title="${xmlEscape(evidenceName(r))}" type="double"/>`));
     ecols.forEach((c, k) => out.push(`      <attribute id="t${k}" title="${xmlEscape(c.name)}" type="${c.type}"/>`));
     out.push('    </attributes>');
   }
@@ -82,7 +83,7 @@ export function exportGEXF(ds, net, opts = {}) {
       if (v === undefined) return;
       vals.push(`<attvalue for="${k}" value="${xmlEscape(c.type === 'double' || c.type === 'long' ? fmtNum(v) : String(v))}"/>`);
     });
-    const open = `      <node id="${xmlEscape(nodeKey(ds, net, i))}" label="${xmlEscape(nodeLabel(ds, net, i))}"`;
+    const open = `      <node id="${xmlEscape(ids[i])}" label="${xmlEscape(nodeLabel(ds, net, i))}"`;
     out.push(vals.length ? `${open}><attvalues>${vals.join('')}</attvalues></node>` : `${open}/>`);
   }
   out.push('    </nodes>');
@@ -97,7 +98,7 @@ export function exportGEXF(ds, net, opts = {}) {
     seen.set(pk, dup);
     // Gephi needs parallel edges to differ by kind.
     const kind = dup > 1 ? ` kind="parallel-${dup}"` : '';
-    const open = `      <edge id="${e}" source="${xmlEscape(nodeKey(ds, net, a))}" target="${xmlEscape(nodeKey(ds, net, b))}" weight="${fmtNum(E.w[e])}"${kind}`;
+    const open = `      <edge id="${e}" source="${xmlEscape(ids[a])}" target="${xmlEscape(ids[b])}" weight="${fmtNum(E.w[e])}"${kind}`;
     const ev = rules.map((r, k) => (E.byRule[r][e] ? `<attvalue for="e${k}" value="${fmtNum(E.byRule[r][e])}"/>` : '')).join('')
       + ecols.map((c, k) => (c.values[e] !== undefined ? `<attvalue for="t${k}" value="${xmlEscape(c.type === 'double' ? fmtNum(c.values[e]) : c.values[e])}"/>` : '')).join('');
     const spells = times && times[e].length ? `<spells>${[...new Set(times[e].map(fmtT))].map(v => `<spell start="${v}" end="${v}"/>`).join('')}</spells>` : '';

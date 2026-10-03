@@ -24,6 +24,11 @@ export function guessKey(table) {
   return { keyColumn: key, matchOn: /e-?mail/i.test(key) ? 'email' : /name/i.test(key) ? 'name' : /^key$/i.test(key) ? 'key' : 'platformId' };
 }
 
+// Columns with no value in any row of the table.
+export function emptyColumns(table) {
+  return table.headers.filter(h => !table.records.some(r => String(r[h] ?? '').trim()));
+}
+
 export function rowsMatched(r) {
   const n = v => (Array.isArray(v) ? v.length : v || 0);
   return { matched: n(r.matched), unmatched: n(r.unmatchedRows ?? r.unmatched), ambiguous: n(r.ambiguous), noRow: n(r.unmatchedNodes ?? r.nodesWithoutRow) };
@@ -43,7 +48,10 @@ export function JoinSetup({ ds, file, onChange }) {
       if (!live) return;
       const g = guessKey(t);
       setTable(t);
-      setOpts({ ...g, columns: t.headers.filter(h => h !== g.keyColumn) });
+      // Columns empty in every row start unticked (N18): adding them would
+      // only list a column that holds nothing.
+      const empty = new Set(emptyColumns(t));
+      setOpts({ ...g, columns: t.headers.filter(h => h !== g.keyColumn && !empty.has(h)) });
     }, e => live && setErr(e));
     return () => { live = false; };
   }, [file]);
@@ -58,6 +66,8 @@ export function JoinSetup({ ds, file, onChange }) {
   const r = result?.report;
   const c = r ? rowsMatched(r) : null;
   const rows = table.records.length;
+  const blank = new Set(emptyColumns(table));
+  const blankChosen = (r?.emptyColumns || []).filter(x => opts.columns.includes(x));
   return html`<div class="stack dv-join">
     ${c && html`<p class="dv-join__headline"><${Flag} level=${c.matched / (rows || 1) >= 0.8 ? 'ok' : 'caution'}>${fmtInt(c.matched)} of ${fmtInt(rows)} rows matched</${Flag}>
       <span class="small text2">${c.unmatched ? `${fmtInt(c.unmatched)} matched nobody` : 'every row found its person'}${c.ambiguous ? `, ${fmtInt(c.ambiguous)} matched several people and were left out` : ''}${c.noRow ? `; ${c.noRow === 1 ? '1 person' : `${fmtInt(c.noRow)} people`} in the data ${c.noRow === 1 ? 'has' : 'have'} no row` : ''}.</span></p>`}
@@ -66,8 +76,10 @@ export function JoinSetup({ ds, file, onChange }) {
       <${Select} label="Match it against" value=${opts.matchOn} onChange=${v => setOpts(o => ({ ...o, matchOn: v }))} options=${[{ value: 'email', label: 'Email address' }, { value: 'name', label: 'Name' }, { value: 'platformId', label: 'Account id (Slack, Teams...)' }, { value: 'key', label: 'Record key' }]} />
     </div>
     <fieldset class="dv-fieldset"><legend class="label">Columns to add</legend>
-      <div class="row">${table.headers.filter(h => h !== opts.keyColumn).map(h => html`<label class="check"><input type="checkbox" checked=${opts.columns.includes(h)} onChange=${e => { const on = e.currentTarget.checked; setOpts(o => ({ ...o, columns: on ? [...o.columns, h] : o.columns.filter(x => x !== h) })); }} />${h}</label>`)}</div>
+      <div class="row">${table.headers.filter(h => h !== opts.keyColumn).map(h => html`<label class="check"><input type="checkbox" checked=${opts.columns.includes(h)} onChange=${e => { const on = e.currentTarget.checked; setOpts(o => ({ ...o, columns: on ? [...o.columns, h] : o.columns.filter(x => x !== h) })); }} />${h}${blank.has(h) ? html` <span class="muted">(empty)</span>` : ''}</label>`)}</div>
     </fieldset>
+    ${blank.size > 0 && html`<p class="small text2"><${Flag} level="info">Empty</${Flag}> ${[...blank].join(', ')} ${blank.size === 1 ? 'has' : 'have'} no value in any row, so ${blank.size === 1 ? 'it is' : 'they are'} not added.</p>`}
+    ${blankChosen.length > 0 && html`<p class="small text2"><${Flag} level="caution">No values</${Flag}> ${blankChosen.join(', ')} ${blankChosen.length === 1 ? 'has' : 'have'} no value for any matched person and will not be added.</p>`}
     ${r && Array.isArray(r.unmatchedRows) && r.unmatchedRows.length > 0 && html`<details class="disclose"><summary>Rows that matched nobody (${fmtInt(r.unmatchedRows.length)})</summary><p class="small text2">${r.unmatchedRows.slice(0, 30).map(u => u.key || '(empty)').join(', ')}${r.unmatchedRows.length > 30 ? ', ...' : ''}</p></details>`}
     ${r && Array.isArray(r.ambiguous) && r.ambiguous.length > 0 && html`<details class="disclose"><summary>Rows that matched several people (${fmtInt(r.ambiguous.length)})</summary><ul class="can-list">${r.ambiguous.slice(0, 20).map(a => html`<li>${a.key || a.node?.label}: ${a.reason}</li>`)}</ul></details>`}
   </div>`;
@@ -88,7 +100,8 @@ export function ProfileJoin({ ds }) {
     setBusy(true); setErr(null);
     try {
       await store.actions.replaceDataset(state.result.dataset);
-      store.actions.notify('info', `Joined ${state.opts.columns.length} columns from ${pathOf(file)}.`);
+      const added = state.opts.columns.length - (state.result.report?.emptyColumns?.length || 0);
+      store.actions.notify('info', `Joined ${added} ${added === 1 ? 'column' : 'columns'} from ${pathOf(file)}.`);
       setFile(null); setState(null);
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };

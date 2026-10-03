@@ -61,10 +61,11 @@ test('path weighting: which measures the weighting reaches', () => {
   assert.match(md, /Tie weights enter strength\./);
 });
 
-test('degree is described as in + out on directed networks, distinct contacts otherwise', () => {
-  assert.match(md, /Degree: number of ties\. On a directed network this is in-degree plus out-degree/);
+test('degree is named total ties (in + out) on directed networks, contacts otherwise; never a bare Degree', () => {
+  assert.match(md, /Total ties \(in \+ out\): in-degree plus out-degree, so a two-way tie counts twice/);
   const und = buildMethodsAppendix({ meta: { sources: [slack] }, settings: { directed: false }, network: { n: 3, directed: false, edges: { count: 2 } }, metrics: ['degree'] });
-  assert.match(und, /Degree: number of distinct contacts\./);
+  assert.match(und, /Contacts \(degree\): number of distinct people a person has a tie with\./);
+  assert.doesNotMatch(md + und, /- Degree:/);
 });
 
 test('source labels do not repeat the format, family and context (S17)', () => {
@@ -75,7 +76,7 @@ test('source labels do not repeat the format, family and context (S17)', () => {
 
 test('nothing is described that was not run', () => {
   const bare = buildMethodsAppendix({ meta: { sources: [slack] }, settings, metrics: ['degree'] });
-  for (const h of ['Group comparison', 'Statistical comparison', 'Time windows', 'Content analysis']) assert.ok(!bare.includes(`## ${h}`), h);
+  for (const h of ['Group comparison', 'Statistical comparison', 'Change over time', 'Content analysis']) assert.ok(!bare.includes(`## ${h}`), h);
 });
 
 test('survey sources state their combine rule; report labels name sources', () => {
@@ -94,8 +95,8 @@ test('time windows: resolved units, purposes, and repeated runs described once',
       { window: 'week', metrics: ['degree'], purpose: 'Time view' },
     ],
   });
-  assert.match(md, /For the Time view, measures \(degree\) were recomputed in consecutive weekly windows/);
-  assert.match(md, /For the person profiles, measures \(degree\) were recomputed in consecutive monthly windows/);
+  assert.match(md, /For the Time view, total ties \(in \+ out\) were recomputed in consecutive weekly windows/);
+  assert.match(md, /For the person profiles, total ties \(in \+ out\) were recomputed in consecutive monthly windows/);
   assert.equal(md.match(/For the Time view/g).length, 1);
   assert.doesNotMatch(md, /auto windows/);
 });

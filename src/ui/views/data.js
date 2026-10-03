@@ -10,9 +10,14 @@
 // data is already loaded, new imports are added to it unless the user
 // explicitly chooses to replace it.
 //
+// With nothing loaded the page starts with three equal ways in (decision 3):
+// draw or type a small network (Build), explore the sample organization, or
+// analyze your own exports (the drop zone below), then a link to Learn.
+// A dropped Org Signal project file is recognized and opened here too (C9).
+//
 // Pieces live in ./data/: io.js (reading, detecting, importing, naming),
 // inputs.js (the input list and column mapper), report.js (import report),
-// identity.js (who is who), join.js (table joins).
+// identity.js (who is who), join.js (table joins), project.js (project files).
 
 import { html, useState, useEffect, useRef } from '../../../vendor/preact.js';
 import { store, useStore } from '../store.js';
@@ -24,6 +29,8 @@ import { InputList, effectiveImporters, isRecognized, inputUse } from './data/in
 import { ReportView } from './data/report.js';
 import { ownersOf, ownerPairs, Owners, MatchList, ManualMerge, IdentityPanel } from './data/identity.js';
 import { JoinSetup, ProfileJoin } from './data/join.js';
+import { isProjectInput, readProject, projectSummary, openProject } from './data/project.js';
+import { rederivableSource, rederiveSurvey, RULE_NAME } from '../../importers/survey-response.js';
 
 export { ReportView };
 
@@ -45,15 +52,25 @@ export function DataView() {
   // Nothing silently replaces data: with data loaded, imports are added.
   const [mode, setMode] = useState('add');
   const [tab, setTab] = useState(null);
+  // Project files dropped here: [{ id, name, file, obj | error }].
+  const [projects, setProjects] = useState([]);
 
   const update = (id, patch) => setInputs(prev => prev.map(x => (x.id === id ? { ...x, ...(typeof patch === 'function' ? patch(x) : patch) } : x)));
   const updateMany = (ids, fn) => { const set = new Set(ids); setInputs(prev => prev.map(x => (set.has(x.id) ? { ...x, ...fn(x) } : x))); };
   const remove = id => setInputs(prev => prev.filter(x => x.id !== id));
 
-  const addInputs = async (list0) => {
+  const addInputs = async (list1) => {
+    if (!list1.length) return;
+    setError(null);
+    // Project files are opened, not imported: they hold a built dataset.
+    const proj = [], list0 = [];
+    for (const inp of list1) (await isProjectInput(inp) ? proj : list0).push(inp);
+    if (proj.length) {
+      const read = await Promise.all(proj.map(inp => readProject(inp.files[0]).then(obj => ({ id: inp.id, name: inp.name, obj }), e => ({ id: inp.id, name: inp.name, error: e }))));
+      setProjects(prev => [...prev, ...read]);
+    }
     if (!list0.length) return;
     const list = await groupSharedResponses(list0);
-    setError(null);
     setInputs(prev => [...prev, ...list]);
     for (const inp of list) {
       detect(inp, { onProgress: (f, msg) => update(inp.id, { progress: msg }) }).then(async ({ detections, files }) => {
@@ -131,12 +148,22 @@ export function DataView() {
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
 
+  const openProj = async (p) => {
+    setBusy(true); setError(null);
+    try {
+      await openProject(p.obj);
+      setProjects([]);
+      store.actions.setView('network');
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  };
+
   const showInputs = inputs.length > 0 && !pending;
   return html`<div class="view view--col dv">
     <${ViewHead} title="Data" intro=${hasData && !pending ? 'What is loaded, what each source can and cannot show, and who is who.' : null}
       actions=${hasData && !pending && !showInputs && html`<button type="button" class="btn btn--primary" onClick=${() => store.actions.setView('network')}>Open network</button>`} />
     <p class="visually-hidden" role="status" aria-live="polite">${detectionSummary(inputs)}</p>
-    ${!hasData && !inputs.length && !pending && html`<${EmptyState} onFiles=${addInputs} />`}
+    ${projects.length > 0 && !pending && html`<${ProjectInputs} projects=${projects} hasData=${hasData} busy=${busy} onOpen=${openProj} onRemove=${id => setProjects(ps => ps.filter(p => p.id !== id))} />`}
+    ${!hasData && !inputs.length && !pending && !projects.length && html`<${EmptyState} onFiles=${addInputs} />`}
     ${hasData && !pending && !showInputs && html`<${CurrentData} dataset=${dataset} report=${report} tab=${tab} onTab=${setTab} />`}
     ${hasData && !pending && !showInputs && html`<section class="section dv-more" aria-label="Add data">
       <${DropLine} onFiles=${addInputs} />
@@ -183,14 +210,9 @@ function actionNote({ detecting, toImport, toJoin, skipped, hasData, mode }) {
   return parts.join(' ');
 }
 
-// A preset of Generate: same engine, same recovery check and banner.
+// A preset of Generate: same engine, same recovery check and banner
+// (loaded by store.actions.loadSample, which every empty state shares).
 export const SAMPLE_SPEC = { context: 'workplace', medium: 'slack', structure: 'bridge-dependent', size: 96, seed: 1, content: 'light' };
-async function loadDemo() {
-  try {
-    const { generateAndAnalyze } = await import('../generate/index.js');
-    await generateAndAnalyze(SAMPLE_SPEC);
-  } catch (e) { store.actions.notify('error', `Could not load the sample: ${e.message}`); }
-}
 
 const HOWTO = [
   ['Slack', 'Workspace owners and admins: Settings & administration > Workspace settings > Import/Export Data > Export. Download the zip.'],
@@ -201,22 +223,74 @@ const HOWTO = [
   ['Microsoft Teams, Outlook, Telegram, Discord, Instagram', 'Each app\'s own "download your data" export works; drop the zip or folder as downloaded.'],
 ];
 
+// Nothing loaded: three equal ways in, then the drop zone for the third
+// (decision 3, L2). Weeks 1 to 6 of a course start in Build or with the
+// sample, so neither sits below the import instructions.
+const START = [
+  { id: 'build', title: 'Draw or type a small network', text: 'Draw people and ties, paste a list of who knows whom, or run a class survey or an ego-network interview.', action: 'Open Build' },
+  { id: 'sample', title: 'Explore a sample organization', text: 'A made-up 96-person workplace with departments, Slack-style messages and a planted broker. Every view works on it.', action: 'Load the sample' },
+  { id: 'import', title: 'Analyze your own exports', text: 'Slack, Teams, email, WhatsApp, LinkedIn, X, survey responses or network files. Nothing is uploaded.', action: 'Choose files to import' },
+];
+
 function EmptyState({ onFiles }) {
+  const go = (id) => {
+    if (id === 'build') store.actions.setView('build');
+    else if (id === 'sample') store.actions.loadSample();
+    else {
+      // Straight to the file picker (still inside the click, so the browser
+      // allows it), with the drop zone in view for a drag instead.
+      const el = document.getElementById('dv-import');
+      el?.scrollIntoView({ block: 'start' });
+      const pick = el?.querySelector('.dv-drop button');
+      pick?.focus({ preventScroll: true });
+      pick?.click();
+    }
+  };
   return html`<div class="empty dv-empty">
     <h2>Map who talks to whom</h2>
-    <p class="lead">Drop the exports you already have and see the network inside them: who connects to whom, who bridges groups, and how that changes over time. Measures come with how sure you can be.</p>
-    <p class="dv-privacy"><${Flag} level="ok">Private</${Flag}> Everything runs in this browser and nothing is uploaded. Loaded data is not kept: closing the tab erases it. Only drafts you make in Build, and an API key if you choose to remember it, are saved in this browser.</p>
-    <div class="dv-empty__drop"><${DropZone} onFiles=${onFiles} /></div>
-    <p class="small text2 dv-sources">Reads Slack, Microsoft Teams, Gmail and other email, Google and Outlook calendars, WhatsApp, LinkedIn, X, Telegram, iMessage, Messenger and Instagram, Discord, Reddit, Bluesky, Mastodon and Threads exports; survey responses (Google Forms, Qualtrics, Network Canvas); network files (GraphML, GEXF, Pajek, UCINET); and any spreadsheet of who-to-whom.</p>
-    <details class="disclose dv-howto"><summary>How to get your export</summary>
-      <dl class="dv-howto__list">${HOWTO.map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>
-    </details>
-    <p class="small text2 dv-demo">No data at hand? <button type="button" class="tlink" onClick=${loadDemo}>Load a sample organization</button> (a 96-person preset of Generate, with its recovery check) to try every view.</p>
-    <div class="ways">
-      <div><h3>Build by hand</h3><p>Draw a network, run an ego-network interview, record a roster, or collect perceived networks from several informants.</p><button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView('build')}>Build a network</button></div>
-      <div><h3>Generate</h3><p>Create a synthetic organization or community with planted structure, to learn the tool or to test what the measures recover.</p><button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView('generate')}>Generate a network</button></div>
-    </div>
+    <p class="lead">Start with a network you draw, the sample organization, or your own data. Each view then shows who connects to whom, who bridges groups, how that changes over time, and how sure you can be.</p>
+    <ul class="dv-start" aria-label="Ways to start">
+      ${START.map(c => html`<li class="dv-start__item">
+        <button type="button" class="dv-start__card" onClick=${() => go(c.id)}>
+          <span class="dv-start__title">${c.title}</span>
+          <span class="dv-start__text">${c.text}</span>
+          <span class="dv-start__go tlink tlink--arrow">${c.action}</span>
+        </button>
+      </li>`)}
+    </ul>
+    <p class="dv-learn">New to network analysis? <a class="tlink tlink--arrow" href="#learn" onClick=${e => { e.preventDefault(); store.actions.setView('learn'); }}>Learn the ideas</a></p>
+    <p class="small text2 dv-gen">Or <button type="button" class="tlink" onClick=${() => store.actions.setView('generate')}>generate a synthetic organization</button> with planted structure, to test what the measures recover.</p>
+    <section class="dv-import" id="dv-import" aria-labelledby="dv-import-h" tabindex="-1">
+      <h3 id="dv-import-h" class="dv-h3">Analyze your own exports</h3>
+      <p class="dv-privacy"><${Flag} level="ok">Private</${Flag}> Everything runs in this browser and nothing is uploaded. Loaded data is not kept: closing the tab erases it. Only drafts you make in Build, and an API key if you choose to remember it, are saved in this browser.</p>
+      <div class="dv-empty__drop"><${DropZone} onFiles=${onFiles} /></div>
+      <p class="small text2 dv-sources">Reads Slack, Microsoft Teams, Gmail and other email, Google and Outlook calendars, WhatsApp, LinkedIn, X, Telegram, iMessage, Messenger and Instagram, Discord, Reddit, Bluesky, Mastodon and Threads exports; survey responses (Google Forms, Qualtrics, Network Canvas, Org Signal surveys); network files (GraphML, GEXF, Pajek, UCINET); any spreadsheet of who-to-whom; and Org Signal project files.</p>
+      <details class="disclose dv-howto"><summary>How to get your export</summary>
+        <dl class="dv-howto__list">${HOWTO.map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>
+      </details>
+    </section>
   </div>`;
+}
+
+// Project files dropped on Data: what each holds, then Open (C9).
+function ProjectInputs({ projects, hasData, busy, onOpen, onRemove }) {
+  return html`<section class="section dv-projects" aria-labelledby="proj-in-h">
+    <h2 id="proj-in-h" class="section__title">${projects.length === 1 ? 'Project file' : 'Project files'}</h2>
+    ${projects.map(p => {
+      if (p.error) return html`<article class="src dv-source"><div class="src__head"><h3 class="src__title">${p.name}</h3></div><p class="small"><${Flag} level="error">Not opened</${Flag}> ${p.error.message}</p><button type="button" class="tlink" onClick=${() => onRemove(p.id)}>Remove</button></article>`;
+      const x = projectSummary(p.obj);
+      return html`<article class="src dv-source" aria-label=${`Project: ${x.name}`}>
+        <div class="src__head"><h3 class="src__title">${x.name} <span class="muted dv-sub">· Org Signal project</span></h3>${x.savedAt && html`<span class="meta">saved ${new Date(x.savedAt).toLocaleString()}</span>`}</div>
+        <p class="small text2 dv-files-line">${p.name}</p>
+        <dl class="kv dv-kv"><dt>People</dt><dd>${fmtInt(x.people)}</dd><dt>${x.survey ? 'Reported ties and events' : 'Events'}</dt><dd>${fmtInt(x.events)}</dd><dt>Sources</dt><dd>${fmtInt(x.sources)}</dd></dl>
+        <p class="small text2 dv-p">${x.nominations ? 'This survey project keeps who named whom: after opening, the import report lets you switch between the union, reciprocated-only and as-reported networks.' : x.survey ? 'This survey project was saved without who named whom, so it opens with the rule it was saved with. To compare union and reciprocated networks, import the response files instead.' : 'Opening it restores the data, the construction settings and every measure.'}</p>
+        <div class="dv-actions__btns dv-proj__btns">
+          <button type="button" class="tlink" onClick=${() => onRemove(p.id)} disabled=${busy}>Remove</button>
+          <button type="button" class="btn btn--primary" onClick=${() => onOpen(p)} disabled=${busy}>${hasData ? 'Open (replaces the loaded data)' : 'Open project'}</button>
+        </div>
+      </article>`;
+    })}
+  </section>`;
 }
 
 function useDrop(onFiles) {
@@ -284,7 +358,7 @@ function PendingReview({ pending, busy, hasData, onLoad, onDiscard }) {
     <label class="field dv-name"><span>Name for this data</span><input class="input" value=${name} maxlength="120" onInput=${e => setName(e.currentTarget.value)} /></label>
     ${empty && html`<div class="notice-line" role="alert"><${Flag} level="error">Nothing to analyze</${Flag}><span class="grow">These files produced no messages, ties or other events, so there is no network to build. Check the problems listed below, or choose another importer.</span></div>`}
     ${pending.owners.length >= 2 && html`<${Owners} owners=${pending.owners} checked=${owners} onToggle=${(k, v) => setOwners(prev => { const s = new Set(prev); if (v) s.add(k); else s.delete(k); return s; })} />`}
-    <${ReportView} report=${pending.report} pending />
+    <${ReportView} report=${pending.report} pending excludeBots=${store.get().settings?.excludeBots !== false} />
     <div class="section">
       <h3 class="dv-h3">Who is who</h3>
       <${MatchList} matches=${matches} accepted=${accepted} onToggle=${toggle} onAll=${v => setAccepted(new Set(v ? matches.map((_, i) => i) : []))} />
@@ -310,7 +384,10 @@ function PendingReview({ pending, busy, hasData, onLoad, onDiscard }) {
 function summary(pairs, join, replacing, adding) {
   const parts = [];
   parts.push(pairs.length ? `${plural(pairs.length, 'merge')} will be applied.` : 'No merges.');
-  if (join) parts.push(`${plural(join.opts.columns.length, 'column')} will be joined.`);
+  if (join) {
+    const empty = (join.result?.report?.emptyColumns || []).filter(c => join.opts.columns.includes(c));
+    parts.push(`${plural(join.opts.columns.length - empty.length, 'column')} will be joined.${empty.length ? ` ${empty.join(', ')} ${empty.length === 1 ? 'has' : 'have'} no values and ${empty.length === 1 ? 'is' : 'are'} left out.` : ''}`);
+  }
   if (adding) parts.push('Added to the loaded data.');
   if (replacing) parts.push('Replaces the loaded data.');
   return parts.join(' ');
@@ -321,6 +398,7 @@ function summary(pairs, join, replacing, adding) {
 const TABS = [['report', 'Import report'], ['identity', 'Who is who'], ['profile', 'Join attributes']];
 
 function CurrentData({ dataset, report, tab: forced, onTab }) {
+  const settings = useStore(s => s.settings);
   const [tab, setTab] = useState(() => forced || (store.get().ui?.profileFile ? 'profile' : 'report'));
   useEffect(() => { if (forced) { setTab(forced); onTab(null); } }, [forced]);
   const refs = useRef({});
@@ -339,9 +417,42 @@ function CurrentData({ dataset, report, tab: forced, onTab }) {
       ${TABS.map(([id, l]) => html`<button type="button" role="tab" id=${`dv-tab-${id}`} aria-controls="dv-panel" aria-selected=${String(tab === id)} tabindex=${tab === id ? 0 : -1} ref=${el => { refs.current[id] = el; }} onClick=${() => setTab(id)}>${l}</button>`)}
     </div>
     <div role="tabpanel" id="dv-panel" aria-labelledby=${`dv-tab-${tab}`}>
-      ${tab === 'report' && html`<${ReportView} report=${report} />`}
+      ${tab === 'report' && html`<${SurveyRule} dataset=${dataset} />`}
+      ${tab === 'report' && html`<${ReportView} report=${report} excludeBots=${settings?.excludeBots !== false} />`}
       ${tab === 'identity' && html`<${IdentityPanel} ds=${dataset} />`}
       ${tab === 'profile' && html`<${ProfileJoin} ds=${dataset} />`}
     </div>
   </section>`;
+}
+
+// A roster survey that keeps who named whom (C9): the same responses as the
+// union, reciprocated-only or as-reported network, switched in place. The
+// rule is part of the name, so saves and exports of each differ (C13).
+const RULES = [{ value: 'union', label: 'Union' }, { value: 'intersection', label: 'Reciprocated only' }, { value: 'respondent', label: 'As reported' }];
+const RULE_HELP = {
+  union: 'A tie if either person named the other (undirected).',
+  intersection: 'A tie only if both named each other (undirected).',
+  respondent: 'Each nomination as a directed tie from the person who named to the person named.',
+};
+function SurveyRule({ dataset }) {
+  const src = rederivableSource(dataset);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  if (!src) return null;
+  const rule = src.mergeRule || 'union';
+  const change = async (r) => {
+    if (r === rule) return;
+    setBusy(true); setErr(null);
+    try {
+      const ds = rederiveSurvey(dataset, r);
+      await store.actions.loadDataset(ds, { mode: 'replace' });
+      store.set({ datasets: [ds] });
+      store.actions.notify('info', `Recombined as ${RULE_NAME[r]}: ${plural(store.get().network?.edgeCount ?? 0, 'tie')}.`);
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  };
+  return html`<div class="dv-rule" aria-busy=${String(busy)}>
+    <${Seg} label="Combine the two answers about each pair" value=${rule} onChange=${change} options=${RULES} />
+    <p class="small text2 dv-rule__help">${RULE_HELP[rule]} The project keeps who named whom, so you can switch and compare; each version is saved and exported under its own name.</p>
+    <${ErrorLine} error=${err} />
+  </div>`;
 }

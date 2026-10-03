@@ -81,7 +81,7 @@ function checkXmlRead(ref, { keyed = k => k } = {}) {
   assert.deepEqual(ana.score, ['float', 0.5]);
   assert.deepEqual(ana.remote, ['bool', true]);
   assert.deepEqual(ana.pagerank, ['float', 0.3]);
-  assert.deepEqual(ana.community, ['int', 0]);
+  assert.deepEqual(ana.community, ['int', 1]); // communities are 1-based, as in the app (N1)
   assert.equal(ref.nodes[keyed('x:iso')].pagerank, undefined); // NaN omitted
 }
 
@@ -97,10 +97,10 @@ test('GraphML export reads back in networkx and in our importer', async () => {
   assert.equal(source.directed, true);
   assert.deepEqual(back.nodes.keys, KEYS.map(k => 'net:' + k));
   assert.deepEqual(back.nodes.labels, LABELS);
-  assert.deepEqual(node(back, 'net:x:ana').attrs, { team: 'Design', tenure: 3, score: 0.5, remote: true, pagerank: 0.3, community: 0 });
+  assert.deepEqual(node(back, 'net:x:ana').attrs, { team: 'Design', tenure: 3, score: 0.5, remote: true, pagerank: 0.3, community: 1 });
   assert.deepEqual(events(back).map(e => [e.actor, e.targets[0][0], e.weight]), D_EDGES.map(([a, b, w]) => ['net:' + KEYS[a], 'net:' + KEYS[b], w]));
   // rule weights are written as extra edge keys, which the importer reports as dropped
-  assert.match(source.warnings.find(w => w.code === 'edge-attrs-dropped').message, /w_dm, w_mention/);
+  assert.match(source.warnings.find(w => w.code === 'edge-attrs-dropped').message, /evidence_dm, evidence_mention/);
   const u = nx('graphml', write('u.graphml', exportGraphML(ds, undirected)));
   assert.equal(u.directed, false); assert.equal(u.edges.length, 3);
 });
@@ -113,7 +113,7 @@ test('GEXF static export reads back in networkx and in our importer', async () =
   assert.deepEqual(ref.edges.map(e => e[2]).sort(), [0.5, 1, 1, 1.5, 2, 3]);
   const { ds: back } = await runImporter(imp, [p]);
   assert.deepEqual(back.nodes.labels, LABELS);
-  assert.deepEqual(node(back, 'net:x:bei').attrs, { team: 'Ops', tenure: 10, score: 1.25, remote: false, pagerank: 0.2, community: 0 });
+  assert.deepEqual(node(back, 'net:x:bei').attrs, { team: 'Ops', tenure: 10, score: 1.25, remote: false, pagerank: 0.2, community: 1 });
   assert.equal(events(back).length, 6);
   // the second parallel edge carries a kind, so it lands in its own relation context
   assert.equal(events(back).filter(e => e.context.endsWith('#parallel-2')).length, 1);
@@ -201,14 +201,14 @@ print(json.dumps([list(csv.reader(open(p, newline='', encoding='utf-8'))) for p 
   const [n, e, m] = parsed;
   assert.deepEqual(n[0], ['Id', 'Label', 'team', 'tenure', 'score', 'remote', 'pagerank', 'community']);
   assert.deepEqual(n.slice(1).map(r => r[1]), ['José Pérez', '北京', 'A & B "quoted" <tag>', 'ctrl\u0001char\nline', 'Sam', 'Sam', 'Isolate']);
-  assert.deepEqual(n[1], ['x:ana', 'José Pérez', 'Design', '3', '0.5', 'true', '0.3', '0']);
-  assert.deepEqual(e[0], ['Source', 'Target', 'Type', 'Weight', 'w_dm', 'w_mention']);
+  assert.deepEqual(n[1], ['x:ana', 'José Pérez', 'Design', '3', '0.5', 'true', '0.3', '1']);
+  assert.deepEqual(e[0], ['Source', 'Target', 'Type', 'Weight', 'evidence_dm', 'evidence_mention']);
   assert.deepEqual(e[1], ['x:ana', 'x:bei', 'Directed', '2', '2', '0']);
   assert.equal(e.length, 7);
   assert.deepEqual(m[0], ['Id', 'Label', 'pagerank', 'community']);
   const { ds: back, source } = await runImporter(imp, [pn, pe]);
   assert.equal(source.format, 'gephi-csv');
-  assert.deepEqual(node(back, 'net:x:ana').attrs, { team: 'Design', tenure: 3, score: 0.5, remote: true, pagerank: 0.3, community: 0 });
+  assert.deepEqual(node(back, 'net:x:ana').attrs, { team: 'Design', tenure: 3, score: 0.5, remote: true, pagerank: 0.3, community: 1 });
   assert.equal(node(back, 'net:x:ctl').label, 'ctrl\u0001char\nline');
   assert.deepEqual(events(back).map(x => x.weight), D_EDGES.map(x => x[2]));
 });

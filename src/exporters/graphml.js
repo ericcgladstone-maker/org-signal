@@ -11,13 +11,64 @@ import { edgeTieAttributes } from '../analysis/construct.js';
 
 // ---- shared helpers (used by gexf, gml, pajek, ucinet, csv) --------------------
 
+// Contact details (N19): attributes that reach a person (email addresses,
+// handles, phone numbers, account and workspace ids). With
+// { omitContacts: true } (the Methods & Export default) these columns are left
+// out and ids that carry an account id or address are replaced by p1, p2, ...
+const CONTACT = /(^|_)(e_?mail|mail|email_?address|handles?|user_?name|screen_?name|phone|mobile|tel|telephone|team_?id|user_?id|account_?id|platform_?id|slack_?id|did|acct|website|url|address)(_|$)/;
+export const isContactAttr = key => CONTACT.test(String(key).toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+// Key namespaces that name no account: roster, survey, drawn and interview people.
+const SAFE_KEY = /^(roster|survey|draw|drawn|alter|ego|perceived|net):[^@]*$/;
+
+// Node ids as written to files: the dataset keys, or p1..pn where a key holds
+// contact details and they are left out. One array per export, so node and
+// edge tables agree.
+export function exportIds(ds, net, { omitContacts = false } = {}) {
+  const ids = new Array(net.n);
+  for (let i = 0; i < net.n; i++) {
+    const k = String(ds.nodes.keys[net.nodeIds[i]]);
+    ids[i] = omitContacts && !SAFE_KEY.test(k) ? `p${i + 1}` : k;
+  }
+  return ids;
+}
+
+// Distinct contacts per person from degree and node reciprocity (as the People
+// view computes them): on a directed network degree is in + out, so a two-way
+// tie counts twice and contacts = degree - reciprocity * degree / 2.
+function contactsFrom(m, directed) {
+  const deg = m.degree;
+  if (!deg || (directed && !m.reciprocity)) return null;
+  return Float64Array.from(deg, (d, v) => (Number.isFinite(d) ? Math.round(d - (directed ? (Number.isFinite(m.reciprocity[v]) ? m.reciprocity[v] : 0) : 0) * d / 2) : NaN));
+}
+
+// Metric column names in files. Never a bare "degree" (decision 4): contacts
+// count each person once; on a directed network degree (in + out) is written
+// as total_ties_in_out, and on an undirected one it equals contacts.
+export function metricColumns(nodeMetrics, directed) {
+  const m = { ...(nodeMetrics || {}) };
+  const out = [];
+  const contacts = m.contacts || contactsFrom(m, directed);
+  if (contacts) out.push(['contacts', contacts]);
+  for (const [k, arr] of Object.entries(m)) {
+    if (!arr || k === 'contacts' || k === 'meta') continue;
+    if (k === 'degree') { if (directed || !contacts) out.push([directed ? 'total_ties_in_out' : 'contacts', arr]); continue; }
+    out.push([k, arr]);
+  }
+  return out;
+}
+
+// Edge attribute name for a construction rule's evidence, the same in every
+// format (N11): evidence_reply, evidence_mention, ...
+export const evidenceName = rule => `evidence_${String(rule).replace(/[^A-Za-z0-9]+/g, '_')}`;
+
 // Node columns: dataset attributes (typed from attributeSchema), metrics, community.
 // Returns [{ name, type: 'string'|'double'|'long'|'boolean', values: Array(n) }]
-// with undefined for missing values.
-export function nodeColumns(ds, net, { nodeMetrics, communities, attrs } = {}) {
+// with undefined for missing values. Communities are numbered from 1, as in
+// the app (N1). { omitContacts } leaves contact-detail attributes out.
+export function nodeColumns(ds, net, { nodeMetrics, communities, attrs, omitContacts = false } = {}) {
   const n = net.n;
   const schema = new Map((ds.attributeSchema || []).map(s => [s.key, s]));
-  const keys = attrs || (ds.attributeSchema || []).map(s => s.key);
+  const keys = (attrs || (ds.attributeSchema || []).map(s => s.key)).filter(k => !(omitContacts && isContactAttr(k)));
   const cols = [];
   const taken = new Set(['id', 'label']);
   const uniq = name => { let k = name, i = 2; while (taken.has(k.toLowerCase())) k = `${name}_${i++}`; taken.add(k.toLowerCase()); return k; };
@@ -42,13 +93,13 @@ export function nodeColumns(ds, net, { nodeMetrics, communities, attrs } = {}) {
     });
     cols.push({ name: uniq(key), source: key, type, values });
   }
-  for (const [m, arr] of Object.entries(nodeMetrics || {})) {
-    if (!arr) continue;
+  for (const [m, arr] of metricColumns(nodeMetrics, net.directed)) {
     const values = Array.from({ length: n }, (_, i) => (Number.isFinite(arr[i]) ? arr[i] : undefined));
-    cols.push({ name: uniq(m), source: m, type: 'double', values });
+    const whole = m === 'contacts' || m === 'total_ties_in_out' || values.every(v => v === undefined || Number.isInteger(v));
+    cols.push({ name: uniq(m), source: m, type: whole && /^(contacts|total_ties_in_out|inDegree|outDegree|coreNumber)$/.test(m) ? 'long' : 'double', values });
   }
   const memb = communities ? (communities.membership || communities) : null;
-  if (memb) cols.push({ name: uniq('community'), source: 'community', type: 'long', values: Array.from({ length: n }, (_, i) => (memb[i] >= 0 ? memb[i] : undefined)) });
+  if (memb) cols.push({ name: uniq('community'), source: 'community', type: 'long', values: Array.from({ length: n }, (_, i) => (memb[i] >= 0 ? memb[i] + 1 : undefined)) });
   return cols;
 }
 
@@ -105,24 +156,25 @@ const SAFE_ID = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 
 export function exportGraphML(ds, net, opts = {}) {
   const cols = nodeColumns(ds, net, opts);
+  const ids = exportIds(ds, net, opts);
   const rules = edgeRules(net);
   const out = [];
   out.push('<?xml version="1.0" encoding="UTF-8"?>');
   out.push('<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">');
-  const ids = new Set(['label', 'weight']);
-  const keyId = (name, k) => { const id = SAFE_ID.test(name) && !ids.has(name) ? name : `d${k}`; ids.add(id); return id; };
+  const keyIds = new Set(['label', 'weight']);
+  const keyId = (name, k) => { const id = SAFE_ID.test(name) && !keyIds.has(name) ? name : `d${k}`; keyIds.add(id); return id; };
   out.push('  <key id="label" for="node" attr.name="label" attr.type="string"/>');
   const colIds = cols.map((c, k) => keyId(c.name, k));
   cols.forEach((c, k) => out.push(`  <key id="${xmlEscape(colIds[k])}" for="node" attr.name="${xmlEscape(c.name)}" attr.type="${c.type}"/>`));
   out.push('  <key id="weight" for="edge" attr.name="weight" attr.type="double"/>');
-  const ruleIds = rules.map((r, k) => keyId(`w_${r}`, `r${k}`));
-  rules.forEach((r, k) => out.push(`  <key id="${xmlEscape(ruleIds[k])}" for="edge" attr.name="w_${xmlEscape(r)}" attr.type="double"/>`));
-  const ecols = edgeColumns(ds, net, { taken: rules.map(r => `w_${r}`) });
+  const ruleIds = rules.map((r, k) => keyId(evidenceName(r), `r${k}`));
+  rules.forEach((r, k) => out.push(`  <key id="${xmlEscape(ruleIds[k])}" for="edge" attr.name="${xmlEscape(evidenceName(r))}" attr.type="double"/>`));
+  const ecols = edgeColumns(ds, net, { taken: rules.map(evidenceName) });
   const ecolIds = ecols.map((c, k) => keyId(`e_${c.name}`, `t${k}`));
   ecols.forEach((c, k) => out.push(`  <key id="${xmlEscape(ecolIds[k])}" for="edge" attr.name="${xmlEscape(c.name)}" attr.type="${c.type}"/>`));
   out.push(`  <graph id="G" edgedefault="${net.directed ? 'directed' : 'undirected'}">`);
   for (let i = 0; i < net.n; i++) {
-    let s = `    <node id="${xmlEscape(nodeKey(ds, net, i))}"><data key="label">${xmlEscape(nodeLabel(ds, net, i))}</data>`;
+    let s = `    <node id="${xmlEscape(ids[i])}"><data key="label">${xmlEscape(nodeLabel(ds, net, i))}</data>`;
     cols.forEach((c, k) => {
       const v = c.values[i];
       if (v === undefined) return;
@@ -132,7 +184,7 @@ export function exportGraphML(ds, net, opts = {}) {
   }
   const E = net.edges;
   for (let e = 0; e < E.count; e++) {
-    let s = `    <edge id="e${e}" source="${xmlEscape(nodeKey(ds, net, E.src[e]))}" target="${xmlEscape(nodeKey(ds, net, E.dst[e]))}"><data key="weight">${fmtNum(E.w[e])}</data>`;
+    let s = `    <edge id="e${e}" source="${xmlEscape(ids[E.src[e]])}" target="${xmlEscape(ids[E.dst[e]])}"><data key="weight">${fmtNum(E.w[e])}</data>`;
     rules.forEach((r, k) => { const v = E.byRule[r][e]; if (v) s += `<data key="${xmlEscape(ruleIds[k])}">${fmtNum(v)}</data>`; });
     ecols.forEach((c, k) => { const v = c.values[e]; if (v !== undefined) s += `<data key="${xmlEscape(ecolIds[k])}">${xmlEscape(c.type === 'double' ? fmtNum(v) : v)}</data>`; });
     out.push(s + '</edge>');

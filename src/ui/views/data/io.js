@@ -168,6 +168,9 @@ export function shortName(sources, inputs) {
   // Energy Slack export ..."), else the source kind and its owner or title
   // ("Gmail (Felipe Ferreira)") rather than "takeout-20250406T000000Z-001".
   const s = sources?.[0];
+  // A recombined survey: its title and combine rule (C13), so the union and
+  // reciprocated versions are named apart.
+  if (s?.family === 'survey' && s.title && s.combine) return clip(`${s.title} (${RULE_WORDS[s.combine] || s.combine})`, 80);
   const one = inputs?.length === 1 ? inputs[0].name.replace(/\.(zip|json|csv|tsv|mbox|ics|txt)$/i, '') : null;
   if (s && (s.ego || inputs?.[0]?.kind !== 'file') && !(one && s.label && one.toLowerCase().includes(s.label.split(' ')[0].toLowerCase()))) {
     const who = s.ego?.label || s.title;
@@ -175,6 +178,8 @@ export function shortName(sources, inputs) {
   }
   return clip(one || 'Imported data', 80);
 }
+
+const RULE_WORDS = { union: 'union', intersection: 'reciprocated', respondent: 'as reported' };
 
 export function clip(s, n) {
   s = String(s || '');

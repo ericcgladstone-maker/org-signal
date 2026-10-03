@@ -27,6 +27,7 @@
 import { MOCK, tryImport, pickFn } from './modules.js';
 import { setEngineGlossary } from './glossary.js';
 import { store } from '../store.js';
+import { summarizeRun } from '../../llm/methods.js';
 
 let impl = null;          // the underlying engine object
 let pureDefaults = null;  // defaultSettings(ds) from src/analysis/index.js when available
@@ -99,22 +100,42 @@ export function dsIndex(netNode) { return current.nodeIds?.[netNode] ?? -1; }
 // network is rebuilt or replaced.
 //   methodsLog = { groups: [{ attr }], nullModel: [{ stats, reps, seed, attr, communities }],
 //                  resampling: [{ metric, reps, top, seed }], time: [{ window, metrics, attr }],
+//                  shifts: [{ method, threshold, baseline, window }], beforeAfter: [{ date, metrics }],
 //                  affect: [{ by, attr, window }], keywords: [{ by, attr, k }], topics: [{ k, seed }], diffusion: [{ terms }] }
+// Each entry also carries `result`, a compact summary of what the run found
+// (src/llm/methods.js summarizeRun: null means, z, p, intervals, window
+// dates, shifts, before/after differences), so the appendix and the summary
+// report quote the numbers the views showed (N4, N5). A repeated run keeps
+// one entry with the latest result; null-model statistics from several calls
+// with the same options (a cached run read back) are merged.
 const PLAIN = v => v == null || ['string', 'number', 'boolean'].includes(typeof v) || (Array.isArray(v) && v.every(x => ['string', 'number'].includes(typeof x)));
 
-function record(kind, opts, keys) {
+function record(kind, opts, keys, result) {
   const entry = {};
   for (const k of keys) if (opts?.[k] !== undefined && PLAIN(opts[k])) entry[k] = opts[k];
   if (kind === 'nullModel' && opts?.membership) entry.communities = true;
+  let summary = null;
+  if (result !== undefined) { try { summary = summarizeRun(kind, result, { labels: store.get().dataset?.nodes?.labels }); } catch { summary = null; } }
+  // A cached-only null-model call that found nothing ran nothing. The
+  // replicate count actually used keys the entry, so a view that left it to
+  // the default and one that named it describe one run.
+  if (kind === 'nullModel' && summary && !Object.keys(summary.stats).length) return;
+  if (kind === 'nullModel' && summary?.meta?.reps != null) entry.reps = summary.meta.reps;
   const log = store.get().methodsLog || {};
   const list = log[kind] || [];
-  const id = JSON.stringify(entry);
-  if (list.some(x => JSON.stringify(x) === id)) return;
-  store.set({ methodsLog: { ...log, [kind]: [...list, entry] } });
+  // Options compared in a fixed key order: views pass them in different orders.
+  const canon = o => JSON.stringify(Object.keys(o).filter(x => x !== 'result').sort().map(x => [x, o[x]]));
+  const id = canon(entry);
+  const k = list.findIndex(x => canon(x) === id);
+  if (k >= 0 && !summary) return;
+  const prev = k >= 0 ? list[k].result : null;
+  const merged = kind === 'nullModel' && prev && summary ? { ...summary, stats: { ...prev.stats, ...summary.stats } } : summary;
+  const next = { ...entry, ...(merged ? { result: merged } : {}) };
+  store.set({ methodsLog: { ...log, [kind]: k >= 0 ? list.map((x, j) => (j === k ? next : x)) : [...list, next] } });
 }
 
 function logged(kind, keys, fn) {
-  return async (opts = {}) => { const r = await fn(opts); record(kind, opts, keys); return r; };
+  return async (opts = {}) => { const r = await fn(opts); record(kind, opts, keys, r); return r; };
 }
 
 // ---- adapter API used by the views ---------------------------------------------
@@ -161,10 +182,10 @@ export const engine = {
     return normaliseRender(r);
   },
 
-  groups: async (attrKey, opts = {}) => { const r = await call(['groupMetrics', 'groups'], attrKey, opts); record('groups', { attr: attrKey }, ['attr']); return r; },
+  groups: async (attrKey, opts = {}) => { const r = await call(['groupMetrics', 'groups'], attrKey, opts); record('groups', { attr: attrKey }, ['attr'], r); return r; },
   // Dataset node indices, as src/analysis/groups.js egoMetrics expects.
   ego: (dsNode, opts = {}) => call(['egoMetrics', 'ego'], dsNode, opts),
-  nullModel: logged('nullModel', ['stats', 'reps', 'seed', 'attr'], opts => call(['nullModel'], opts)),
+  nullModel: logged('nullModel', ['reps', 'seed', 'attr'], opts => call(['nullModel'], opts)),
   resampleRanks: logged('resampling', ['metric', 'reps', 'top', 'seed'], opts => call(['resampleRanks'], opts)),
   // Record the window the engine actually used ('auto' resolves to week, month...)
   // and the period, so the methods appendix states what was run.
@@ -172,11 +193,19 @@ export const engine = {
     const r = await call(['timeSeries'], opts);
     const resolved = typeof r?.meta?.window === 'string' ? r.meta.window : opts.window;
     const w = r?.windows || [];
-    record('time', { ...opts, window: resolved, start: w[0]?.start, end: w.length ? w[w.length - 1].end : undefined }, ['window', 'metrics', 'attr', 'start', 'end', 'purpose']);
+    record('time', { ...opts, window: resolved, start: w[0]?.start, end: w.length ? w[w.length - 1].end : undefined }, ['window', 'metrics', 'attr', 'start', 'end', 'purpose'], r);
     return r;
   },
-  shifts: (series, opts = {}) => call(['detectShifts', 'shifts'], series, opts),
-  beforeAfter: (date, opts = {}) => call(['compareBeforeAfter', 'beforeAfter'], date, opts),
+  shifts: async (series, opts = {}) => {
+    const r = await call(['detectShifts', 'shifts'], series, opts);
+    record('shifts', { ...opts, window: series?.meta?.window }, ['method', 'threshold', 'baseline', 'window'], r);
+    return r;
+  },
+  beforeAfter: async (date, opts = {}) => {
+    const r = await call(['compareBeforeAfter', 'beforeAfter'], date, opts);
+    record('beforeAfter', { ...opts, date }, ['date', 'metrics', 'start', 'end', 'span', 'reps', 'attr'], r);
+    return r;
+  },
   affect: logged('affect', ['by', 'attr', 'window'], opts => call(['affect'], opts)),
   keywords: logged('keywords', ['by', 'attr', 'k'], opts => call(['keywords'], opts)),
   topics: logged('topics', ['k', 'seed'], opts => call(['topics'], opts)),

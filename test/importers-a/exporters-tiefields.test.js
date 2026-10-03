@@ -63,7 +63,7 @@ test('edges CSV has one column per tie field', () => {
   const ds = sample();
   const net = buildNetwork(ds, { directed: true });
   const { rows } = parseCSV(exportEdgesCSV(ds, net));
-  assert.deepEqual(rows[0], ['Source', 'Target', 'Type', 'Weight', 'w_declared', 'tie_type', 'strength', 'notes']);
+  assert.deepEqual(rows[0], ['Source', 'Target', 'Type', 'Weight', 'evidence_declared', 'tie_type', 'strength', 'notes']);
   const r = rows.find(x => x[0] === 'roster:ann');
   assert.deepEqual(r.slice(5), ['Advice; Friendship', '4', 'weekly 1:1 & "lunch" <ok>']);
   const blank = rows.find(x => x[0] === 'roster:cy');
@@ -76,6 +76,6 @@ test('no tie fields: exports unchanged', () => {
   b.event({ type: 'declared', actor: b.node('t:a'), targets: [[b.node('t:b'), 'declared']] });
   const ds = b.build();
   const net = buildNetwork(ds, {});
-  assert.deepEqual(parseCSV(exportEdgesCSV(ds, net)).rows[0], ['Source', 'Target', 'Type', 'Weight', 'w_declared']);
+  assert.deepEqual(parseCSV(exportEdgesCSV(ds, net)).rows[0], ['Source', 'Target', 'Type', 'Weight', 'evidence_declared']);
   assert.ok(!/attr.name="strength"/.test(exportGraphML(ds, net)));
 });

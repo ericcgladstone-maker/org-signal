@@ -45,13 +45,21 @@ function sumCounts(list) {
   return c;
 }
 
-export function ReportView({ report, pending = false }) {
+// excludeBots: the construction leaves bots out (the default), so the
+// People total says how many of them the Network view will not show (L16:
+// "97 people (1 bot left out of the network)").
+export function ReportView({ report, pending = false, excludeBots = true }) {
   if (!report) return html`<p class="small text2">No import report is available for this data.</p>`;
   const t = report.totals;
   const reported = report.sources.some(s => s.reported) && report.sources.every(s => s.reported || s.counts.events === 0);
   const vis = Object.entries(t.contextsByVisibility || {}).filter(([, n]) => n);
+  const bots = excludeBots && !reported ? t.botsInEvents || 0 : 0;
+  const peopleSub = [
+    pending ? 'before merging duplicates' : (t.nodesInEvents != null && t.nodesInEvents !== t.nodes ? `${fmtInt(t.nodes)} listed in the export` : null),
+    bots ? `${plural(bots, 'bot')} left out of the network, which shows ${fmtInt((t.nodesInEvents ?? t.nodes) - bots)}` : null,
+  ].filter(Boolean).join('; ') || null;
   const rows = [
-    ['People', fmtInt(t.nodesInEvents ?? t.nodes), pending ? 'before merging duplicates' : (t.nodesInEvents != null && t.nodesInEvents !== t.nodes ? `${fmtInt(t.nodes)} listed in the export` : null)],
+    ['People', fmtInt(t.nodesInEvents ?? t.nodes), peopleSub],
     reported ? ['Reported ties', fmtInt(t.events), 'one per nomination'] : ['Messages and other events', fmtInt(t.events), t.messages ? `${fmtInt(t.messages)} messages, ${fmtInt(t.messagesWithText)} with text` : null],
     [reported ? 'Questions' : 'Conversations', fmtInt(t.contexts), !reported && vis.length > 1 ? vis.map(([v, n]) => `${fmtInt(n)} ${VIS_WORDS[v] || v}`).join(', ') : null],
     ['Time range', t.timeRange ? fmtRange(t.timeRange.start, t.timeRange.end) : 'no timestamps', null],
@@ -64,7 +72,7 @@ export function ReportView({ report, pending = false }) {
     </dl>
     ${(report.notes || []).length > 0 && html`<ul class="dv-notes">${report.notes.map(n => html`<li><${Flag} level=${/deactivated|Nothing was read/.test(n) ? 'caution' : 'info'} /> <span>${n}</span></li>`)}</ul>`}
     ${report.unclaimed?.length > 0 && html`<p class="small text2"><${Flag} level="caution">Not read</${Flag}> ${plural(report.unclaimed.length, 'file')} matched no importer: ${report.unclaimed.slice(0, 6).join(', ')}${report.unclaimed.length > 6 ? ', ...' : ''}</p>`}
-    ${groupSources(report.sources).map(list => (list.length > 1 ? html`<${SourceGroup} key=${list[0].id} list=${list} />` : html`<${SourceReport} key=${list[0].id} s=${list[0]} />`))}
+    ${groupSources(report.sources).map(list => (list.length > 1 ? html`<${SourceGroup} key=${list[0].id} list=${list} group=${(report.groups || []).find(g => g.key === `${list[0].label}|${list[0].view}`)} />` : html`<${SourceReport} key=${list[0].id} s=${list[0]} />`))}
   </div>`;
 }
 
@@ -101,6 +109,7 @@ function Deactivated({ list }) {
 }
 
 function CanCannot({ s }) {
+  // s: a source, or a group's { canShow, cannotShow } (core/report.js).
   return html`<div class="src__cols">
     <div><p class="label">This data can show</p>${s.canShow?.length ? html`<ul class="can-list">${s.canShow.map(x => html`<li>${x}</li>`)}</ul>` : html`<p class="small text2">Nothing: no events were read.</p>`}</div>
     <div><p class="label">It cannot show</p><ul class="can-list">${(s.cannotShow || []).map(x => html`<li>${x}</li>`)}</ul></div>
@@ -143,10 +152,14 @@ function SourceReport({ s }) {
   </article>`;
 }
 
-function SourceGroup({ list }) {
+// group: the report's entry for these sources (distinct people, and for
+// personal exports the one-person-slice wording).
+function SourceGroup({ list, group }) {
   const s0 = list[0];
-  const v = VIEW_TEXT[s0.view] || { name: s0.view || 'Unknown view' };
+  // Many chats from one phone are not "a single conversation" (C3).
+  const v = group?.canShow ? { name: "one person's slice" } : VIEW_TEXT[s0.view] || { name: s0.view || 'Unknown view' };
   const c = sumCounts(list);
+  if (group?.people != null) c.nodes = group.people;
   const starts = list.map(s => s.timeRange?.start).filter(Number.isFinite), ends = list.map(s => s.timeRange?.end).filter(Number.isFinite);
   const owners = [...new Set(list.map(s => s.ego?.label).filter(Boolean))];
   const noun = s0.view === 'chat' ? 'chats' : 'sources';
@@ -158,7 +171,7 @@ function SourceGroup({ list }) {
     ${owners.length > 0 && html`<p class="small text2 dv-files-line">Owner: <span class="dv-strong">${owners.join(', ')}</span>${owners.length === 1 && list.some(s => !s.ego) ? ' (group chats name no owner)' : ''}</p>`}
     <${Counts} s=${s0} counts=${c} />
     <${Deactivated} list=${list} />
-    <${CanCannot} s=${s0} />
+    <${CanCannot} s=${group?.canShow ? group : s0} />
     <${Warnings} list=${list} />
     <details class="disclose dv-chats"><summary>List the ${fmtInt(list.length)} ${noun}</summary>
       <div class="table-wrap"><table class="tbl">
