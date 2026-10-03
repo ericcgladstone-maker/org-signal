@@ -76,9 +76,16 @@ export function parseHash(hash) {
 // Short display name for what is loaded: the dataset name without its
 // parenthetical detail ("Synthetic workplace (slack, ...)" -> "Synthetic workplace").
 export function shortName(name, max = 32) {
-  let s = String(name || 'Untitled').replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim() || String(name || 'Untitled');
-  if (s.length > max) s = `${s.slice(0, max - 1).replace(/[\s,;:+-]+\S*$/, '')}\u2026`;
-  return s;
+  // Drop parentheticals (file details) but keep a survey's combine rule, so
+  // "Shared survey (union)" and "(reciprocated only)" stay distinguishable (C13).
+  let s = String(name || 'Untitled').replace(/\s*\(([^)]*)\)\s*/g, (m, inner) => (/^(union|reciprocated( only)?|as reported)$/i.test(inner.trim()) ? ` (${inner.trim()}) ` : ' ')).replace(/\s+/g, ' ').trim() || String(name || 'Untitled');
+  // Shorten the name, never the combine rule after it.
+  const m = s.match(/\s\((union|reciprocated( only)?|as reported)\)$/i);
+  const tail = m ? m[0] : '';
+  let base = tail ? s.slice(0, -tail.length) : s;
+  const room = Math.max(8, max - tail.length);
+  if (base.length > room) base = `${base.slice(0, room - 1).replace(/[\s,;:+-]+\S*$/, '')}\u2026`;
+  return base + tail;
 }
 
 let jobSeq = 0;

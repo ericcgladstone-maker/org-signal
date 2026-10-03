@@ -188,7 +188,9 @@ for (const width of [1440, 390]) {
   const needs = await p.evaluate(() => ({ q: document.querySelector('.view__intro')?.textContent || '', sample: [...document.querySelectorAll('.needs button')].some(b => /sample/i.test(b.textContent)) }));
   if (!/\?/.test(needs.q) || !needs.sample) problems.push(`${tag}: Groups empty state lacks its question or the sample link`);
   await overflow(p, `${tag} groups-empty`); await shot(p, `${tag}-groups-empty`);
-  // Keyboard: Tab from a fresh load reaches the skip link first.
+  // Keyboard: Tab from a fresh load reaches the skip link first. Leave the page
+  // first: a URL that differs only after '#' is a view switch, not a load.
+  await p.goto('about:blank');
   await p.goto(`${BASE}/index.html?mock&empty#data`, { waitUntil: 'load' });
   await idle(p, 300);
   await p.keyboard.press('Tab');

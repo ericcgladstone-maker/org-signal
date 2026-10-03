@@ -180,3 +180,21 @@ test('rosterFromResponses: the file is the roster, its questions and its answers
   const ds = toDataset(m);
   assert.equal(ds.nodes.count, 5);
 });
+
+test('a multi-respondent roster from the builder keeps who named whom and can switch combine rules', async () => {
+  const R = await import('../../src/builders/roster.js');
+  const { rederivableSource, rederiveSurvey } = await import('../../src/importers/survey-response.js');
+  const csv = ['Timestamp,Your name,Who is your friend? [Ana],Who is your friend? [Ben],Who is your friend? [Cy]',
+    '2026-10-01,Ana,,Yes,Yes', '2026-10-01,Ben,Yes,,', '2026-10-01,Cy,,,'].join('\n');
+  const model = R.rosterFromResponses(csv, { name: 'Test class' });
+  model.mergeRule = 'union';
+  const ds = R.toDataset(model);
+  const src = rederivableSource(ds);
+  assert.ok(src && src.nominations, 'builder dataset carries nominations');
+  const tieCount = d => d.events.count;
+  const union = tieCount(ds);
+  const recip = rederiveSurvey(ds, 'intersection');
+  const asRep = rederiveSurvey(ds, 'respondent');
+  assert.ok(tieCount(recip) <= union, 'reciprocated keeps no more ties than union');
+  assert.ok(tieCount(asRep) >= tieCount(recip));
+});

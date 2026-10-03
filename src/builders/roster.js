@@ -492,6 +492,18 @@ export function writeRoster(b, model, { relationIds = null, source = {} } = {}) 
     directed: merged.some(m => m.directed), fileNames: model.responses?.file ? [model.responses.file] : [],
     mode: model.mode, mergeRule: model.mode === 'multi' ? model.mergeRule : null,
     ...(tieFields.length ? { tieFields } : {}),
+    // Who named whom, so a saved project can later be recombined under
+    // another rule (union / reciprocated / as reported), as when the response
+    // files are imported on Data (C9). Same shape as importers/survey-response.
+    ...(model.mode === 'multi' && model.responses?.respondents?.length ? {
+      title: model.name,
+      nominations: {
+        version: 1, title: model.name,
+        people: model.people.map(p => ({ id: p.id, label: p.label })),
+        relations: model.relations,
+        respondents: model.responses.respondents.map(r => ({ personId: r.personId, label: r.label, ties: r.ties, attrs: r.attrs })),
+      },
+    } : {}),
     ...source,
   });
   const types = Object.fromEntries((model.attrColumns || []).map(c => [c.key, c.type]));
