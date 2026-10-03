@@ -142,8 +142,17 @@ function NetworkInner({ ds, net }) {
       const key = colorBy.slice(5);
       const ov = orderedValues(ds, key);
       const a = attrs.find(x => x.key === key);
-      const missing = ds.nodes.count - ov.reduce((x, b) => x + b.count, 0);
-      const gc = groupColoring(ov.map(o => ({ value: o.value, label: fmtAttr(key, o.value), count: o.count })), { missing });
+      // Color order comes from the whole dataset (so colors never shift); the
+      // counts shown are the people actually in this network, so an excluded
+      // bot or filtered-out person is not listed as "Not recorded".
+      const members = net.nodeIds || ids;
+      const inNet = new Map();
+      let missing = 0;
+      for (const d of members) {
+        const x = ds.nodes.attrs[d]?.[key];
+        if (x == null || x === '') missing++; else inNet.set(String(x), (inNet.get(String(x)) || 0) + 1);
+      }
+      const gc = groupColoring(ov.map(o => ({ value: o.value, label: fmtAttr(key, o.value), count: inNet.get(String(o.value)) || 0 })), { missing });
       const keyOf = v => { const x = ds.nodes.attrs[ids[v]][key]; return x == null || x === '' ? '' : String(x); };
       return { kind: 'cat', gc, of: v => gc.color(keyOf(v)), key: keyOf, title: a?.label || humanize(key) };
     }
@@ -843,6 +852,14 @@ function SelectionPanel({ ds, selection, data, metrics, onEdge }) {
 
 const EVIDENCE_PAGE = 60;
 
+// Tie fields recorded with an event (survey answers such as type of tie or
+// strength), labeled from the dataset's tie-field schema: "Type of tie: Advice; Strength: 4".
+function tieFields(ds, attrs) {
+  if (!attrs) return '';
+  const schema = new Map((ds.eventAttributeSchema || []).map(f => [f.key, f.label || f.key]));
+  return Object.entries(attrs).filter(([, v]) => v !== null && v !== undefined && v !== '').map(([k, v]) => `${schema.get(k) || k}: ${v}`).join('; ');
+}
+
 export function Evidence({ ds, a, b, onClose }) {
   const [limit, setLimit] = useState(EVIDENCE_PAGE);
   // Ask for one more than shown, to know whether there is more.
@@ -855,8 +872,8 @@ export function Evidence({ ds, a, b, onClose }) {
     try {
       const all = await engine.edgeEvidence(a, b, { limit: 1e7, bothDirections: true });
       const esc = x => { const s = x == null ? '' : String(x); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-      const lines = ['time_utc,actor,rule,type,context,visibility,weight,text'];
-      for (const e of all.events) lines.push([Number.isFinite(e.t) ? new Date(e.t).toISOString() : '', e.actorLabel || nodeLabel(ds, e.actor), e.rule, e.type, e.context, e.visibility, e.amount, e.text].map(esc).join(','));
+      const lines = ['time_utc,actor,rule,type,context,visibility,weight,tie_fields,text'];
+      for (const e of all.events) lines.push([Number.isFinite(e.t) ? new Date(e.t).toISOString() : '', e.actorLabel || nodeLabel(ds, e.actor), e.rule, e.type, e.context, e.visibility, e.amount, tieFields(ds, e.attrs) || '', e.text].map(esc).join(','));
       download(lines.join('\n'), 'tie-evidence.csv', 'text/csv');
     } catch (e) { store.actions.notify('error', e.message); }
   };
@@ -877,6 +894,7 @@ export function Evidence({ ds, a, b, onClose }) {
           <div class="row row--between" style="gap:.2rem .6rem"><span style="color:var(--text)">${e.actorLabel || nodeLabel(ds, e.actor)} <span class="muted">· ${RULE_LABEL[e.rule] || e.rule}</span></span><span class="meta">${fmtDateTime(e.t)}</span></div>
           <div class="meta" style="margin-top:.15rem">${humanize(e.type)}${e.context ? ` in ${e.context}` : ''}${e.visibility && e.visibility !== 'unknown' ? ` · ${(VISIBILITY_LABEL[e.visibility] || e.visibility).toLowerCase()}` : ''}${e.amount != null ? ` · weight ${fmtNum(e.amount)}` : ''}</div>
           ${pt && html`<p class="text2" style="margin-top:.25rem"><span class="muted">On:</span> ${pt}</p>`}
+          ${tieFields(ds, e.attrs) && html`<p class="small text2" style="margin-top:.25rem">${tieFields(ds, e.attrs)}</p>`}
           ${e.text && html`<p class="text2" style="margin-top:.25rem">${e.text}</p>`}
         </li>`; })}
       </ol>

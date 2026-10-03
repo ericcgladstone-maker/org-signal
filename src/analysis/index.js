@@ -4,7 +4,7 @@
 // (engine.js) runs these in a worker and keeps the dataset and the current
 // network there.
 
-export { defaultSettings, normalizeSettings, buildNetwork, edgeEvidence, networkFromEdges, forEachEvidence, RULES, RULE_INFO, LAYERS } from './construct.js';
+export { defaultSettings, normalizeSettings, buildNetwork, edgeEvidence, networkFromEdges, forEachEvidence, edgeTieAttributes, tieFieldPlan, RULES, RULE_INFO, LAYERS } from './construct.js';
 export { computeNodeMetrics, NODE_METRICS } from './metrics.js';
 export { computeNetworkMetrics } from './network.js';
 export { detectCommunities, modularity } from './communities.js';
