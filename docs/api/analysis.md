@@ -59,7 +59,7 @@ Every method returns a Promise. Positional arguments follow the pure function, m
 | `communities({ resolution, seed })` | `detectCommunities` | also kept as the default partition for `nullModel` |
 | `groups(attr, opts)` / `groupMetrics(attr, opts)` | `groupMetrics(net, ds, attr, opts)` | |
 | `ego(node, { attr })` / `egoMetrics(node, { attr })` | `egoMetrics(net, node, { ds, attr })` | `node` = dataset index |
-| `nullModel(opts)` | `nullModel(net, { ds, membership, ...opts })` | |
+| `nullModel(opts)` | `nullModel(net, { ds, membership, ...opts })` | results cached per network (see Uncertainty); `{ cachedOnly: true }` reads them without a run |
 | `resampleRanks(opts)` | `resampleRanks(ds, currentSettings, opts)` | array |
 | `applicability()` | `applicability(ds, net)` | |
 | `timeSeries(opts)` | `timeSeries(ds, currentSettings, opts)` | |
@@ -190,16 +190,46 @@ Builds a Network from an edge list. Duplicate ties are summed.
 
 ## Uncertainty
 
-`nullModel(net, { stats, reps = 100, seed = 1, swapsPerEdge = 10, ds, attr, membership, nodeStats })`
+`nullModel(net, { stats, reps = NULL_REPS (200), seed = 1, swapsPerEdge = 10, ds, attr, membership, nodeStats, cachedOnly })`
 
-- Stats come from `NULL_STATS`: `reciprocity`, `transitivity`, `avgClustering`, `degreeAssortativity`, `attrAssortativity`, `eiIndex` and `modularity`. The attribute-based stats need `ds` + `attr`. Modularity uses the given `membership` or one Louvain run. Stats that do not apply are skipped.
+- Stats come from `NULL_STATS`: `reciprocity`, `transitivity`, `avgClustering`, `degreeAssortativity`, `attrAssortativity`, `eiIndex` and `modularity`. The attribute-based stats need `ds` + `attr`. Stats that do not apply are skipped.
 - The model is degree-preserving rewiring of the binary graph: in/out-preserving target swaps when directed, double edge swaps when undirected. Simple graphs are kept, with `swapsPerEdge * m` attempts per replicate.
-- Output: `{ [stat]: { observed, mean, sd, z, p, pUpper, pLower, lo, hi }, meta, nodes? }`.
+- **Modularity re-runs community detection on every replicate** (since 2026-10-03, N2). Each rewired network goes through Louvain (seed `modularity|<seed>|<replicate>`) and the best modularity found is recorded; the observed value is what the same search finds on the observed ties. Weights are ignored on both sides, like every null statistic. With `membership` (the partition the views show, found on weighted ties), `modularity.partition` gives that partition's modularity on the unweighted ties, for reference only. The old null kept the observed partition fixed on the rewired networks; its mean is near 0 for any degree sequence, so every partition looked significant (on 300 networks drawn from the null itself, 100% had p <= 0.05; now 4-5%, `docs/accuracy.md`). Louvain finds modularity of 0.2-0.4 in sparse random networks, which is what the new null mean shows.
+- Output: `{ [stat]: { observed, mean, sd, z, p, pUpper, pLower, lo, hi, replicates }, meta, nodes? }`.
   - `z = (observed - mean) / sd`.
-  - `p` = two-sided empirical `(count(|null - mean| >= |observed - mean|) + 1) / (reps + 1)`.
+  - `p` = two-sided empirical `(count(|null - mean| >= |observed - mean|) + 1) / (reps + 1)`; its floor is `meta.pFloor = 1 / (reps + 1)` (1/201 at the default). Say "none of the 200 random networks came this close (p <= 1/201)" at the floor, never "p = 0.005".
   - `pUpper = (count(null >= obs) + 1) / (reps + 1)`.
   - `lo` / `hi` are the 2.5% / 97.5% null quantiles.
-- `nodeStats: ['constraint', 'effectiveSize', 'betweenness' (n <= 1500)]` adds `nodes[stat] = { observed, mean, sd, z, pUpper }`, as Float64Arrays in network order.
+  - `eiIndex.groups = [{ value, observed, mean, sd, z, p, lo, hi, replicates }]`: each group's E-I against its rewired expectation, in `attrCodes` value order (the Groups table's "E-I if random").
+  - `modularity.partition` (with `membership`).
+- `meta = { reps, seed, swapsPerEdge, acceptedSwapShare, pFloor, model, binary, modularity?, attr?, cached? }`.
+- `nodeStats: ['constraint', 'effectiveSize', 'betweenness' (n <= 1500)]` adds `nodes[stat] = { observed, mean, sd, z, pUpper }`, as Float64Arrays in network order. Node statistics are not cached.
+
+**One run, shared by every view (N3).** `NULL_REPS = 200` is the one replicate count for every null-model comparison (Network panel, Groups reading, reports, Ask). Results are cached per Network object and statistic, keyed by `reps`, `seed`, `swapsPerEdge` and, for the attribute statistics, the attribute and its values. The replicate chain depends only on the seed, so a statistic computed in a later call has exactly the values it would have had in a joint call, and a call returns the same object whether or not another view ran it first. A rebuild makes a new Network and so a fresh cache. Through the engine the cache lives in the worker with the network, so:
+
+```js
+// Network view: its four statistics (200 replicates by default)
+const nm = await engine.nullModel({ stats: ['reciprocity', 'transitivity', 'avgClustering', 'modularity'], membership });
+// Groups: modularity comes back from the same run, at once
+const q = await engine.nullModel({ stats: ['modularity'], membership });
+// Show what is already there without starting a run (no rewiring at all):
+const peek = await engine.nullModel({ stats: ['modularity', 'transitivity'], cachedOnly: true });
+peek.meta.cached;   // ['modularity', 'transitivity'] or a subset; absent stats are simply missing
+```
+
+Pass the same `reps` and `seed` (or leave both out) to share a run; a different `reps` is a different test.
+
+**Runtime** (Node 24.19, Apple silicon, 200 replicates; rewiring dominates, Louvain adds the rest):
+
+| Network | modularity alone | transitivity + clustering | |
+|---|---|---|---|
+| 150 people, 3.6k directed ties | 1.8 s | 1.6 s | |
+| 400 people, 4k ties | 2.5 s | 1.8 s | the generated online network (392 people, 8.2k ties) takes 2.5 s in the browser worker |
+| 1,000 people, 7.5k ties | 5.4 s | 3.6 s | |
+| 2,000 people, 24k directed ties | 17 s | 11 s | |
+| 5,000 people, 25k ties | 24 s | 12 s | |
+
+A second view asking for a cached statistic gets it in a few milliseconds.
 
 `resampleRanks(ds, settings, { metric = 'betweenness', reps = 50, top = 10, seed = 1, approx, limit })` ->
 `[{ node (dataset), label, value, rank, lo, hi, median, topShare, approximate? }]`, ordered by observed rank.
@@ -217,7 +247,7 @@ Builds a Network from an edge list. Duplicate ties are summed.
 
 `applicability(ds, net)` -> `{ [key]: { level: 'ok' | 'caution' | 'na', reason, reasons[] }, _context }` for every node metric, plus `density, reciprocityNetwork, transitivity, avgClustering, avgPathLength, degreeCentralization, strengthGini, degreeAssortativity, communities, groups, ego, nullModel, resampleRanks, timeSeries, detectShifts, compareBeforeAfter, affect, keywords, topics, diffusion, hierarchy`. The worst level wins. It checks:
 
-- source view (ego views make path measures `na`; chat, sample and authored views have their own rules; ego-network interviews (`format: 'ego-interview'`) get interview wording: direction, in-degree and reciprocity are `na` because the respondent reports every tie, and ties among the people named are flagged as perceived; ego sources also caution `groups` and `nullModel`);
+- source view (ego views make path measures `na`; chat, sample and authored views have their own rules; several personal chat sources (one person's WhatsApp, Telegram or iMessage export: `family` or `context` personal, chat or ego views, more than one source) make path measures `na` because the owner is in every chat and connects them by construction, and caution constraint and effective size (the owner's are low and high largely by construction) as well as density, clustering, communities, groups and the null model (C3); a single chat keeps the single-conversation wording; ego-network interviews (`format: 'ego-interview'`) get interview wording: direction, in-degree and reciprocity are `na` because the respondent reports every tie, and ties among the people named are flagged as perceived; ego sources also caution `groups` and `nullModel`);
 - direction and weighting;
 - copresence-only rules, adjacency, and undirected sources inside a directed network;
 - size, components and isolates;
@@ -249,7 +279,10 @@ Helpers in `time.js`:
 ```
 
 `detectShifts(series, { method = 'robust' | 'cusum', threshold, nodeThreshold, baseline = 8, minBaseline = 4, minCoverage = 0.6, nodeMetric, topNodes = 200, networkMetrics, labels })` ->
-`{ shifts: [{ target: 'network'|'group'|'node', id, label, metric, window, end, length, value, baseline, z | statistic, direction, start, windowLabel }], meta: { method, threshold, nodeThreshold, baseline, windows, seriesScanned, partialWindowsSkipped } }`.
+`{ shifts: [{ target: 'network'|'group'|'node', id, label, metric, window, end, length, value, baseline, z | statistic, direction, start, windowLabel, level, held, span, heldToEnd, lastHeld }], meta: { method, window, threshold, nodeThreshold, baseline, windows, seriesScanned, partialWindowsSkipped } }`.
+
+- **Persistence** (J3). `length` / `end` describe the run of flagged windows, which ends as soon as the rolling baseline has absorbed a new level (a permanent step is flagged for 2-4 windows). `persistence(x, first, last, baseline, direction)` judges the shift against the baseline before it instead: `level` is the mean of the flagged windows, and each later tested window is assigned to whichever is nearer, the pre-shift `baseline` or `level`. `held` of `span` windows (from the first flagged one to the end of the series or of its segment between source edges) sit nearer the new level; `heldToEnd` when all do; `lastHeld` is the last window of the unbroken run. Report "stayed at the new level to the end" from `heldToEnd`, never "lasted `length` windows".
+- `meta.window` is the window unit of the series the shifts were computed from; a view shows it, and must recompute shifts when the series changes (J4).
 
 - **Robust z** (default): compares each window with the median and MAD of the previous 8 windows, with threshold 3.5 (5 for node series). The scale has floors: 5% of the median, sqrt(median) for count series, and binomial noise for shares from the window's tie count (reciprocity uses m/2, transitivity m/3; density uses density/sqrt(m)).
 - **CUSUM**: two-sided, k = 0.5, h = 6 (12 for node series), with the same floors.
@@ -260,8 +293,9 @@ Helpers in `time.js`:
 - Measured (2026-10-03, `docs/accuracy.md`): on 200 flat synthetic Slack workplaces 0.085 false alarms per dataset with the robust method (0.025 CUSUM), 0.18 on email workplaces; on chat (WhatsApp, 2.6 per dataset) and forum data most alarms come from person-level series of small, bursty counts. Over 100 seeds per preset the robust method found a planted silo (100%), quiet team (98%), departure (94%), reorg (92%) and consolidation (74%) within 4 days. On one flat count series of 26 windows the robust method gives 0.03 false alarms at a mean of 30 per window but 0.1 at a mean of 5 (Poisson skew). CUSUM detects changes but dates them by where its run started, a median 6.5-20 days from the planted event, and tests nothing when the series is no longer than its 8-window baseline.
 
 `compareBeforeAfter(ds, settings, date, { span, start, end, metrics = ['degree', 'strength', 'betweenness', 'constraint'], attr, reps = 2000, metricReps = 199, seed })` ->
-`{ date, span, before: { start, end, nodes, ties }, after, node: { [m]: { n, meanBefore, meanAfter, meanDiff, sdDiff, dz, p, topIncreases[], topDecreases[] } }, network: { [k]: { before, after, diff } }, ties: { formed, dissolved, persisted, jaccard }, groups?: [{ value, before, after, ratio }], meta }`.
-`p` comes from a randomisation test on the events: each event of the two periods is relabelled before or after with probability 1/2 and the mean per-person difference recomputed (`node[m].test`, `node[m].reps`). For degree and strength (and their in/out parts) this needs no rebuild, because summed over people their change is the change in ties or tie weight, so `reps` relabellings are cheap; other metrics rebuild both networks `min(reps, metricReps)` times, and so do all metrics when turn-taking ties are on. Flipping the sign of each person's difference, as before, treats people as independent although every tie moves two of them: on stationary data it gave p <= 0.05 in 14% of datasets; the event test gives 4.5-5.5% (`docs/accuracy.md`). Bursty activity still makes it somewhat liberal. `meta.approximate` lists metrics computed with pivots. `dz` = mean difference / sd of differences. `cautions: [{ source, label, kind: 'starts'|'ends', t, period: 'before'|'after' }]` lists material sources that start or end inside either period; people mostly seen in such a source carry `sourceEdge` (its label) in `topIncreases` / `topDecreases`.
+`{ date, span, before: { start, end, nodes, ties }, after, node: { [m]: { n, meanBefore, meanAfter, meanDiff, sdDiff, dz, p, topIncreases[], topDecreases[] } }, network: { [k]: { before, after, diff } }, ties: { formed, dissolved, persisted, jaccard }, groups?: [{ value, before, after, ratio }], mixing?, meta }`.
+Before is `[date - span, date)` and after `[date, date + span)`: events on the date itself count as after (`meta.boundary`), so a person who leaves that day still appears after it (J16). `metrics: []` is allowed (only the network, ties and mixing). With `attr`, `mixing = { attr, before: { within, across, coded, eiIndex, crossShare }, after, diff (E-I after - before), p, reps, test, snapshot: true }`: the E-I index and the share of ties crossing groups in each period, over ties whose two ends have a value, with an event-relabelling p for the change in E-I (two-sided, `reps` relabellings, no rebuild; `p: null` with turn-taking ties on). `snapshot` is a reminder that the attribute is one value per person: if people moved groups at the date, their ties inside the new group count as crossing (J1).
+`p` comes from a randomization test on the events: each event of the two periods is relabeled before or after with probability 1/2 and the mean per-person difference recomputed (`node[m].test`, `node[m].reps`). For degree and strength (and their in/out parts) this needs no rebuild, because summed over people their change is the change in ties or tie weight, so `reps` relabellings are cheap; other metrics rebuild both networks `min(reps, metricReps)` times, and so do all metrics when turn-taking ties are on. Flipping the sign of each person's difference, as before, treats people as independent although every tie moves two of them: on stationary data it gave p <= 0.05 in 14% of datasets; the event test gives 4.5-5.5% (`docs/accuracy.md`). Bursty activity still makes it somewhat liberal. `meta.approximate` lists metrics computed with pivots. `dz` = mean difference / sd of differences. `cautions: [{ source, label, kind: 'starts'|'ends', t, period: 'before'|'after' }]` lists material sources that start or end inside either period; people mostly seen in such a source carry `sourceEdge` (its label) in `topIncreases` / `topDecreases`.
 
 ## Content
 
@@ -298,11 +332,12 @@ It uses TF-IDF over each unit's pooled text, with smooth idf `ln((1+U)/(1+df)) +
 It is collapsed Gibbs LDA; `distinctive` ranks by relevance with lambda 0.6.
 
 `diffusion(ds, net, { terms, auto = 8, minAdopters = 5, window, reps = 200, seed })` ->
-`{ terms: [{ term, adopters, outsideNetwork, first, last, exposedShare, exposed, eligible, null: { mean, sd, z, pUpper, reps }, cascade: { roots, maxDepth, largest }, adoptions: [{ node, label, t, exposed, from, dt }] }], meta }`.
+`{ terms: [{ term, adopters, outsideNetwork, first, last, exposedShare, exposed, eligible, null: { mean, sd, z, pUpper, reps, room, zMax, ceiling }, cascade: { roots, maxDepth, largest }, adoptions: [{ node, label, t, exposed, from, dt }] }], meta }`.
 
 - A person adopts a term with their first message using it.
 - An adoption is exposed if a neighbour in either direction used the term earlier (within `window` if set).
 - The null shuffles adoption times among the same adopters.
+- `null.room = 1 - mean`; `null.zMax` = the z a 100% exposed share would get; `null.ceiling` when the shuffled baseline is at least `CEILING` (0.85). With a ceiling the test has little room either way (the generated online network's terms sit at 90-95%), and views say so (N8).
 - Automatic selection picks words new after the first 10% of the period that reach `minAdopters` people.
 
 ## Rendering
@@ -364,7 +399,8 @@ Run `node --test 'test/analysis/**/*.test.js'` (77 tests). Set `ORG_SIGNAL_SKIP_
 | node metrics, exact, all | 5,000 nodes, 95k directed ties | 11.5 s |
 | same, approx auto (632 pivots) | same | 1.7 s |
 | network metrics / communities | same | 0.12 s / 0.13 s |
-| nullModel, 100 reps, 4 stats | same | 26 s |
+| nullModel, 100 reps, 4 stats (fixed-partition modularity, before 2026-10-03) | same | 26 s |
+| nullModel, 200 reps, modularity re-detected | 5,000 nodes, 25k ties | 24 s (see Uncertainty) |
 | resampleRanks degree, 50 reps / betweenness (approx), 20 reps | 100k events | 2.0 s / 7.9 s |
 | affect (VADER) | 100k messages | 4.8 s, then cached |
 | topics k = 10, 100 iterations | 100k docs, 800k tokens | 2.9 s |
@@ -403,6 +439,11 @@ These strings are shown in the UI verbatim, from `GLOSSARY` in `src/analysis/glo
 | `path` | Path and distance | A path is a chain of ties from one person to another; the distance is the fewest steps it takes. | Shortest-path length in ties (unweighted unless stated). | Any network. | A missing tie can make a distance look much longer than it is. |
 | `nullModel` | Null model (random networks) | Many random networks that keep something fixed (usually everyone's number of ties) so we can see what chance alone would give. | Degree-preserving rewiring (double edge swaps), or shuffled timings for diffusion; the observed value is compared with the spread of the random ones. | Enough ties to rewire. | Answers only "is this more than chance, given these degrees?", not why. |
 | `randomSeed` | Random seed | A number that fixes the random choices, so the same seed gives exactly the same result again. | Seed for the pseudo-random generator used by the generator, community detection, null models and resampling. | Anything random. | A result that changes a lot with the seed is not settled. Not the same as the first user of a word (diffusion). |
+| `informant` | Informant | Someone who reports the whole network as they see it, not just their own ties (perceived networks). | Each informant fills in who is tied to whom among everyone on the roster. | Perceived networks (Build). | Informants remember strong and nearby ties better than weak or distant ones. |
+| `consensus` | Consensus network | The ties enough informants agree on: a tie is in it when at least the chosen share of informants reported it. | Tie (i, j) is kept when the share of informants reporting it reaches the threshold; its weight is that share. | Perceived networks with several informants. | Each informant is scored against a consensus that includes their own report, which flatters everyone a little. |
+| `hitRate` | Hit rate | Of the ties that are really there, the share an informant reported. | Ties reported and in the reference / ties in the reference. | Perceived networks. | Ignores false alarms: someone who ticks every box gets 100%. Read it with Jaccard. |
+| `jaccard` | Jaccard similarity | How much two sets of ties overlap: 1 means identical, 0 means nothing in common. Used to score how accurately an informant sees the network. | \|A and B\| / \|A or B\| over the ties of the two networks. | Two networks on the same people. | Penalizes both missed ties and invented ones, so it is the fairest single accuracy score here. |
+| `cognitiveSocialStructure` | Cognitive social structure | The network as each person in a group perceives it (Krackhardt 1987); comparing the perceptions shows who sees the group accurately. | One full roster matrix per informant; aggregated by union, intersection or consensus. | Perceived networks (Build). | Perception is not behavior: an accurate perceiver need not be central. |
 
 ### Node measures
 

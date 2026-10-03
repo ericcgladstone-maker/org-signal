@@ -119,3 +119,7 @@
 .people-list__row{display:grid;grid-template-columns:2rem minmax(0,1fr) auto;gap:.5rem;align-items:center;width:100%;min-height:2.75rem;padding:.35rem 0;background:none;border:0;border-bottom:1px solid var(--rule);color:var(--text);font:inherit;font-size:.875rem;text-align:left;cursor:pointer}
 .people-list__rank{color:var(--text-muted);font-size:.75rem}
 .people-list__val{color:var(--text-2)}
+
+/* A worked example's "what to look for", under Who stands out. */
+.standout__example{margin-top:.75rem;padding-top:.6rem;border-top:1px solid var(--rule)}
+.standout__example ul{margin:.3rem 0 0;padding-left:1.1rem}

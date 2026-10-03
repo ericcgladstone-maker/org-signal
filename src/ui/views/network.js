@@ -890,6 +890,10 @@ function Standouts({ ds, net, metrics, applicability, onPick }) {
 ${' · '}<button type="button" class="tlink tlink--arrow" onClick=${() => { requestPeopleSort(r.key); store.actions.setView('people'); }}>Full ranking</button></span>
       </li>`)}
     </ul>
+    ${ds.meta?.example?.lookFor?.length && html`<div class="standout__example">
+      <p class="small text2"><strong>${ds.meta.example.title}: what to look for</strong></p>
+      <ul class="small text2">${ds.meta.example.lookFor.map(x => html`<li>${x}</li>`)}</ul>
+    </div>`}
   </section>`;
 }
 
