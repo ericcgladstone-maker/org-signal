@@ -28,9 +28,12 @@
 //   edgeEvidence(a, b, { limit })  -> [event summaries]   (a, b dataset node indices)
 
 export const NODE_METRICS = ['degree', 'inDegree', 'outDegree', 'strength', 'inStrength', 'outStrength', 'betweenness',
-  'closeness', 'eigenvector', 'pagerank', 'clustering', 'coreNumber', 'reciprocity', 'constraint', 'effectiveSize', 'egoDensity'];
+  'closeness', 'eigenvector', 'pagerank', 'clustering', 'coreNumber', 'reciprocity', 'constraint', 'effectiveSize', 'egoDensity',
+  // Two-mode (affiliation) networks: Borgatti-Everett normalized, per mode.
+  'twoModeDegree', 'twoModeBetweenness', 'twoModeCloseness', 'twoModeClustering'];
 export const NETWORK_STATS = ['density', 'reciprocity', 'transitivity', 'avgClustering', 'components', 'largestComponentShare',
-  'avgPathLength', 'degreeCentralization', 'strengthGini', 'modularity', 'assortativity'];
+  'avgPathLength', 'degreeCentralization', 'strengthGini', 'modularity', 'assortativity',
+  'twoModeDensity', 'robinsAlexander', 'twoModeAvgClustering'];
 
 const MAX_LIST = 50;
 const MAX_STR = 240;

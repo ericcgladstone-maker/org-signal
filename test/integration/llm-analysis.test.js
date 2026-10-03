@@ -81,3 +81,18 @@ test('content_summary works for every measure and breakdown', async () => {
   assert.equal(one.result.result.node.label, 'Cy');
   assert.ok(Number.isFinite(one.result.result.value.mean));
 });
+
+test('LLM tools can query two-mode measures on an affiliation network', async () => {
+  const { DatasetBuilder, declareTwoMode, addAffiliation } = await import('../../src/core/model.js');
+  const b = new DatasetBuilder({ name: 'clubs', source: { format: 'test', view: 'full', context: 'survey' } });
+  declareTwoMode(b, ['Students', 'Clubs']);
+  const m = { Ana: ['Chess', 'Choir'], Ben: ['Chess'], Cy: ['Choir', 'Drama'], Di: ['Drama'], Ed: ['Chess', 'Drama'] };
+  for (const [who, clubs] of Object.entries(m)) for (const c of clubs) addAffiliation(b, `s:${who}`, `c:${c}`, { actorLabel: who, eventLabel: c });
+  const ds = b.build();
+  const net = analysis.buildNetwork(ds, analysis.defaultSettings(ds));
+  const runner = createToolRunner({ engine: engineFromAnalysis(analysis, ds, net), dataset: ds });
+  const rec = await runner.run('top_nodes', { metric: 'twoModeBetweenness', k: 3 });
+  assert.equal(rec.error, null, rec.error);
+  const sum = await runner.run('network_summary', {});
+  assert.equal(sum.error, null, sum.error);
+});
