@@ -111,6 +111,8 @@ function GeneratorBox({ s, g, update, ctx = {} }) {
       ${roster && ctx.allowOthers !== false ? html`<button type="button" class="tlink tlink--quiet" aria-pressed=${String(offList)} onClick=${() => { setOffList(!offList); setHint([]); }}>
         ${offList ? 'Pick from the list' : 'Someone not on the list'}</button>` : null}
     </div>
+    ${full && !ctx.respondent ? html`<p class="ob-note ob-warn" role="status">This question is full: it takes at most ${g.cap} names.
+      <button type="button" class="tlink" onClick=${() => update(x => E.updateGenerator(x, g.id, { cap: g.cap + 5 }))}>Allow up to ${g.cap + 5}</button></p>` : full ? html`<p class="ob-note" role="status">That is the most names this question takes (${g.cap}).</p>` : null}
     <div id=${'dh-' + g.id} aria-live="polite">
       ${freeOK && hint.length ? html`<p class="ob-note ob-warn">Possibly someone already named: ${hint.map(h => `${h.label} (${REASON_TEXT[h.reason]})`).join(', ')}.</p>` : null}
       ${msg ? msg.map(m => html`<p class=${'ob-note ' + (m.level === 'warn' ? 'ob-warn' : '')}>${m.text}</p>`) : null}
@@ -196,7 +198,7 @@ export function DescribeStep({ s, update }) {
   const ref = useRef(null);
   if (!s.alters.length) return html`<p class="ob-empty">Collect some names first.</p>`;
   const tf = s.tieFields || [];
-  if (!s.interpreters.length && !tf.length) return html`<p class="ob-empty">No questions about alters were chosen. Go back to Name interpreters to add some, or continue.</p>`;
+  if (!s.interpreters.length && !tf.length) return html`<p class="ob-empty">No questions about alters were chosen. Go back to About each person to add some, or continue.</p>`;
   // Enter moves down a column (the usual way to key a survey form fast);
   // Shift+Enter moves up. Tab moves across as normal.
   const onKey = e => {
@@ -210,7 +212,7 @@ export function DescribeStep({ s, update }) {
   };
   const p = E.progress(s);
   return html`<div class="ob-stack">
-    <p class="ob-note">${p.answered} of ${p.cells} answers filled. Enter moves down a column, Tab moves across.</p>
+    <p class="ob-note">${p.answered} of ${p.cells} answers filled.<span class="ob-kbdonly"> Enter moves down a column, Tab moves across.</span></p>
     <div class="table-wrap" ref=${ref} onKeyDown=${onKey}><table class="tbl ego-describe">
       <thead><tr><th scope="col">Name</th>${s.interpreters.map(it => html`<th scope="col">${it.label}</th>`)}${tf.map(f => html`<th scope="col">${f.label} <span class="ob-note">(your tie)</span></th>`)}</tr></thead>
       <tbody>${s.alters.map((a, r) => html`<tr key=${a.id}>

@@ -88,8 +88,31 @@ export function matchNames(query, list, { limit = 8 } = {}) {
     else if (l.startsWith(q)) score = 1;
     else if (l.split(/\s+/).some(w => w.startsWith(q))) score = 2;
     else if (l.includes(q)) score = 3;
-    else if (q.length >= 4 && editDistance(q, l.slice(0, q.length), 1) <= 1) score = 4;
+    else if (q.length >= 4 && nearSpelling(q, l)) score = 4;
     if (score >= 0) scored.push({ x, score, i });
   });
   return scored.sort((p, q2) => p.score - q2.score || p.i - q2.i).slice(0, limit).map(s => s.x);
+}
+
+// Near spelling for type-ahead (C11): the typed text against the start of the
+// name, or word by word, allowing one slip per word (two for long text), where
+// swapping two letters ("Deigo" for "Diego") is one slip.
+function nearSpelling(q, l) {
+  const tol = n => (n >= 7 ? 2 : 1);
+  if (osa(q, l.slice(0, q.length)) <= tol(q.length)) return true;
+  const qw = q.split(/\s+/).filter(w => w.length >= 3), lw = l.split(/\s+/);
+  return qw.length > 0 && qw.every(w => lw.some(x => osa(w, x.slice(0, Math.max(w.length, Math.min(x.length, w.length + 1)))) <= tol(w.length)));
+}
+
+// Optimal string alignment distance (Levenshtein plus adjacent transpositions).
+function osa(a, b) {
+  const m = a.length, n = b.length;
+  const d = Array.from({ length: m + 1 }, (_, i) => [i, ...new Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+    const c = a[i - 1] === b[j - 1] ? 0 : 1;
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c);
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+  }
+  return d[m][n];
 }

@@ -3,7 +3,11 @@
 // A drawing is a plain JSON document:
 //   { version, name, nodes[{ id, label, x, y, group, attrs{} }],
 //     edges[{ id, source, target, type, weight, directed }],
-//     groups[{ id, name }], attrColumns[{ key, type }], edgeTypes[] }
+//     groups[{ id, name }], attrColumns[{ key, type }], edgeTypes[],
+//     groupKey?, example? }
+// groupKey names the attribute the groups become in the Dataset ('group'
+// unless set, e.g. 'major'); example is the id of the worked example the
+// drawing started from (src/builders/examples.js).
 //
 // Every edit is a pure function doc -> new doc. Unchanged arrays and objects
 // are shared between versions, so the undo history can simply keep the
@@ -17,6 +21,7 @@
 
 import { DatasetBuilder } from '../core/model.js';
 import { uid, slug, coerce, ATTR_TYPES } from './common.js';
+import { exampleById } from './examples.js';
 
 export const DRAW_VERSION = 1;
 export const DEFAULT_EDGE_TYPE = 'tie';
@@ -347,6 +352,8 @@ export function validateDoc(obj) {
   if (!Array.isArray(obj.nodes)) return { doc: null, errors: ['Not a drawing: no "nodes" list.'], warnings };
   if (obj.version != null && obj.version > DRAW_VERSION) warnings.push(`Drawing version ${obj.version} is newer than this app (${DRAW_VERSION}); some fields may be ignored.`);
   const doc = emptyDoc(typeof obj.name === 'string' && obj.name.trim() ? obj.name : 'Imported drawing');
+  if (typeof obj.groupKey === 'string' && /^[A-Za-z_][\w]*$/.test(obj.groupKey)) doc.groupKey = obj.groupKey;
+  if (typeof obj.example === 'string' && obj.example) doc.example = obj.example;
   doc.groups = (Array.isArray(obj.groups) ? obj.groups : []).filter(g => g && g.id != null).map(g => ({ id: String(g.id), name: String(g.name ?? g.id) }));
   const groupIds = new Set(doc.groups.map(g => g.id));
   doc.attrColumns = (Array.isArray(obj.attrColumns) ? obj.attrColumns : []).filter(c => c && c.key)
@@ -413,7 +420,7 @@ export function toDataset(doc, { name } = {}) {
       const c = coerce(v, types.get(k) || 'text');
       if (c !== undefined) attrs[k] = c;
     }
-    if (n.group && groupName.has(n.group)) attrs.group = groupName.get(n.group);
+    if (n.group && groupName.has(n.group)) attrs[doc.groupKey || 'group'] = groupName.get(n.group);
     idx.set(n.id, b.node(`draw:${n.id}`, { label: n.label || n.id, attrs }));
     b.stat('nodes');
   }
@@ -435,5 +442,11 @@ export function toDataset(doc, { name } = {}) {
   // view can start from the user's own drawing. Optional extension of meta;
   // readers that do not know it ignore it.
   ds.meta.positions = doc.nodes.map(n => [n.x, n.y]);
+  // A worked example carries its title and what to look for, so a view can
+  // repeat them next to the results.
+  if (doc.example) {
+    const ex = exampleById(doc.example);
+    if (ex) ds.meta.example = { id: doc.example, title: ex.title, lookFor: [...ex.lookFor] };
+  }
   return ds;
 }

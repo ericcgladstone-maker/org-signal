@@ -8,7 +8,7 @@ import * as E from '../../src/builders/ego.js';
 import { makeTieField, coerceTieValue, combineTieValues } from '../../src/builders/tiefields.js';
 import { duplicateReason, likelyDuplicates, matchNames } from '../../src/builders/names.js';
 import { runImport } from '../../src/core/pipeline.js';
-import { buildNetwork } from '../../src/analysis/construct.js';
+import { buildNetwork, defaultSettings } from '../../src/analysis/construct.js';
 import { eventAttrs, EVENT_TYPES } from '../../src/core/model.js';
 import survey from '../../src/importers/survey-response.js';
 import { FileSet } from '../../src/core/fileset.js';
@@ -148,14 +148,26 @@ test('recombine with the merge rules, tie fields included', () => {
     return out;
   };
   const union = S.recombinedDataset(res, { mergeRule: 'union' });
+  // Each nomination is credited to the person who made it, with their own
+  // answers (C5); the tie's weight is the strength rating, combined by the rule (C1).
   assert.deepEqual(advice(union), {
-    'Ana Ruiz>Ben Okafor': { relation: 'Advice', strength: 4, tie_type: ['Advice', 'Friendship'] },
+    'Ana Ruiz>Ben Okafor': { relation: 'Advice', strength: 4, tie_type: 'Advice' },
+    'Ben Okafor>Ana Ruiz': { relation: 'Advice', strength: 2, tie_type: 'Friendship' },
     'Ana Ruiz>Cleo Park': { relation: 'Advice' },
   });
   assert.equal(union.meta.sources[0].directed, false);
+  const tieW = (ds, a, b) => {
+    const net = buildNetwork(ds, defaultSettings(ds));
+    const i = net.index[ds.nodes.labels.indexOf(a)], j = net.index[ds.nodes.labels.indexOf(b)];
+    for (let e = 0; e < net.edges.count; e++) if ((net.edges.src[e] === i && net.edges.dst[e] === j) || (net.edges.src[e] === j && net.edges.dst[e] === i)) return net.edges.w[e];
+    return null;
+  };
+  assert.equal(tieW(union, 'Ana Ruiz', 'Ben Okafor'), 4, 'union: the larger rating');
+  assert.equal(tieW(union, 'Ana Ruiz', 'Cleo Park'), 1, 'not rated: counts 1');
+  assert.ok(union.meta.sources[0].warnings.some(w => w.code === 'roster-tie-weight'));
   const inter = S.recombinedDataset(res, { mergeRule: 'intersection' });
-  assert.deepEqual(Object.keys(advice(inter)), ['Ana Ruiz>Ben Okafor']);
-  assert.equal(advice(inter)['Ana Ruiz>Ben Okafor'].strength, 2);
+  assert.deepEqual(Object.keys(advice(inter)).sort(), ['Ana Ruiz>Ben Okafor', 'Ben Okafor>Ana Ruiz']);
+  assert.equal(tieW(inter, 'Ana Ruiz', 'Ben Okafor'), 2, 'reciprocated only: the smaller rating');
   const asRep = S.recombinedDataset(res, { mergeRule: 'respondent' });
   assert.deepEqual(advice(asRep)['Ben Okafor>Ana Ruiz'], { relation: 'Advice', strength: 2, tie_type: 'Friendship' });
   assert.equal(asRep.meta.sources[0].directed, true);
@@ -269,10 +281,16 @@ test('ego survey against a roster: stitched into one network; perceived ties can
   assert.equal(perc[0].ctx, 'Perceived by Ana Ruiz');
   assert.deepEqual([perc[0].from, perc[0].to].sort(), ['Ben Okafor', 'Cleo Park']);
   assert.equal(perc[0].a.perceived_by, 'Ana Ruiz');
-  // Construction: with perceived ties, Ben-Cleo is a tie; keep only own reports and it is gone.
+  // Construction: perceived ties are left out by default (C2); with them, Ben-Cleo is a tie.
   const idx = l => ds.nodes.labels.indexOf(l);
   const has = (net, a, b) => { const i = net.index[idx(a)], j = net.index[idx(b)]; for (let e = 0; e < net.edges.count; e++) if ((net.edges.src[e] === i && net.edges.dst[e] === j) || (net.edges.src[e] === j && net.edges.dst[e] === i)) return true; return false; };
-  const all = buildNetwork(ds, { directed: false });
+  assert.deepEqual(defaultSettings(ds).tieFields.filters, [{ key: 'report', values: ['own'] }]);
+  const byDefault = buildNetwork(ds, defaultSettings(ds));
+  assert.ok(!has(byDefault, 'Ben Okafor', 'Cleo Park'));
+  // A person named under two questions is one tie of weight 1 (C4).
+  const anaCleo = (() => { const i = byDefault.index[idx('Ana Ruiz')], j = byDefault.index[idx('Cleo Park')]; for (let e = 0; e < byDefault.edges.count; e++) if (byDefault.edges.src[e] === i && byDefault.edges.dst[e] === j) return byDefault.edges.w[e]; return null; })();
+  assert.equal(anaCleo, 1);
+  const all = buildNetwork(ds, { directed: false, tieFields: { filters: [] } });
   assert.ok(has(all, 'Ben Okafor', 'Cleo Park'));
   const ownOnly = buildNetwork(ds, { directed: false, tieFields: { filters: [{ key: 'report', values: ['own'] }] } });
   assert.ok(!has(ownOnly, 'Ben Okafor', 'Cleo Park'));

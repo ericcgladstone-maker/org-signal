@@ -1,7 +1,7 @@
 // Perceived networks: cognitive social structures (Krackhardt 1987).
 //
-// Each informant k reports the whole network as they see it: a directed binary
-// matrix R_k over the same roster. From the stack of reports:
+// Each informant k reports the whole network as they see it: a binary matrix
+// R_k over the same roster. From the stack of reports:
 //   LAS (locally aggregated structure): the tie i->j is decided only by the two
 //     people involved, informant i (about their own tie) and informant j.
 //       union        R_i(i,j) OR  R_j(i,j)
@@ -11,19 +11,43 @@
 //   Consensus structure: i->j is present when the share of informants reporting
 //     it is at least the threshold (0.5 = at least half of the informants).
 // Accuracy compares one informant's matrix with a criterion (the consensus, or
-// an observed reference network) over all ordered pairs i != j.
+// an observed reference network).
+//
+// Direction. A relation such as friendship is mutual (relation.undirected):
+// then a pair {i, j} is one tie, ticking either cell reports it (the builder
+// mirrors ticks), and every count, the consensus and accuracy are over
+// unordered pairs, so an informant who ticks both cells and one who ticks one
+// cell report the same thing (M1). Advice is directed: ordered pairs i != j.
+// The analyzed network carries the direction (M2).
 //
 // Model (plain JSON):
-//   { version, name, people: [{ id, label }], relation: { name, question },
+//   { version, name, people: [{ id, label }], relation: { name, question, undirected },
 //     informants: [{ id, personId|null, label, ties: { 'i|j': 1 } }] }
+// In an undirected relation the ties map holds both 'i|j' and 'j|i'.
 
 import { DatasetBuilder, eventTargets } from '../core/model.js';
 import { uid, slug, normName } from './common.js';
-import { pairKey, splitKey, orderedPairs, nameIndex } from './matrix.js';
+import { pairKey, splitKey, orderedPairs, nameIndex, setTie } from './matrix.js';
+
+// Relations people usually hold together, so a tie needs no direction.
+const MUTUAL = /friend|know|social|spend.*time|hang|close|acquaint|kin|famil|partner|sibling|roommate|neighbo|works? with|cowork|colleague|collaborat|married|date/i;
+export const isMutualRelation = name => MUTUAL.test(String(name || ''));
+
+export const CSS_RELATIONS = [
+  { name: 'Friendship', question: 'Who is friends with whom?', undirected: true },
+  { name: 'Advice', question: 'Who goes to whom for advice?', undirected: false },
+  { name: 'Knows', question: 'Who knows whom?', undirected: true },
+  { name: 'Works with', question: 'Who works closely with whom?', undirected: true },
+  { name: 'Trust', question: 'Who trusts whom with a sensitive matter?', undirected: false },
+];
 
 export function newCSS() {
-  return { version: 1, name: 'Perceived network', people: [], relation: { name: 'Advice', question: 'Who goes to whom for advice?' }, informants: [] };
+  return { version: 1, name: 'Perceived network', people: [], relation: { ...CSS_RELATIONS[0] }, informants: [] };
 }
+
+// Mutual unless the relation says otherwise; models saved before the setting
+// existed follow the relation's name.
+export const undirectedOf = css => (typeof css.relation?.undirected === 'boolean' ? css.relation.undirected : isMutualRelation(css.relation?.name));
 
 export function addInformant(css, personId = null) {
   const p = css.people.find(x => x.id === personId);
@@ -31,48 +55,83 @@ export function addInformant(css, personId = null) {
   return { ...css, informants: [...css.informants, inf] };
 }
 
-const has = (ties, i, j) => !!ties[pairKey(i, j)];
+// Both directions of every tie (a mutual relation's matrix).
+export function symmetrize(ties) {
+  const out = { ...ties };
+  for (const [k, v] of Object.entries(ties)) { if (!v) continue; const [i, j] = splitKey(k); out[pairKey(j, i)] = out[pairKey(j, i)] || v; }
+  return out;
+}
 
-// Share of informants reporting each ordered pair: Map('i|j' -> share).
+// One cell as the matrix sets it; in a mutual relation the mirror goes with it.
+export function setReportTie(css, ties, from, to, v) {
+  const t = setTie(ties, from, to, v);
+  return undirectedOf(css) ? setTie(t, to, from, v) : t;
+}
+
+// Switch direction. Turning mutual on mirrors every informant's ticks (a pair
+// either of them ticked becomes one tie); turning it off keeps the matrices.
+export function setUndirected(css, on) {
+  const informants = on ? css.informants.map(i => ({ ...i, ties: symmetrize(i.ties) })) : css.informants;
+  return { ...css, relation: { ...css.relation, undirected: !!on }, informants };
+}
+
+const has = (ties, i, j) => !!ties[pairKey(i, j)];
+const reports = (und, ties, i, j) => has(ties, i, j) || (und && has(ties, j, i));
+
+// The pairs every count runs over: ordered pairs, or each unordered pair once
+// (first person in roster order first).
+function* pairsOf(css, und = undirectedOf(css)) {
+  if (!und) { yield* orderedPairs(css.people); return; }
+  const P = css.people;
+  for (let a = 0; a < P.length; a++) for (let b = a + 1; b < P.length; b++) yield [P[a].id, P[b].id];
+}
+
+// Share of informants reporting each pair: Map('i|j' -> share).
 export function agreement(css) {
   const n = css.informants.length;
+  const und = undirectedOf(css);
   const out = new Map();
   if (!n) return out;
-  for (const [i, j] of orderedPairs(css.people)) {
+  for (const [i, j] of pairsOf(css, und)) {
     let c = 0;
-    for (const inf of css.informants) if (has(inf.ties, i, j)) c++;
+    for (const inf of css.informants) if (reports(und, inf.ties, i, j)) c++;
     out.set(pairKey(i, j), c / n);
   }
   return out;
 }
 
-export function consensus(css, threshold = 0.5) {
+// In a mutual relation both cells of a consensus tie are set, like an
+// informant's own matrix, so it compares and displays the same way.
+export function consensus(css, threshold = 0.5, { without = null } = {}) {
+  const src = without ? { ...css, informants: css.informants.filter(i => i.id !== without) } : css;
   const ties = {};
   // A tiny epsilon keeps 0.5 * 2 / 4 style shares from falling under the
   // threshold through floating-point error.
-  for (const [k, p] of agreement(css)) if (p > 0 && p >= threshold - 1e-12) ties[k] = 1;
-  return ties;
+  for (const [k, p] of agreement(src)) if (p > 0 && p >= threshold - 1e-12) ties[k] = 1;
+  return undirectedOf(css) ? symmetrize(ties) : ties;
 }
 
 export function las(css, rule = 'union') {
+  const und = undirectedOf(css);
   const own = new Map();
   for (const inf of css.informants) if (inf.personId) own.set(inf.personId, inf.ties);
   const ties = {};
-  for (const [i, j] of orderedPairs(css.people)) {
-    const a = own.has(i) ? has(own.get(i), i, j) : null;
-    const b = own.has(j) ? has(own.get(j), i, j) : null;
+  for (const [i, j] of pairsOf(css, und)) {
+    const a = own.has(i) ? reports(und, own.get(i), i, j) : null;
+    const b = own.has(j) ? reports(und, own.get(j), i, j) : null;
     const on = rule === 'intersection' ? a === true && b === true : a === true || b === true;
     if (on) ties[pairKey(i, j)] = 1;
   }
   const missing = css.people.filter(p => !own.has(p.id)).map(p => p.label);
-  return Object.defineProperty(ties, 'missing', { value: missing, enumerable: false });
+  return Object.defineProperty(und ? symmetrize(ties) : ties, 'missing', { value: missing, enumerable: false });
 }
 
-// Signal-detection counts of a perceived matrix against a criterion matrix.
-export function accuracy(perceived, criterion, people) {
+// Signal-detection counts of a perceived matrix against a criterion matrix,
+// over ordered pairs i != j, or unordered pairs when undirected.
+export function accuracy(perceived, criterion, people, { undirected = false } = {}) {
   let hits = 0, misses = 0, falseAlarms = 0, correctRejections = 0;
-  for (const [i, j] of orderedPairs(people)) {
-    const p = has(perceived, i, j), c = has(criterion, i, j);
+  for (const [i, j] of pairsOf({ people }, undirected)) {
+    const p = reports(undirected, perceived, i, j), c = reports(undirected, criterion, i, j);
     if (p && c) hits++; else if (c) misses++; else if (p) falseAlarms++; else correctRejections++;
   }
   const div = (a, b) => (b ? a / b : NaN);
@@ -84,14 +143,53 @@ export function accuracy(perceived, criterion, people) {
   };
 }
 
+// Ties an informant reports: pairs (unordered when mutual).
+export function reportedCount(css, ties) {
+  const und = undirectedOf(css);
+  let c = 0;
+  for (const [i, j] of pairsOf(css, und)) if (reports(und, ties, i, j)) c++;
+  return c;
+}
+
+// Each informant against the consensus (which includes their own report),
+// against the consensus of the other informants only, and against a reference.
 export function perInformantAccuracy(css, { threshold = 0.5, reference = null } = {}) {
+  const undirected = undirectedOf(css);
   const cons = consensus(css, threshold);
   return css.informants.map(inf => ({
     id: inf.id, label: inf.label, personId: inf.personId,
-    reported: Object.keys(inf.ties).length,
-    vsConsensus: accuracy(inf.ties, cons, css.people),
-    vsReference: reference ? accuracy(inf.ties, reference, css.people) : null,
+    reported: reportedCount(css, inf.ties),
+    vsConsensus: accuracy(inf.ties, cons, css.people, { undirected }),
+    vsOthers: css.informants.length > 2 ? accuracy(inf.ties, consensus(css, threshold, { without: inf.id }), css.people, { undirected }) : null,
+    vsReference: reference ? accuracy(inf.ties, reference, css.people, { undirected }) : null,
   }));
+}
+
+// Who perceives best: the highest Jaccard against the criterion, with ties
+// at two decimals named together (M14). key: 'vsConsensus' | 'vsReference' | 'vsOthers'.
+export function bestPerceiver(rows, key = 'vsConsensus') {
+  const ok = rows.filter(r => r[key] && Number.isFinite(r[key].jaccard));
+  if (!ok.length) return null;
+  const top = Math.max(...ok.map(r => r[key].jaccard));
+  const best = ok.filter(r => Math.round(r[key].jaccard * 100) === Math.round(top * 100));
+  return { labels: best.map(r => r.label), jaccard: top, tied: best.length > 1 };
+}
+
+// How each informant filled in the matrix, for a directed relation: the share
+// of their ticked ties that are ticked in both directions. When some
+// informants tick both cells for every pair and others one cell, their
+// matrices mean different things and the comparison is unfair (M1).
+export function symmetryCheck(css) {
+  const rows = css.informants.map(inf => {
+    let ties = 0, both = 0;
+    for (const k of Object.keys(inf.ties)) { if (!inf.ties[k]) continue; ties++; const [i, j] = splitKey(k); if (inf.ties[pairKey(j, i)]) both++; }
+    return { id: inf.id, label: inf.label, ties, share: ties ? both / ties : NaN };
+  });
+  if (undirectedOf(css)) return { rows, twoWay: [], oneWay: [], mixed: false };
+  const judged = rows.filter(r => r.ties >= 3);
+  const twoWay = judged.filter(r => r.share >= 0.9).map(r => r.label);
+  const oneWay = judged.filter(r => r.share <= 0.4).map(r => r.label);
+  return { rows, twoWay, oneWay, mixed: twoWay.length > 0 && oneWay.length > 0 };
 }
 
 // Pairs informants disagree about most. With share p reporting the tie, the
@@ -131,13 +229,14 @@ export function viewTies(css, view, { threshold = 0.5 } = {}) {
   if (view === 'consensus') return consensus(css, threshold);
   if (view === 'las-union') return las(css, 'union');
   if (view === 'las-intersection') return las(css, 'intersection');
-  return css.informants.find(i => i.id === view)?.ties ?? {};
+  const t = css.informants.find(i => i.id === view)?.ties ?? {};
+  return undirectedOf(css) ? symmetrize(t) : t;
 }
 
 export function viewLabel(css, view, threshold = 0.5) {
   if (view === 'consensus') return `Consensus (at least ${Math.round(threshold * 100)}% of informants)`;
-  if (view === 'las-union') return 'Locally aggregated, union';
-  if (view === 'las-intersection') return 'Locally aggregated, intersection';
+  if (view === 'las-union') return 'Each tie judged by its two people, either says yes (LAS union)';
+  if (view === 'las-intersection') return 'Each tie judged by its two people, both say yes (LAS intersection)';
   const inf = css.informants.find(i => i.id === view);
   return inf ? `As seen by ${inf.label}` : view;
 }
@@ -145,10 +244,11 @@ export function viewLabel(css, view, threshold = 0.5) {
 export function toDataset(css, { view = 'consensus', threshold = 0.5 } = {}) {
   if (!css.people.length) throw new Error('The roster is empty.');
   if (!css.informants.length) throw new Error('Add at least one informant.');
+  const und = undirectedOf(css);
   const ties = viewTies(css, view, { threshold });
   const b = new DatasetBuilder({ name: `${css.name || 'Perceived network'}: ${viewLabel(css, view, threshold)}` });
-  b.beginSource({ format: 'css', family: 'survey', medium: 'survey', view: 'full', context: 'survey', directed: true,
-    fileNames: [], cssView: view, threshold: view === 'consensus' ? threshold : null, informants: css.informants.length });
+  b.beginSource({ format: 'css', family: 'survey', medium: 'survey', view: 'full', context: 'survey', directed: !und,
+    fileNames: [], cssView: view, threshold: view === 'consensus' ? threshold : null, informants: css.informants.length, relation: css.relation?.name || null });
   const keyOf = new Map(), used = new Set();
   const agree = agreement(css);
   for (const p of css.people) {
@@ -158,14 +258,21 @@ export function toDataset(css, { view = 'consensus', threshold = 0.5 } = {}) {
     b.node(k, { label: p.label, attrs: { informant: css.informants.some(i => i.personId === p.id) } });
   }
   const ctx = b.context('cs:' + slug(css.relation?.name || 'relation'), { name: css.relation?.name || 'Relation', kind: 'survey', visibility: 'private', medium: 'survey' });
+  const order = new Map(css.people.map((p, i) => [p.id, i]));
   for (const k of Object.keys(ties)) {
     const [i, j] = splitKey(k);
     if (!keyOf.has(i) || !keyOf.has(j)) continue;
+    // A mutual tie is one undirected event, written once.
+    if (und && order.get(i) > order.get(j)) continue;
     // In the consensus view the weight is the share of informants who reported
     // the tie, so the network carries how strongly it was agreed on.
     const weight = view === 'consensus' ? agree.get(k) || 1 : 1;
     b.event({ type: 'declared', actor: b.nodeIndex(keyOf.get(i)), targets: [[b.nodeIndex(keyOf.get(j)), 'declared']], context: ctx, weight });
     b.stat('ties');
+  }
+  if (view === 'consensus') {
+    b.warn('css-consensus-weight', `Each tie's weight is the share of the ${css.informants.length} informants who reported it (0.75 = three in four). A person's strength adds up these shares over their ties.`);
+    b.source.warnings[b.source.warnings.length - 1].severity = 'info';
   }
   if (view.startsWith('las')) { const miss = ties.missing?.length; if (miss) b.warn('css-missing-self-report', 'People without their own report; their ties rest on the other person only', miss); }
   return b.build();

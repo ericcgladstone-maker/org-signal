@@ -77,7 +77,7 @@ export function Matrix({ people, values, onSet, scale = 'binary', max = 5, capti
 
   if (!n) return html`<p class="ob-empty">Add people to the roster first.</p>`;
   return html`<div class="ob-stack" style="gap:.4rem">
-    <p class="ob-note" id="ob-matrix-help">${help} Rows are ${rowHeading.toLowerCase()}, columns are ${colHeading.toLowerCase()}. ${counts} ${counts === 1 ? 'tie' : 'ties'} entered.</p>
+    <p class="ob-note" id="ob-matrix-help"><span class="ob-kbdonly">${help} </span><span class="ob-touchonly">${scale === 'binary' ? 'Tap a cell to tick it; tap again to clear it.' : `Tap a cell to step its value up to ${max}, then back to empty.`} </span>Rows are ${rowHeading.toLowerCase()}, columns are ${colHeading.toLowerCase()}. ${counts} ${counts === 1 ? 'tie' : 'ties'} entered.</p>
     <div class="ob-matrixwrap">
       <table class="ob-matrix" role="grid" aria-label=${caption} aria-describedby="ob-matrix-help" ref=${tableRef}
         onKeyDown=${onKey} onFocusOut=${e => { if (!tableRef.current?.contains(e.relatedTarget)) setHl(null); }}>

@@ -69,17 +69,22 @@ spec = {
 
 `results` (all optional): `membership`, `nodeMetrics { betweenness, ... }`, `affect`, `shifts`, `diffusion` (shapes in `recovery.js` header). Arrays are indexed by network node when `net` (with `nodeIds`) is given, else by dataset node. Dataset nodes are matched to people by key, then platform id, then unique label, so imported datasets work too.
 
-Report: `{ summary, checks: [{ id, name, area, planted, recovered, metric, value, baseline, verdict, says }], details, mapping }`, verdict `recovered | partly | missed | not checked`, `says` = plain-language reading. Checks:
+Report: `{ summary, rule, checks: [{ id, name, area, planted, recovered, metric, value, baseline, verdict, says, brokers? }], details, mapping }`. `says` is the plain-language reading with technical terms in parentheses ("agreement 0.95 out of 1; normalized mutual information (NMI) 0.946, adjusted Rand index (ARI) 0.944"); dates read "24 Feb 2025". `value` and `baseline` are in the same unit. `mapping` adds `networkPeople` (people in `net`) and `bots` (accounts flagged as bots) so a view can say "121 accounts, 1 bot left out of the network".
 
-| id | What | Metric |
+**One verdict rule** (`RULE`, `scoreVerdict(score, chance)`, exported from `recovery.js`; also `report.rule`): Recovered when the score (0 to 1, 1 = what was planted) is at least 0.6, or a difference is in the planted direction with p < 0.05, or a date falls within the tolerance; Partly when the score is at least 0.25 and at least twice the chance level, or the direction is right but not clear, or the date is within twice the tolerance; Missed otherwise. Checks:
+
+| id | What | Score |
 |---|---|---|
-| tie-coverage | how much of the true network the observed data shows | share of true ties seen (verdict only for full views) |
-| communities | detected communities vs planted groups (named "Planted <kind>s vs detected communities") | NMI (ARI in text) |
-| bridges | planted brokers in the betweenness ranking | precision@k (k = brokers), chance baseline |
-| affect-groups / affect-visibility / affect-shift | planted affect differences | mean VADER compound difference with Welch test; measured here from the text unless `results.affect` is given |
-| shift-<type> | planted events near a detected shift | days to nearest detected shift (tolerance max(7 days, 10% of span)) |
-| diffusion-<term> | cascade recovery | users found vs planted adopters, seed early, share of later users with an earlier-using true neighbour vs a shuffled-time baseline, adoption-time rank correlation |
+| tie-coverage | how much of the true network the data shows: with `net`, the ties of the network as built with the construction settings used (so it matches the Network view); without it, every pair with an event | share of true ties seen (verdict only for full views) |
+| communities | detected communities vs planted groups ("Planted departments vs detected communities"); `planted` also names grouping-column values that are not planted groups ("the department column also has Executive: 1 person, planted with Engineering") | NMI |
+| bridges | planted brokers in the betweenness ranking; `brokers: [{ name, key, rank }]` lists every planted broker with its measured rank (also in `says`) | share of the planted brokers in the top k (k = number of brokers), chance = k / people ranked |
+| betweenness-fidelity | measured betweenness vs betweenness on the true ties | Spearman rho |
+| affect-groups / affect-visibility / affect-shift | planted tone differences | difference in mean VADER compound with a Welch test; measured here from the text unless `results.affect` is given |
+| shift-<type> | planted events near a detected shift | days to the nearest detected shift (tolerance max(7 days, 10% of span), stated in the metric) |
+| diffusion-<term> | spread of a planted term from its first user | users found vs planted adopters (precision, recall), first user early, share of later users with an earlier-using **true** neighbor vs a shuffled-time baseline; `says` explains why this can differ from the Diffusion view (observed ties) and warns when the shuffled baseline is 85% or more (little room) |
 | survey-recall / survey-perceived | reported vs true ties | recall by strength and precision; informant and majority-consensus accuracy |
+
+"seed" in readings means only the random seed; the first adopter of a term is "first user".
 
 ## Scale (measured, Node 24, Apple Silicon laptop)
 
@@ -128,6 +133,6 @@ Differences that remain are properties of the formats and are documented with th
 
 `recoveryCheck` also reports `betweenness-fidelity`: Spearman's rho (average ranks for ties) between the measured betweenness and betweenness on the true ties, computed with its own Brandes implementation so it stays independent of the engine. It separates "the measurement is faithful to the world" from "the planted brokers dominate the world". Typical values (2026-10-02): workplace Slack 1.0, workplace email 0.93, X 0.94, LinkedIn 0.88, survey 0.76 (recall error), WhatsApp 0.73 (turn-taking in group chats over-connects), Reddit 0.53 (replies to strangers are not ties). Skipped above 3,000 people.
 
-Workplace people carry two levels, as an HR export does: `department` (the planted group; past the 15 bases, regional names like "Sales Americas") and `division`, the function the department rolls up to (`DEPT_BASES[].division` in `vocab.js`): Engineering (engineering, data, IT), Product (product, design, research), Sales (sales, partnerships), Marketing, Customer Support, Finance (finance, legal), Operations (operations, people, facilities), and Executive for the CEO. So a world of any size has at most eight divisions; it is derived from the department, so generation stays deterministic. GraphML writes it with every other attribute; the Slack, email and calendar writers have no HR field to carry it.
+Workplace people carry two levels, as an HR export does: `department` (the planted group; past the 15 bases, regional names like "Sales Americas"; the HR department is "People Operations", so it never reads like the People view) and `division`, the function the department rolls up to (`DEPT_BASES[].division` in `vocab.js`): Engineering (engineering, data, IT), Product (product, design, research), Sales (sales, partnerships), Marketing, Customer Support, Finance (finance, legal), Operations (operations, people operations, facilities), and Executive for the CEO. So a world of any size has at most eight divisions; it is derived from the department, so generation stays deterministic. GraphML writes it with every other attribute; the Slack, email and calendar writers have no HR field to carry it.
 
 The `bridge-dependent` workplace preset makes heads rarely talk directly (10% leadership ties) and gives each broker ties to 4-7 people in 3-4 other departments, so the planted brokers really are the top brokers of the true network.

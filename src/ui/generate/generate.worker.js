@@ -3,7 +3,7 @@
 // can run here too, off the UI thread, without copying them back in.
 //
 // in:  { type: 'generate', id, spec }
-//      { type: 'recovery', id, seed, runId, groundTruth?, dataset? }
+//      { type: 'recovery', id, seed, runId, settings?, groundTruth?, dataset? }
 //        runId is the id of the generate run to check; when this worker no
 //        longer holds that run (it was restarted after a cancel), the caller
 //        sends the ground truth and dataset along.
@@ -28,7 +28,7 @@ self.onmessage = async ({ data }) => {
     } else if (type === 'recovery') {
       const run = data.groundTruth ? data : last && last.runId === data.runId ? last : null;
       if (!run) throw new Error('Generate a dataset first.');
-      self.postMessage({ type: 'recovery', id, result: await runRecovery(run.groundTruth, run.dataset, { seed: data.seed }) });
+      self.postMessage({ type: 'recovery', id, result: await runRecovery(run.groundTruth, run.dataset, { seed: data.seed, settings: data.settings || null }) });
     }
   } catch (e) {
     self.postMessage({ type: 'error', id, message: e?.message || String(e) });

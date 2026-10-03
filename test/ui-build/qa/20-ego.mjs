@@ -101,7 +101,12 @@ export async function run({ page, open, shot, assert, step }) {
 
   step('resume after reload');
   await page.goto(page.url().replace('clear=1', 'clear=0'), { waitUntil: 'networkidle0' });
-  await page.waitForSelector('.ob-kv');
-  const people = await page.$eval('.ob-kv', el => el.textContent);
+  await page.waitForSelector('.ob-kv:not(.ego-measures__list)');
+  const people = await page.$eval('.ob-kv:not(.ego-measures__list)', el => el.textContent);
   assert.ok(/Peoplenamed5/.test(people.replace(/\s+/g, '')), 'autosaved session restored');
+  // L12: the review shows the four ego measures with a reading.
+  const m = await page.$eval('.ego-measures', el => el.textContent);
+  for (const w of ['Size', 'Density', 'Effective size', 'Constraint']) assert.ok(m.includes(w), w);
+  assert.ok(await page.$('.ego-measures .verdict__claim'));
+  await shot('review-measures');
 }

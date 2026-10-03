@@ -1,0 +1,102 @@
+{
+ "format": "orgsignal-response",
+ "version": 1,
+ "survey": {
+  "id": "s5f35df5ee9",
+  "kind": "roster",
+  "title": "SOC 101 Networks: class friendship survey (A4)",
+  "hash": "6490e7c7"
+ },
+ "respondent": {
+  "personId": "p807b58b15a",
+  "label": "Farah Haddad"
+ },
+ "created": "2026-10-03T18:26:10.965Z",
+ "answers": {
+  "rec360c2996": {
+   "pc17f7a0d9c": {
+    "value": 1,
+    "fields": {
+     "strength": 4
+    }
+   },
+   "pdbd8c4ddd5": {
+    "value": 1,
+    "fields": {
+     "strength": 4
+    }
+   }
+  }
+ },
+ "definition": {
+  "format": "orgsignal-survey",
+  "version": 1,
+  "id": "s5f35df5ee9",
+  "kind": "roster",
+  "title": "SOC 101 Networks: class friendship survey (A4)",
+  "intro": "Answer for yourself only. Pick everyone in this class you consider a friend and rate how close (1-5). When done, download your response file and upload it to the A4 dropbox on Canvas by Friday 5pm. - Prof. Okafor",
+  "createdAt": "2026-10-03T18:21:52.999Z",
+  "people": [
+   {
+    "id": "p65a6e99b1c",
+    "label": "Leo Park"
+   },
+   {
+    "id": "pdbd8c4ddd5",
+    "label": "Priyanka Rao"
+   },
+   {
+    "id": "pb0635379b1",
+    "label": "Sam Whitfield"
+   },
+   {
+    "id": "p5cb15d20b2",
+    "label": "Aisha Bello"
+   },
+   {
+    "id": "pd2516dea73",
+    "label": "Ben Carter"
+   },
+   {
+    "id": "pc17f7a0d9c",
+    "label": "Chloe Nguyen"
+   },
+   {
+    "id": "p8ee834e4e8",
+    "label": "Diego Morales"
+   },
+   {
+    "id": "pdb70b8b3b6",
+    "label": "Emma Lindqvist"
+   },
+   {
+    "id": "p807b58b15a",
+    "label": "Farah Haddad"
+   },
+   {
+    "id": "p9f38f4dd70",
+    "label": "Gabe Turner"
+   }
+  ],
+  "relations": [
+   {
+    "id": "rec360c2996",
+    "name": "Friendship",
+    "question": "Whom do you consider a personal friend?",
+    "scale": "binary",
+    "max": 5,
+    "fields": [
+     {
+      "key": "strength",
+      "label": "StrengthCloseness",
+      "type": "scale",
+      "max": 5,
+      "id": "f20916958fc"
+     }
+    ]
+   }
+  ],
+  "combine": "union"
+ },
+ "checksum": "crc32:14d650b4"
+}

@@ -4,6 +4,7 @@
 
 import { html, useState } from '../../../vendor/preact.js';
 import { TIE_FIELD_PRESETS, TIE_FIELD_TYPES, makeTieField, updateTieField } from '../../builders/tiefields.js';
+import { DraftInput } from './shared.js';
 
 // fields: [TieField]; onChange(next fields). taken: keys used elsewhere.
 export function TieFieldsEditor({ fields = [], onChange, idPrefix = 'ob-tf', taken = [], intro = null }) {
@@ -26,7 +27,8 @@ export function TieFieldsEditor({ fields = [], onChange, idPrefix = 'ob-tf', tak
     ${fields.map(f => html`<div class="ob-tf__item" key=${f.id}>
       <div class="ob-tf__grid">
         <div class="field"><label class="field__label" for=${`${idPrefix}-${f.id}-l`}>Field</label>
-          <input id=${`${idPrefix}-${f.id}-l`} class="input input--sm" value=${f.label} onChange=${e => update(f.id, { label: e.currentTarget.value || f.label })} /></div>
+          <${DraftInput} id=${`${idPrefix}-${f.id}-l`} className="input input--sm" value=${f.label} selectOnFocus=${true}
+            onCommit=${v => { if (v.trim() && v.trim() !== f.label) update(f.id, { label: v.trim() }); }} /></div>
         <div class="field"><label class="field__label" for=${`${idPrefix}-${f.id}-t`}>Answer</label>
           <select id=${`${idPrefix}-${f.id}-t`} class="select select--sm" value=${f.type} onChange=${e => update(f.id, { type: e.currentTarget.value })}>
             ${TIE_FIELD_TYPES.map(t => html`<option value=${t.id}>${t.label}</option>`)}</select></div>

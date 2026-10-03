@@ -246,7 +246,7 @@ export function describe(contexts, form) {
   const span = form.days ? ` over ${form.days} days${form.start ? ` from ${fmtDay(form.start)}` : ''}` : '';
   const what = `A synthetic ${ctx.label.toLowerCase()} world of ${Number(form.size).toLocaleString('en-US')} people${span}, interacting through ${m.label}`
     + `${preset ? `. Scenario: ${preset.label.replace(/\.$/, '')}` : ''}. ${content ? content.label + ': ' + content.help.charAt(0).toLowerCase() + content.help.slice(1) : ''}`
-    + ` Seed ${form.seed}: the same settings and seed always give the same world.`;
+    + ` Random seed ${form.seed}: the same settings and seed always give the same world.`;
   const exportText = `What you will see: ${obs ? obs.label.toLowerCase() + ' (' + obs.help.charAt(0).toLowerCase() + obs.help.slice(1).replace(/\.$/, '') + ')' : form.observation}.`
     + ' The true network, planted groups, brokers, hierarchy and events are kept as ground truth for the recovery check.';
   const everyone = validObservations(ctx, form.medium).includes('full');

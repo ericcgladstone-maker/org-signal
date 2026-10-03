@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newCSS, agreement, consensus, las, accuracy, perInformantAccuracy, disagreement, referenceFromDataset, toDataset } from '../../src/builders/perceived.js';
+import { newCSS, agreement, consensus, las, accuracy, perInformantAccuracy, disagreement, referenceFromDataset, toDataset, setUndirected, setReportTie, symmetryCheck, bestPerceiver, undirectedOf, isMutualRelation } from '../../src/builders/perceived.js';
+import { defaultSettings, buildNetwork, computeNetworkMetrics } from '../../src/analysis/index.js';
 import { DatasetBuilder } from '../../src/core/model.js';
 
 // Three people, each also an informant.
@@ -10,6 +11,7 @@ import { DatasetBuilder } from '../../src/core/model.js';
 // Shares over 3 informants: AB 2/3, AC 0, BA 1/3, BC 3/3, CA 1/3, CB 1/3.
 function css() {
   const c = newCSS();
+  c.relation = { name: 'Advice', question: '', undirected: false };
   c.people = [{ id: 'A', label: 'Ann' }, { id: 'B', label: 'Bo' }, { id: 'C', label: 'Cy' }];
   c.informants = [
     { id: 'iA', personId: 'A', label: 'Ann', ties: { 'A|B': 1, 'B|C': 1, 'C|A': 1 } },
@@ -87,4 +89,72 @@ test('toDataset for consensus, LAS and one informant', () => {
   assert.equal(toDataset(c, { view: 'las-union' }).events.count, 5);
   assert.equal(toDataset(c, { view: 'iC' }).events.count, 2);
   assert.equal(toDataset(c, { view: 'iC' }).events.weight[0], 1);
+});
+
+// Maya's A11 (findings-maya.md): four students report a 10-person friendship
+// network. Priya ticks each friendship in both cells; the others tick one.
+const N = ['Maya', 'Priya', 'Jordan', 'Sam', 'Alex', 'Bea', 'Chen', 'Dana', 'Eli', 'Fatima'];
+const T = [['Maya', 'Priya'], ['Maya', 'Jordan'], ['Priya', 'Jordan'], ['Priya', 'Alex'], ['Alex', 'Bea'], ['Jordan', 'Bea'], ['Sam', 'Chen'], ['Sam', 'Dana'], ['Chen', 'Dana'], ['Dana', 'Eli'], ['Eli', 'Fatima'], ['Chen', 'Fatima'], ['Jordan', 'Sam']];
+const same = (a, b) => (a[0] === b[0] && a[1] === b[1]) || (a[0] === b[1] && a[1] === b[0]);
+const without = (L, R) => L.filter(t => !R.some(r => same(r, t)));
+const REPORTS = {
+  Maya: [...without(T, [['Eli', 'Fatima'], ['Chen', 'Fatima']]), ['Maya', 'Bea']],
+  Priya: [...T, ['Jordan', 'Alex']],
+  Jordan: [...T, ['Jordan', 'Chen'], ['Jordan', 'Dana']],
+  Sam: [['Sam', 'Chen'], ['Sam', 'Dana'], ['Chen', 'Dana'], ['Dana', 'Eli'], ['Eli', 'Fatima'], ['Chen', 'Fatima'], ['Jordan', 'Sam'], ['Maya', 'Priya'], ['Jordan', 'Bea'], ['Maya', 'Alex']],
+};
+function maya({ relation }) {
+  let c = newCSS();
+  if (relation) c.relation = relation;
+  c.people = N.map(n => ({ id: n, label: n }));
+  c.informants = Object.keys(REPORTS).map(n => ({ id: 'i' + n, personId: n, label: n, ties: {} }));
+  c.informants = c.informants.map(inf => {
+    let ties = {};
+    for (const [a, b] of REPORTS[inf.label]) {
+      const [x, y] = N.indexOf(a) < N.indexOf(b) ? [a, b] : [b, a];
+      // The way each student entered it, without the builder's mirroring.
+      ties[`${x}|${y}`] = 1;
+      if (inf.label === 'Priya') ties[`${y}|${x}`] = 1;
+    }
+    return { ...inf, ties };
+  });
+  return c;
+}
+const r2 = x => Math.round(x * 100) / 100;
+
+test('M1: friendship is mutual by default; mixed entry no longer changes who perceives best', () => {
+  assert.equal(undirectedOf(newCSS()), true);
+  assert.ok(isMutualRelation('Friendship') && isMutualRelation('Knows') && !isMutualRelation('Advice'));
+  const c = maya({});
+  const acc = perInformantAccuracy(c, { threshold: 0.5 });
+  assert.deepEqual(acc.map(a => r2(a.vsConsensus.jaccard)), [0.79, 0.93, 0.87, 0.64]);
+  assert.deepEqual(acc.map(a => a.reported), [12, 14, 15, 10]);
+  assert.deepEqual(bestPerceiver(acc), { labels: ['Priya'], jaccard: acc[1].vsConsensus.jaccard, tied: false });
+  assert.equal(Object.keys(consensus(c, 0.5)).length / 2, 13);
+  // Ticking one cell mirrors it.
+  const t = setReportTie(c, {}, 'Maya', 'Bea', 1);
+  assert.deepEqual(Object.keys(t).sort(), ['Bea|Maya', 'Maya|Bea']);
+});
+
+test('M1: as a directed relation, the mixed entry is flagged; switching to mutual mirrors the ticks', () => {
+  const d = maya({ relation: { name: 'Friendship', question: '', undirected: false } });
+  const acc = perInformantAccuracy(d, { threshold: 0.5 });
+  assert.ok(acc[1].vsConsensus.jaccard < 0.5, 'the reported problem: Priya scored worst');
+  const sym = symmetryCheck(d);
+  assert.equal(sym.mixed, true);
+  assert.deepEqual(sym.twoWay, ['Priya']);
+  const u = setUndirected(d, true);
+  assert.equal(r2(perInformantAccuracy(u, { threshold: 0.5 })[1].vsConsensus.jaccard), 0.93);
+  assert.equal(symmetryCheck(u).mixed, false);
+});
+
+test('M2: the consensus of a mutual relation is analyzed as undirected', () => {
+  const ds = toDataset(maya({}), { view: 'consensus', threshold: 0.5 });
+  assert.equal(ds.meta.sources[0].directed, false);
+  assert.equal(ds.events.count, 13);
+  const net = buildNetwork(ds, defaultSettings(ds));
+  assert.equal(net.directed, false);
+  assert.equal(net.edges.count, 13);
+  assert.equal(computeNetworkMetrics(net).components, 1);
+  assert.ok(ds.meta.sources[0].warnings.some(w => w.code === 'css-consensus-weight'), 'the weight is explained (M18)');
 });

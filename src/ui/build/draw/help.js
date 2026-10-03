@@ -35,9 +35,16 @@ export function HelpOverlay({ onClose }) {
   }, []);
   return html`<div class="dialog-backdrop" onClick=${e => e.target === e.currentTarget && onClose()}>
     <div class="dialog ob ob-draw-help" role="dialog" aria-modal="true" aria-labelledby="ob-draw-help-title">
-      <div class="dialog__head"><h2 id="ob-draw-help-title">Keyboard shortcuts</h2>
+      <div class="dialog__head"><h2 id="ob-draw-help-title">How to draw</h2>
         <button type="button" class="btn btn--sm" ref=${btn} onClick=${onClose}>Close</button></div>
-      <p class="ob-note">Every action is also a button in the toolbar or the panel beside the canvas, and the table edits the same drawing as rows. Double-click the canvas to add a person.</p>
+      <ol class="ob-notes ob-howto">
+        <li><strong>Add people:</strong> choose Add person, click the canvas, type the name and press Enter.</li>
+        <li><strong>Tie two people:</strong> choose Connect, then click one person and then the other. Ties are two-way unless you tick Directed (one-way) in the panel beside the canvas.</li>
+        <li><strong>Fix mistakes:</strong> Undo, or choose Select, click a person or tie and use the panel (rename, group, delete).</li>
+        <li><strong>Analyze:</strong> Analyze this network opens the map; People lists each person's measures.</li>
+      </ol>
+      <p class="ob-note">Not sure where to start? File, Start from an example loads a small network with notes on what to look for. Every action is also a button, and Table edits the same drawing as rows.</p>
+      <h3 class="ob-h">Keyboard shortcuts</h3>
       ${SHORTCUTS.map(([title, rows]) => html`<section class="ob-stack" style="gap:.4rem">
         <h4 class="label">${title}</h4>
         <dl class="ob-keys">${rows.map(([k, d]) => html`<dt><kbd>${k}</kbd></dt><dd>${d}</dd>`)}</dl>

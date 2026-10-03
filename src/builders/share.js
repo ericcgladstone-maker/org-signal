@@ -44,7 +44,7 @@ import { DatasetBuilder } from '../core/model.js';
 import { uid, normName, slug } from './common.js';
 import { writeRoster, MERGE_RULES, listNames } from './roster.js';
 import { writeEgoSession, newSession, tieList, varName } from './ego.js';
-import { declareTieFields, cleanTieValues } from './tiefields.js';
+import { declareTieFields, cleanTieValues, describeTieValues } from './tiefields.js';
 
 export const SURVEY_FORMAT = 'orgsignal-survey';
 export const RESPONSE_FORMAT = 'orgsignal-response';
@@ -119,7 +119,8 @@ export function surveyFromRoster(model, { title, intro = '', id, createdAt } = {
     intro: String(intro || ''),
     createdAt: createdAt || model.share?.createdAt || new Date().toISOString(),
     people: peopleOnly(model.people),
-    relations: model.relations.map(r => ({ id: r.id, name: r.name, question: r.question || '', scale: r.scale, max: r.max || 5, fields: (r.fields || []).map(f => ({ ...f })) })),
+    relations: model.relations.map(r => ({ id: r.id, name: r.name, question: r.question || '', scale: r.scale, max: r.max || 5, fields: (r.fields || []).map(f => ({ ...f })),
+      ...(typeof r.weightField === 'string' ? { weightField: r.weightField } : {}) })),
     combine: MERGE_RULES.some(m => m.id === model.mergeRule) ? model.mergeRule : 'union',
   };
 }
@@ -264,9 +265,35 @@ export function responseFileName(r) {
 }
 
 // The response as a block of text that survives being pasted into an email.
+// A readable account of the answers goes first, outside the block, so the
+// respondent can see what they are sending (C17); readers ignore it.
 export function responseToText(r) {
   const body = pack(r).match(/.{1,64}/g).join('\n');
-  return `${ARMOR_BEGIN}\nSurvey: ${oneLine(r.survey.title)}\nRespondent: ${oneLine(r.respondent.label)}\n${body}\n${ARMOR_END}\n`;
+  const said = responseSummary(r);
+  return `${said.length ? `My answers to "${oneLine(r.survey.title)}":\n${said.map(l => `  ${l}`).join('\n')}\n\n` : ''}${ARMOR_BEGIN}\nSurvey: ${oneLine(r.survey.title)}\nRespondent: ${oneLine(r.respondent.label)}\n${body}\n${ARMOR_END}\n`;
+}
+
+// The answers in words, one line per question: "Friendship: Leo Park (Closeness 4); Sam Whitfield".
+export function responseSummary(r) {
+  const def = r.definition;
+  if (!def) return [];
+  const name = id => def.people?.find(p => p.id === id)?.label || id;
+  if (def.kind === 'roster') {
+    return (def.relations || []).map(rel => {
+      const list = Object.entries(r.answers?.[rel.id] || {}).map(([pid, x]) => {
+        const f = x.fields ? describeTieValues(rel.fields, cleanTieValues(rel.fields, x.fields)) : '';
+        return `${name(pid)}${rel.scale === 'valued' ? ` ${x.value}` : ''}${f ? ` (${f})` : ''}`;
+      });
+      return `${rel.name}: ${list.length ? list.join('; ') : 'no one'}`;
+    });
+  }
+  const al = r.answers?.alters || [];
+  const out = (def.ego?.generators || []).map(g => `${g.name}: ${al.filter(a => a.generators.includes(g.id)).map(a => a.label).join('; ') || 'no one'}`);
+  if (def.ego?.askTies) {
+    const pairs = tieList(sessionFromResponse(def, r)).filter(p => p.on).map(p => `${al.find(a => a.id === p.a)?.label} and ${al.find(a => a.id === p.b)?.label}`);
+    out.push(`Pairs who know each other: ${pairs.length ? pairs.join('; ') : 'none'}`);
+  }
+  return out;
 }
 const oneLine = s => String(s).replace(/[\r\n]+/g, ' ').slice(0, 120);
 
@@ -435,7 +462,8 @@ export function recombineNotes(result) {
   if (result.earlier) notes.push({ code: 'survey-earlier-version', level: 'info', count: result.earlier, text: `${result.earlier} ${result.earlier === 1 ? 'response answers' : 'responses answer'} an earlier version of this survey (the roster or questions changed since). Answers are matched by person and question, so they still count.` });
   return notes;
 }
-const fmtTime = iso => { const d = new Date(iso); return Number.isNaN(+d) ? String(iso) : d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC'; };
+// In the reader's own time zone (C16), "3 Oct 2026, 14:26".
+const fmtTime = iso => { const d = new Date(iso); return Number.isNaN(+d) ? String(iso) : d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
 
 // ---- dataset from a recombination ---------------------------------------------------------
 
@@ -534,14 +562,18 @@ export const REPORT_FIELD = { key: 'report', label: 'Reported as', type: 'choice
 // fields and interpreter answers on the event and report = 'own'. The pairs a
 // respondent says know each other are perceived ties, undirected, in a
 // context of their own per respondent, with report = 'perceived' and
-// perceived_by; the construction settings' tie-field filter keeps or drops them.
+// perceived_by. They are a separate relation, left out by default
+// (source.defaultTieFilters keeps "Reported as: own"), because guesses about
+// who knows whom are not friendship nominations (C2); the construction
+// settings' Reported as filter brings them in.
 function stitchEgo(b, result, { people, fileNames, surveyInfo, warnAll }) {
   const def = result.survey;
   const attrsById = new Map((people || []).map(p => [p.id, p.attrs || {}]));
   const ifields = interpreterFields(def);
   const tieDefs = [REPORT_FIELD, ...declareTieFields(def.ego.tieFields), ...ifields];
+  const ownOnly = def.ego.askTies ? [{ key: 'report', values: ['own'] }] : [];
   b.beginSource({ format: 'shared-survey', family: 'survey', medium: 'survey', view: 'full', context: 'survey', directed: true,
-    fileNames, survey: surveyInfo, title: 'Own ties', tieFields: tieDefs, stitched: true });
+    fileNames, survey: surveyInfo, title: 'Own ties', tieFields: tieDefs, stitched: true, defaultTieFilters: ownOnly });
   warnAll();
   const keyOf = new Map(), used = new Set();
   const responded = new Set(result.accepted.map(r => r._who.personId).filter(Boolean));
@@ -568,9 +600,10 @@ function stitchEgo(b, result, { people, fileNames, surveyInfo, warnAll }) {
       idx.set(a.id, i);
       const at = { report: 'own', ...(cleanTieValues(def.ego.tieFields, a.tie) || {}) };
       for (const it of def.ego.interpreters) { const v = interpreterValue(it, a.attrs?.[it.name]); if (v !== undefined) at[it.name] = v; }
-      for (const g of a.generators) {
-        if (!genCtx.has(g)) continue;
-        b.event({ type: 'declared', t, actor: ego, targets: [[i, 'declared']], context: genCtx.get(g), weight: 1, attrs: at });
+      // One event per question, sharing one tie's weight (as writeEgoSession).
+      const gens = a.generators.filter(g => genCtx.has(g));
+      for (const g of gens) {
+        b.event({ type: 'declared', t, actor: ego, targets: [[i, 'declared']], context: genCtx.get(g), weight: 1 / gens.length, attrs: at });
         b.stat('own ties');
       }
     }
@@ -579,9 +612,9 @@ function stitchEgo(b, result, { people, fileNames, surveyInfo, warnAll }) {
   if (offList) b.warn('survey-off-roster', 'People named who are not on the roster (kept as their own nodes, named by one respondent each)', offList);
   if (!perceived.length) return;
   b.beginSource({ format: 'shared-survey', family: 'survey', medium: 'survey', view: 'full', context: 'survey', directed: false,
-    fileNames, survey: surveyInfo, title: 'Perceived ties', perceived: true,
+    fileNames, survey: surveyInfo, title: 'Perceived ties', perceived: true, defaultTieFilters: ownOnly,
     tieFields: [REPORT_FIELD, { key: 'perceived_by', label: 'Perceived by', type: 'choice', options: perceived.map(p => p.r._who.label) }] });
-  b.warn('survey-perceived', 'Ties between the people each respondent named, as that respondent sees them. They are included by default; to leave them out, keep only "own" under Reported as in the construction settings.', perceived.length);
+  b.warn('survey-perceived', 'Each respondent also said which of the people they named know each other. Those answers are guesses about other people\'s ties, so they are kept as a separate relation and left out of the network by default. To include them, tick "perceived" under Reported as in the construction settings.', perceived.length);
   b.source.warnings[b.source.warnings.length - 1].severity = 'info';
   for (const { r, idx, t } of perceived) {
     const s = sessionFromResponse(def, r);

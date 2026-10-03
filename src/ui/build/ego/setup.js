@@ -8,7 +8,8 @@ const TYPES = [
   ['text', 'Text'], ['number', 'Number'], ['ordinal', 'Ordered choice'], ['categorical', 'Choice'], ['boolean', 'Yes / no'], ['date', 'Date'],
 ];
 
-export function GeneratorsStep({ s, update, survey = false }) {
+export function GeneratorsStep(props) {
+  const { s, update, survey = false } = props;
   const has = id => s.generators.some(g => g.id === id);
   const togglePreset = (p, on) => update(x => (on ? E.addGenerator(x, { preset: p.id }) : E.removeGenerator(x, p.id)));
   return html`<div class="ob-stack">
@@ -21,13 +22,17 @@ export function GeneratorsStep({ s, update, survey = false }) {
           <input id="ego-case" class="input" value=${s.caseId} placeholder="for example P014" onInput=${e => update(x => ({ ...x, caseId: e.target.value }))} /></div>
       </div>
     </fieldset>`}
+    ${survey ? null : html`<div class="ob-stack ego-intro" style="gap:.35rem">
+      <p class="ob-text">An ego network is one person's personal network: the respondent (the <em>ego</em>, often you) and the people they name (the <em>alters</em>). First choose the questions that bring names to mind. Then the interview asks about each person, and finally which of those people know each other.</p>
+      ${props.onExample ? html`<p class="ob-note">New to this? <button type="button" class="tlink" onClick=${props.onExample}>Open a finished example interview</button> and look at its Review step.</p>` : null}
+    </div>`}
     <fieldset class="ob-fieldset">
-      <legend>Questions that elicit names</legend>
-      <p class="ob-note">Pick one or more. Each question has a cap on how many names it accepts; caps shape network size, so record them in your methods.</p>
+      <legend>Questions that bring names to mind</legend>
+      <p class="ob-note">Pick one or more. Each question takes at most a set number of names (shown on the right); a person named under two questions is still one person. An assignment that asks for 8 to 15 people needs a higher limit or a second question.</p>
       <div class="ob-stack" style="gap:.35rem">
         ${E.GENERATOR_PRESETS.map(p => html`<label class="check ego-preset">
           <input type="checkbox" checked=${has(p.id)} onChange=${e => togglePreset(p, e.target.checked)} />
-          <span><strong>${p.name}</strong> <span class="ob-note">${p.prompt}</span></span></label>`)}
+          <span><strong>${p.name}</strong> <span class="meta">up to ${s.generators.find(g => g.id === p.id)?.cap ?? p.cap} names</span> <span class="ob-note">${p.prompt}</span></span></label>`)}
       </div>
       <div class="ob-row"><button type="button" class="btn" onClick=${() => update(x => E.addGenerator(x, { name: 'Custom question', prompt: '' }))}>Add a custom question</button></div>
     </fieldset>
@@ -41,7 +46,7 @@ export function GeneratorsStep({ s, update, survey = false }) {
         <div class="ego-gen-grid">
           <div class="field"><label class="field__label" for=${'gn-' + g.id}>Short name</label>
             <input id=${'gn-' + g.id} class="input" value=${g.name} onInput=${e => update(x => E.updateGenerator(x, g.id, { name: e.target.value }))} /></div>
-          <div class="field"><label class="field__label" for=${'gc-' + g.id}>Most names</label>
+          <div class="field"><label class="field__label" for=${'gc-' + g.id}>Most names (limit)</label>
             <input id=${'gc-' + g.id} class="input" type="number" min="1" max="100" value=${g.cap}
               onInput=${e => update(x => E.updateGenerator(x, g.id, { cap: Math.max(1, Math.floor(Number(e.target.value) || 1)) }))} /></div>
         </div>
@@ -62,11 +67,20 @@ function textToOptions(t) {
   });
 }
 
+// For a student the standard questions are enough: the step shows what will
+// be asked and keeps the instrument editor (variables, answer types, options,
+// tie fields, weighting) behind "Edit questions" (L12).
 export function InterpretersStep({ s, update }) {
   const has = id => s.interpreters.some(i => i.id === id);
   const togglePreset = (p, on) => update(x => (on ? E.addInterpreter(x, { preset: p.id }) : E.removeInterpreter(x, p.id)));
   const weighable = s.interpreters.filter(i => i.type === 'number' || i.type === 'ordinal');
+  const asked = [...s.interpreters.map(i => i.label), ...(s.tieFields || []).map(f => `${f.label} (your tie)`)];
   return html`<div class="ob-stack">
+    <p class="ob-text">For each person named, the interview asks: ${asked.length ? html`<strong>${asked.join('; ')}</strong>` : 'nothing yet (you can still collect names and who knows whom)'}.</p>
+    <p class="ob-note">These standard questions are enough for a class assignment. Every tie counts 1 in the measures${s.weightBy ? html` <span class="ob-warn">(changed: ties are weighted by ${s.interpreters.find(i => i.name === s.weightBy)?.label || s.weightBy})</span>` : ''}.</p>
+    <details class="ego-edit" open=${s.interpreters.some(i => !E.INTERPRETER_PRESETS.some(p => p.id === i.id)) || undefined}>
+      <summary class="tlink">Edit questions</summary>
+    <div class="ob-stack" style="margin-top:.75rem">
     <fieldset class="ob-fieldset">
       <legend>Questions about each person named</legend>
       <div class="ob-stack" style="gap:.35rem">
@@ -115,5 +129,7 @@ export function InterpretersStep({ s, update }) {
         <option value="">Nothing (every tie counts 1)</option>
         ${weighable.map(i => html`<option value=${i.name}>${i.label}</option>`)}
       </select></div>` : null}
+    </div>
+    </details>
   </div>`;
 }

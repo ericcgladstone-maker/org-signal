@@ -4,6 +4,7 @@ import { html, useState } from '../../../../vendor/preact.js';
 import { zipSync, strToU8 } from '../../../../vendor/fflate.js';
 import * as E from '../../../builders/ego.js';
 import { HandOffBar, downloadText, downloadBlob, readFileText } from '../shared.js';
+import { Term, Verdict, HowToRead } from '../../components/common.js';
 
 // Multi-file picker (Network Canvas exports come as three CSVs).
 function pickFiles(accept) {
@@ -46,6 +47,8 @@ export function ReviewStep({ s, update, replace }) {
     } catch (e) { setMsg({ ok: false, text: e.message }); }
   };
   return html`<div class="ob-stack">
+    <${EgoMeasures} s=${s} />
+    <h4 class="label">The interview</h4>
     <dl class="ob-kv">
       <dt>Respondent</dt><dd>${s.egoLabel || 'unnamed'}${s.caseId ? ` (case ${s.caseId})` : ''}</dd>
       <dt>People named</dt><dd>${s.alters.length}</dd>
@@ -67,4 +70,42 @@ export function ReviewStep({ s, update, replace }) {
       ${msg ? html`<p class=${msg.ok ? 'ob-good' : 'ob-err'} role="status">${msg.text}</p>` : null}
     </div>
   </div>`;
+}
+
+const f3 = x => (Number.isFinite(x) ? x.toFixed(3) : '–');
+const f1 = x => (Number.isFinite(x) ? (Math.round(x * 10) / 10).toString() : '–');
+
+// The four numbers an ego-network assignment asks for, each with what it
+// means and a reading, then one verdict on closed versus brokering (L12).
+// Every tie counts 1 (Burt's binary formulas), whatever the interview's
+// weighting, so a hand calculation gives the same numbers (C4).
+export function EgoMeasures({ s }) {
+  const m = E.egoMeasures(s);
+  if (m.size < 2) return html`<p class="ob-note">Name at least two people to see the measures of this network.</p>`;
+  const share = m.density;
+  const known = share < 1 / 3 ? 'most of them do not know each other' : share < 2 / 3 ? 'some of them know each other' : 'most of them know each other';
+  const eff = m.efficiency;
+  const kind = eff >= 0.6 ? 'brokering' : eff < 0.4 ? 'closed' : 'mixed';
+  const verdict = kind === 'brokering'
+    ? `Brokering: most of the people named do not know each other, so ${s.egoLabel || 'the respondent'} links people who would otherwise be apart.`
+    : kind === 'closed'
+      ? `Closed: most of the people named know each other, so they form one close-knit circle around ${s.egoLabel || 'the respondent'}.`
+      : `In between: some groups of people named know each other, and ${s.egoLabel || 'the respondent'} links those groups.`;
+  const pos = (m.constraint - m.constraintMin) / (m.constraintMax - m.constraintMin || 1);
+  return html`<section class="ob-section ego-measures" aria-labelledby="ego-m-title">
+    <h4 id="ego-m-title" class="label">This ego network</h4>
+    <${Verdict} verdict=${verdict}
+      plain=${`${f1(m.effectiveSize)} of the ${m.size} people named are non-redundant contacts (effective size), and ${m.ties} of the ${m.possible} pairs know each other (density ${f3(m.density)}).`}
+      details=${'Every tie counts 1 (Burt 1992, unweighted). Ties among the people named are as the respondent sees them.'} />
+    <dl class="ob-kv ego-measures__list">
+      <dt><${Term} k="egoSize">Size</${Term}></dt><dd><strong>${m.size}</strong> <span class="ob-note">people named</span></dd>
+      <dt><${Term} k="egoDensity">Density</${Term}></dt><dd><strong>${f3(m.density)}</strong> <span class="ob-note">${m.ties} of ${m.possible} pairs know each other: ${known}</span></dd>
+      <dt><${Term} k="effectiveSize">Effective size</${Term}></dt><dd><strong>${f3(m.effectiveSize)}</strong> <span class="ob-note">size minus the average number of ties each person has to the others named: ${m.size} − 2 × ${m.ties} / ${m.size}</span></dd>
+      <dt><${Term} k="constraint">Constraint</${Term}></dt><dd><strong>${f3(m.constraint)}</strong> <span class="ob-note">lower = more brokering. With ${m.size} people named it can only run from ${f3(m.constraintMin)} (nobody knows anybody else) to ${f3(m.constraintMax)} (everybody knows everybody); this one is ${Math.round(pos * 100)}% of the way up</span></dd>
+    </dl>
+    <${HowToRead} means="Effective size counts the people who are not redundant: someone who knows many of your other contacts adds little new. Constraint (Burt) is high when your contacts are tied to each other, so one close-knit group could hold you in; low when they are not, so you broker between them."
+      scale=${`Effective size runs from 1 (everyone knows everyone) up to the size (${m.size}, nobody knows anybody else). Constraint depends strongly on size, so compare it between people who named a similar number of people, or read it against its range above.`}
+      example=${`${f1(m.effectiveSize)} of ${m.size} non-redundant and constraint ${f3(m.constraint)}: ${kind === 'brokering' ? 'a brokering network' : kind === 'closed' ? 'a closed network' : 'partly closed, partly brokering'}.`}
+      mistake="Reading constraint on its own scale (for example, 0.3 as small): a network of ten people cannot go below 0.1, and close-knit groups inside it raise constraint even when the groups do not know each other." />
+  </section>`;
 }

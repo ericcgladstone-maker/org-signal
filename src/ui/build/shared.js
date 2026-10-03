@@ -103,7 +103,7 @@ export function Steps({ steps, value, onChange, done = [] }) {
   return html`<nav aria-label="Steps" class="ob-stack" style="gap:.4rem">
     <ol class="ob-steps">
       ${steps.map(s => html`<li class=${done.includes(s.id) ? 'done' : ''} aria-current=${s.id === value ? 'step' : undefined}>
-        <button type="button" onClick=${() => onChange(s.id)}>${s.label}</button></li>`)}
+        <button type="button" onClick=${() => onChange(s.id)} title=${s.short ? s.label : undefined}>${s.short || s.label}</button></li>`)}
     </ol>
     <div class="ob-progress" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax=${steps.length} aria-valuenow=${idx + 1}>
       <span style=${`width:${((idx + 1) / steps.length) * 100}%`}></span>
@@ -168,4 +168,21 @@ export function HandOffBar({ build, disabled, note, label = 'Analyze this networ
     ${note ? html`<p class="ob-note">${note}</p>` : null}
     ${err ? html`<p class="ob-err" role="alert">${err}</p>` : null}
   </div>`;
+}
+
+// A text input that shows what is being typed while it has focus, even when
+// the value it reports falls back to a default when blank (a survey title
+// that defaults to the roster's name). Clearing it no longer brings the
+// default straight back mid-typing (C7). onInput(v) on every keystroke;
+// onCommit(v) when focus leaves or Enter is pressed. selectOnFocus: the
+// whole text is selected on focus, so typing replaces it (C6).
+export function DraftInput({ value, onInput = null, onCommit = null, selectOnFocus = false, className = 'input', ...rest }) {
+  const [draft, setDraft] = useState(null);
+  const shown = draft ?? value ?? '';
+  const commit = el => { onCommit?.(el.value); setDraft(null); };
+  return html`<input ...${rest} class=${className} value=${shown}
+    onFocus=${e => { setDraft(e.currentTarget.value); if (selectOnFocus) e.currentTarget.select(); }}
+    onInput=${e => { setDraft(e.currentTarget.value); onInput?.(e.currentTarget.value); }}
+    onBlur=${e => commit(e.currentTarget)}
+    onKeyDown=${e => { if (e.key === 'Enter') { e.preventDefault(); commit(e.currentTarget); } }} />`;
 }

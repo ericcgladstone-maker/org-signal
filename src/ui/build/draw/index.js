@@ -17,7 +17,7 @@ import { Canvas, clampK, NODE_R, DASHES } from './canvas.js';
 import { Inspector } from './inspector.js';
 import { TableEditor } from './table.js';
 import { HelpOverlay } from './help.js';
-import { exampleDoc } from './example.js';
+import { EXAMPLES, exampleById, exampleDoc } from './example.js';
 
 const DRAFT_KEY = 'orgsignal.build.draw.draft';
 const SETTINGS_KEY = 'orgsignal.build.draw.settings';
@@ -37,7 +37,9 @@ function loadDraft() {
   return doc;
 }
 
-export function DrawEditor() {
+// example: { id, nonce } from the Build view (a #build?example=<id> link); a
+// new nonce loads that worked example.
+export function DrawEditor({ example = null } = {}) {
   const [hist, setHist] = useState(() => kept?.hist || D.createHistory(loadDraft() || D.emptyDoc()));
   const doc = hist.present;
   const [sel, setSel] = useState(() => kept?.sel || { nodes: [], edges: [] });
@@ -132,8 +134,11 @@ export function DrawEditor() {
     const b = D.bounds(d.nodes);
     if (!b) { setView({ x: w / 2, y: h / 2, k: 1 }); return; }
     const pad = w < 600 ? 36 : 60;
-    const k = clampK(Math.min((w - 2 * pad) / Math.max(b.w, 1), (h - 2 * pad) / Math.max(b.h, 1), 1.5));
-    setView({ k, x: w / 2 - (b.x + b.w / 2) * k, y: h / 2 - (b.y + b.h / 2) * k });
+    // Names sit under each person, and the status line and zoom buttons along
+    // the bottom edge, so leave more room below than above.
+    const below = 34;
+    const k = clampK(Math.min((w - 2 * pad) / Math.max(b.w, 1), (h - 2 * pad - below) / Math.max(b.h, 1), 1.5));
+    setView({ k, x: w / 2 - (b.x + b.w / 2) * k, y: (h - below) / 2 - (b.y + b.h / 2) * k });
   }
 
   function zoomBy(f) {
@@ -272,6 +277,25 @@ export function DrawEditor() {
     setFocus(null);
     setTimeout(() => fit(d), 0);
   }
+
+  // Replacing a drawing asks first (Undo also brings it back, M12).
+  const replaceOk = what => !st.current.doc.nodes.length
+    || confirm(`${what} The current drawing (${st.current.doc.nodes.length} ${st.current.doc.nodes.length === 1 ? 'person' : 'people'}) is cleared; Undo brings it back.`);
+  function newDrawing() {
+    if (!replaceOk('Start a new drawing?')) return;
+    loadDoc(D.emptyDoc(), 'New drawing');
+    say('New drawing. Undo brings the previous one back.');
+  }
+  function loadExample(id) {
+    const ex = exampleById(id), d = exampleDoc(id);
+    if (!ex || !d) { notify('warn', `There is no drawing example called "${id}".`); return; }
+    const cur = st.current.doc;
+    if (cur.example === ex.id && cur.nodes.length === d.nodes.length && cur.edges.length === d.edges.length) return;
+    if (!replaceOk(`Open the example "${ex.title}"?`)) return;
+    loadDoc(d, `Example: ${ex.title}`);
+    say(`Loaded the example ${ex.title}: ${d.nodes.length} people, ${d.edges.length} ties.`);
+  }
+  useEffect(() => { if (example?.id) loadExample(example.id); }, [example?.nonce]);
 
   async function importFile() {
     const f = await pickFile('.json,application/json');
@@ -414,6 +438,9 @@ export function DrawEditor() {
   // Tie types are drawn with dashes only when there is more than one in use,
   // and then the key below names them (V17).
   const usedTypes = doc.edgeTypes.filter(t => doc.edges.some(e => e.type === t));
+  // One-way and two-way ties together make a directed network that counts
+  // each two-way tie twice (L1); the note under the canvas says so.
+  const mixed = doc.edges.some(e => e.directed) && doc.edges.some(e => !e.directed);
   const fileMenu = useRef(null);
   const fileAction = fn => () => { if (fileMenu.current) fileMenu.current.open = false; fn(); };
 
@@ -461,23 +488,29 @@ export function DrawEditor() {
       <details class="ob-menu" ref=${fileMenu}>
         <summary class="btn btn--sm">File</summary>
         <div class="ob-menu__list" role="group" aria-label="File">
-          <button type="button" class="tlink" onClick=${fileAction(() => loadDoc(D.emptyDoc(), 'New drawing'))}>New drawing</button>
-          <button type="button" class="tlink" onClick=${fileAction(() => loadDoc(exampleDoc(), 'Load example'))}>Load example</button>
+          <button type="button" class="tlink" onClick=${fileAction(newDrawing)}>New drawing</button>
+          <span class="label ob-menu__label">Start from an example</span>
+          ${DRAW_EXAMPLES.map(x => html`<button type="button" class="tlink" onClick=${fileAction(() => loadExample(x.id))}>${x.title}</button>`)}
+          <span class="label ob-menu__label">Files</span>
           <button type="button" class="tlink" onClick=${fileAction(importFile)}>Import JSON</button>
           <button type="button" class="tlink" disabled=${!doc.nodes.length} onClick=${fileAction(() => downloadText(`${slug(doc.name)}.drawing.json`, D.exportJSON(doc), 'application/json'))}>Export JSON</button>
         </div>
       </details>
-      <button type="button" class="btn btn--sm btn--quiet" onClick=${() => setHelp(true)} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
+      <button type="button" class="btn btn--sm btn--quiet" onClick=${() => setHelp(true)} aria-label="How to draw, and keyboard shortcuts" title="How to draw (?)">?</button>
       <button type="button" class="btn btn--primary" disabled=${!nodeIds.length || handoff.busy} onClick=${() => handoff.run('replace')}>Analyze this network</button>
     </div>
 
+    ${doc.example && exampleById(doc.example) ? html`<${ExampleNote} ex=${exampleById(doc.example)} />` : null}
     <div class="ob-editor">
       ${table
         ? html`<div class="ob-draw-tablecol" key="table" ref=${canvasRef}><${TableEditor} doc=${doc} apply=${apply} edgeDefaults=${edgeDefaults} /></div>`
         : html`<div class=${'ob-canvas mode-' + mode + (spaceDown ? ' panning' : '')} key="canvas" ref=${canvasRef}>
           <${Canvas} doc=${doc} live=${live} sel=${sel} focusId=${focusId} pending=${pending} view=${view} size=${size}
             settings=${settings} guides=${guides} marquee=${marquee} rubber=${rubber} ctl=${ctl} mode=${mode} dashed=${usedTypes.length > 1} />
-          ${doc.nodes.length ? null : html`<div class="ob-hint"><p>Press N, double-click, or choose Add person and click here to place a person.<br />Or open File, Load example.</p></div>`}
+          ${doc.nodes.length ? null : html`<div class="ob-hint"><div class="ob-stack" style="gap:.6rem;align-items:center">
+            <p>Choose Add person and click here (or double-click, or press N) to place a person; type the name and press Enter. Then choose Connect and click two people to tie them.</p>
+            <p class="ob-hint__examples">Or start from an example:${DRAW_EXAMPLES.slice(0, 3).map(x => html` <button type="button" class="tlink" onClick=${() => loadExample(x.id)}>${x.title}</button>`)}; more in File.</p>
+          </div></div>`}
           ${editPos ? html`<input class="input ob-label-edit" style=${`left:${Math.max(4, editPos.left)}px;top:${editPos.top}px;width:8rem`} aria-label="Name"
             value=${editing.value} ref=${el => el && document.activeElement !== el && (el.focus(), el.select())}
             onInput=${e => setEditing({ ...editing, value: e.currentTarget.value })}
@@ -500,9 +533,21 @@ export function DrawEditor() {
     <p id="ob-draw-live" class="visually-hidden" aria-live="polite">${announce}</p>
     <p class="ob-note">${doc.nodes.length} ${doc.nodes.length === 1 ? 'person' : 'people'}, ${doc.edges.length} ${doc.edges.length === 1 ? 'tie' : 'ties'}. ${saved === false ? 'Autosave is not available in this browser; export the drawing to keep it.' : 'Draft saved in this browser.'}
       ${doc.nodes.length ? ' Analyzing makes a full network of declared ties.' : ''}</p>
+    ${mixed ? html`<p class="ob-note ob-warn" role="status">This drawing mixes one-way ties (arrows) and two-way ties, so it is analyzed as a directed network in which each two-way tie counts as two: the ${doc.edges.length} ties drawn here become ${doc.edges.length + doc.edges.filter(e => !e.directed).length} in Network. Make every tie two-way (or every tie one-way) to keep the counts the same.</p>` : null}
     <${HandOffBar} compact=${true} handoff=${handoff} disabled=${!nodeIds.length} build=${() => D.toDataset(doc, { name: doc.name })} />
     ${help ? html`<${HelpOverlay} onClose=${() => setHelp(false)} />` : null}
   </div>`;
+}
+
+const DRAW_EXAMPLES = EXAMPLES.filter(x => x.kind === 'draw');
+
+// What a worked example is for, above the canvas while it is loaded.
+function ExampleNote({ ex }) {
+  return html`<details class="ob-example" open>
+    <summary><span class="label">Worked example</span> <strong>${ex.title}</strong>: what to look for</summary>
+    <p class="ob-note">${ex.summary} Choose Analyze this network, then check:</p>
+    <ul class="ob-notes">${ex.lookFor.map(t => html`<li>${t}</li>`)}</ul>
+  </details>`;
 }
 
 const ICON = {

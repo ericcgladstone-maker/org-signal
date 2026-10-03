@@ -70,9 +70,10 @@ export const INTERPRETER_PRESETS = [
 
 export const CONTEXT_PRESETS = ['Work', 'Family', 'School', 'Neighborhood', 'Other'];
 
+// Plain titles first, the field's terms in parentheses (L12).
 export const STEPS = [
-  { id: 'generators', label: 'Name generators' },
-  { id: 'interpreters', label: 'Name interpreters' },
+  { id: 'generators', label: 'Who comes to mind (name generators)', short: 'Who comes to mind' },
+  { id: 'interpreters', label: 'About each person (name interpreters)', short: 'About each person' },
   { id: 'names', label: 'Collect names' },
   { id: 'describe', label: 'Describe' },
   { id: 'ties', label: 'Who knows whom' },
@@ -510,11 +511,16 @@ export function writeEgoSession(b, s, { source = {} } = {}) {
     const i = b.node(`alter:${s.egoId}:${a.uuid}`, { label: a.label, attrs });
     idx.set(a.id, i);
     b.stat('alters');
-    const w = weightIt ? Number(typedValue(weightIt, a.attrs[weightIt.name])) : 1;
+    const w0 = weightIt ? Number(typedValue(weightIt, a.attrs[weightIt.name])) : 1;
+    const w = Number.isFinite(w0) && w0 > 0 ? w0 : 1;
     const tieAttrs = cleanTieValues(tf, a.tie);
-    for (const g of a.generators) {
-      if (!genCtx.has(g)) continue;
-      b.event({ type: 'declared', t, actor: ego, targets: [[i, 'declared']], context: genCtx.get(g), weight: Number.isFinite(w) && w > 0 ? w : 1, attrs: tieAttrs });
+    // One event per question that named this person, so each question stays a
+    // context of its own; the tie's weight is shared out among them, so a
+    // person named under two questions is still one tie of weight w (1 when
+    // "every tie counts 1"), as in Burt's binary measures (C4).
+    const gens = a.generators.filter(g => genCtx.has(g));
+    for (const g of gens) {
+      b.event({ type: 'declared', t, actor: ego, targets: [[i, 'declared']], context: genCtx.get(g), weight: w / gens.length, attrs: tieAttrs });
       b.stat('ego-alter ties');
     }
   }
@@ -527,6 +533,43 @@ export function writeEgoSession(b, s, { source = {} } = {}) {
     b.stat('alter-alter ties');
   }
   return ego;
+}
+
+// ---- ego measures for the review step ------------------------------------------
+
+// Size, density, effective size and constraint of ego's own network, every
+// tie counting 1 (Burt 1992; the formulas networkx uses on an unweighted
+// graph). Alters are the people named; ties among them are the session's
+// alter-alter ties. Also the range constraint can take for this size:
+// 1/n when no two people know each other, (2n - 1)^2 / n^3 when all do.
+export function egoMeasures(s) {
+  const ids = s.alters.map(a => a.id);
+  const n = ids.length;
+  const pos = new Map(ids.map((id, k) => [id, k]));
+  const adj = ids.map(() => new Set());
+  let ties = 0;
+  for (const p of tieList(s)) {
+    if (!p.on) continue;
+    adj[pos.get(p.a)].add(pos.get(p.b)); adj[pos.get(p.b)].add(pos.get(p.a));
+    ties++;
+  }
+  const possible = (n * (n - 1)) / 2;
+  let constraint = 0;
+  for (let j = 0; j < n; j++) {
+    // p_iq = 1/n for ego's ties; an alter q's own ties are ego plus its alter ties.
+    let indirect = 0;
+    for (const q of adj[j]) indirect += (1 / n) * (1 / (adj[q].size + 1));
+    constraint += (1 / n + indirect) ** 2;
+  }
+  return {
+    size: n, ties, possible,
+    density: possible ? ties / possible : NaN,
+    effectiveSize: n ? n - (2 * ties) / n : NaN,
+    efficiency: n ? (n - (2 * ties) / n) / n : NaN,
+    constraint: n ? constraint : NaN,
+    constraintMin: n ? 1 / n : NaN,
+    constraintMax: n ? (2 * n - 1) ** 2 / n ** 3 : NaN,
+  };
 }
 
 // ---- JSON save / resume ----------------------------------------------------

@@ -1,7 +1,7 @@
 // Roster (bounded network) builder UI: roster -> relations -> collect -> review.
 
 import { html, useState, useMemo } from '../../../../vendor/preact.js';
-import { newRoster, makeRelation, RELATION_PRESETS, MERGE_RULES, formTemplate, parseRosterResponses, responsesFromDataset, tiesFor, toDataset, coverage, rosterFromResponses, setTieAttrs, pruneTieAttrs } from '../../../builders/roster.js';
+import { newRoster, makeRelation, RELATION_PRESETS, MERGE_RULES, formTemplate, parseRosterResponses, responsesFromDataset, tiesFor, toDataset, coverage, rosterFromResponses, setTieAttrs, pruneTieAttrs, weightFieldOf } from '../../../builders/roster.js';
 import { setTie } from '../../../builders/matrix.js';
 import { uid } from '../../../builders/common.js';
 import { surveyFromRoster, recombine, recombineNotes, rosterRespondents } from '../../../builders/share.js';
@@ -119,7 +119,24 @@ function Relations({ model, patch }) {
         <details open=${(r.fields || []).length > 0}><summary class="tlink">Tie fields for ${r.name}${(r.fields || []).length ? ` (${r.fields.length})` : ''}: type, strength, how often, notes</summary>
           <${TieFieldsEditor} fields=${r.fields || []} idPrefix=${'ob-tf-' + r.id} onChange=${fields => update(r.id, { fields })}
             intro="Optional details recorded on each tie of this relation. Every one is optional for whoever answers." />
-        </details></td></tr>`)}</tbody></table></div>` : html`<p class="ob-empty">Choose at least one relation.</p>`}
+        </details>
+        <${WeightChoice} r=${r} onChange=${weightField => update(r.id, { weightField })} /></td></tr>`)}</tbody></table></div>` : html`<p class="ob-empty">Choose at least one relation.</p>`}
+  </div>`;
+}
+
+// Which answer is the tie's weight (C1): a 1 to N rating asked about every
+// tie is, unless the organizer chooses "every tie counts 1".
+function WeightChoice({ r, onChange }) {
+  if (r.scale === 'valued') return html`<p class="ob-note">Tie weight: the rating (1 to ${r.max}).</p>`;
+  const numeric = (r.fields || []).filter(f => f.type === 'scale' || f.type === 'number');
+  if (!numeric.length) return null;
+  const wf = weightFieldOf(r);
+  return html`<div class="ob-row" style="gap:.4rem .75rem;margin-top:.4rem">
+    <label class="field__label" for=${'ob-wf-' + r.id}>Tie weight for ${r.name}</label>
+    <select id=${'ob-wf-' + r.id} class="select select--sm" style="width:auto" value=${wf?.key || ''} onChange=${e => onChange(e.currentTarget.value)}>
+      ${numeric.map(f => html`<option value=${f.key}>${f.label}${f.type === 'scale' ? ` (1 to ${f.max})` : ''}</option>`)}
+      <option value="">Every tie counts 1</option></select>
+    <span class="ob-note">${wf ? `Each tie weighs its ${wf.label} answer; it goes out with the network in every export.` : 'The ratings are kept on the ties but do not weight them.'}</span>
   </div>`;
 }
 

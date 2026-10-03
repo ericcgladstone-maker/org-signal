@@ -22,6 +22,8 @@ import { ensureBuildCss, Unavailable, downloadBlob, downloadText, storage, ViewH
 import { handOff, notify } from '../build/service.js';
 import { loadContexts, startGenerate, startRecovery } from './service.js';
 import { groundTruthJSON, readmeText } from './pack.js';
+import { RULE_LABEL } from '../actions.js';
+import { HowToRead } from '../components/common.js';
 
 const FORM_KEY = 'orgsignal.generate.form';
 const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
@@ -49,15 +51,24 @@ function generatedDataset(g) {
   return [st.dataset, ...(st.datasets || [])].find(d => d && d.meta?.name === g.datasetName) || null;
 }
 
+// The construction settings the check uses: those in use now when the
+// generated world is what is loaded (so A8 can compare constructions, N24),
+// else the defaults.
+function checkSettings(g) {
+  const st = store.get();
+  return st.dataset && st.dataset.meta?.name === g.datasetName && st.settings ? JSON.parse(JSON.stringify(st.settings)) : null;
+}
+
 export async function runRecoveryCheck() {
   const g = store.get().generated;
   if (!g) return;
   setRun({ check: { busy: true } });
+  const settings = checkSettings(g);
   try {
-    const res = await startRecovery({ seed: Number(g.spec?.seed) || 1, runId: g.runId, groundTruth: g.groundTruth, dataset: generatedDataset(g) });
+    const res = await startRecovery({ seed: Number(g.spec?.seed) || 1, runId: g.runId, groundTruth: g.groundTruth, dataset: generatedDataset(g), settings });
     // Only keep it if the same world is still the generated one.
     if (store.get().generated !== g) return;
-    if (res.report) { store.set({ generated: { ...g, recovery: res.report } }); setRun({ check: null }); }
+    if (res.report) { store.set({ generated: { ...store.get().generated, recovery: res.report, recoverySettings: settings } }); setRun({ check: null }); }
     else setRun({ check: res.missing ? { missing: res.missing } : { error: 'The recovery check returned nothing.' } });
   } catch (e) {
     setRun({ check: { error: friendlyError(e.message) } });
@@ -181,16 +192,17 @@ export function GenerateView() {
         <${SegChoice} legend="6. What the export shows" name="observation" items=${opt.observations} value=${form.observation} onChange=${v => change({ observation: v })}
           help=${opt.observations.find(o => o.id === form.observation)?.help} why=${unavailable(opt.observations)} caution=${desc.caution} />
         <fieldset class="ob-fieldset">
-          <legend>7. Time and seed</legend>
+          <legend>7. Time and random seed</legend>
           <div class="ob-row" style="align-items:flex-end">
             <div class="field" style="width:8rem"><label class="field__label" for="ob-gen-days">Days</label>
               <input id="ob-gen-days" class="input" type="number" min="1" max="3650" value=${form.days} onChange=${e => change({ days: Math.max(1, Number(e.currentTarget.value) || 1) })} /></div>
             <div class="field" style="width:10.5rem"><label class="field__label" for="ob-gen-start">Start</label>
               <input id="ob-gen-start" class="input" type="date" value=${form.start || ''} onChange=${e => change({ start: e.currentTarget.value || null })} /></div>
-            <div class="field" style="width:8rem"><label class="field__label" for="ob-gen-seed">Seed</label>
+            <div class="field" style="width:8rem"><label class="field__label" for="ob-gen-seed">Random seed</label>
               <input id="ob-gen-seed" class="input" type="number" min="1" value=${form.seed} onChange=${e => change({ seed: Math.max(1, Number(e.currentTarget.value) || 1) })} /></div>
             <button type="button" class="tlink ob-gen-newseed" onClick=${() => change({ seed: 1 + Math.floor(Math.random() * 99999) })}>New seed</button>
           </div>
+          <p class="ob-note">The random seed is the generator's starting number: the same settings and seed always give the same world, so anyone can make yours again.</p>
         </fieldset>
         ${opt.params.length ? html`<details class="ob-fieldset ob-advanced">
           <summary class="tlink">Advanced parameters for ${ctx?.label.toLowerCase()}</summary>
@@ -210,6 +222,10 @@ export function GenerateView() {
           ${desc.caution ? html`<p class="ob-note ob-warn">${desc.caution}</p>` : null}
         </div>
         ${notes.length ? html`<p class="ob-note ob-warn" role="status">${notes.join('. ')}.</p>` : null}
+        ${generated?.spec && differs(generated.spec, form) ? html`<div class="ob-stack ob-gen-loaded" style="gap:.3rem">
+          <p class="ob-note"><strong>Loaded now:</strong> ${worldName(contexts, generated.spec)}. The form above sets up the next world; the recovery check below is about the loaded one.</p>
+          <p class="ob-note"><button type="button" class="tlink" onClick=${() => change(specToForm(generated.spec))}>Show the loaded world's settings in the form</button></p>
+        </div>` : null}
         <div class="ob-stack" style="gap:.6rem">
           <button type="button" class="btn btn--primary" disabled=${busy || devFallback} onClick=${() => generateRun(form, 'dataset')}>Generate and analyze</button>
           ${loaded ? html`<p class="ob-note">Replaces the data now loaded (${loaded.meta?.name}).</p>` : null}
@@ -229,8 +245,29 @@ export function GenerateView() {
       </aside>
     </div>
 
-    ${generated ? html`<${Recovery} g=${generated} check=${run.check} available=${state.recoveryAvailable} loaded=${loaded} />` : null}
+    ${generated ? html`<${Recovery} g=${generated} check=${run.check} available=${state.recoveryAvailable} loaded=${loaded} name=${worldName(contexts, generated.spec)} />` : null}
   </section>`;
+}
+
+// The world a spec describes, in words: "Bridge-dependent workplace (Slack), 96 people, seed 1".
+function worldName(contexts, spec) {
+  if (!spec) return 'the generated world';
+  const ctx = contexts.find(c => c.id === spec.context);
+  const preset = ctx?.presets?.find(p => p.id === spec.structure);
+  const scen = preset ? preset.label.split(': ')[0] : spec.structure;
+  const med = ctx?.media?.find(m => (m.id || m) === spec.medium);
+  return `${scen ? `${cap(scen)} ` : ''}${(ctx?.label || spec.context || '').toLowerCase()}${med?.label ? ` (${med.label})` : ''}, ${Number(spec.size).toLocaleString('en-US')} people, seed ${spec.seed}`;
+}
+const FORM_KEYS = ['context', 'medium', 'structure', 'size', 'seed', 'content', 'observation', 'days'];
+const differs = (spec, form) => FORM_KEYS.some(k => spec[k] !== undefined && form[k] !== undefined && String(spec[k]) !== String(form[k]));
+const specToForm = spec => Object.fromEntries([...FORM_KEYS, 'start', 'params'].filter(k => spec[k] !== undefined).map(k => [k, spec[k]]));
+
+// The construction settings a check used, in words.
+function settingsWords(st) {
+  if (!st) return 'the default construction settings';
+  const rules = Object.entries(st.rules || {}).filter(([, r]) => r.on).map(([k]) => RULE_LABEL[k] || k);
+  const w = { count: 'tie weight = count of evidence', log: 'tie weight = log of count', binary: 'every tie counts 1' }[st.weighting || 'count'];
+  return `ties from ${rules.join(', ') || 'nothing'}; ${st.directed ? 'directed' : 'undirected'}; ${w}`;
 }
 
 // Five or fewer choices: the shared segmented control. Unavailable choices
@@ -298,19 +335,26 @@ const VERDICT = {
 };
 const AREA = { observation: 'What the data shows', structure: 'Structure', survey: 'Survey answers', content: 'Content', diffusion: 'Spread of new terms', time: 'Change over time' };
 
-function Recovery({ g, check, available, loaded }) {
+function Recovery({ g, check, available, loaded, name }) {
   const rep = g.recovery;
   const stale = loaded && loaded.meta?.name !== g.datasetName;
   const span = g.groundTruth?.timespan;
+  const now = useStore(s => s.settings);
+  // The check was run with other construction settings than those in use now.
+  const changed = rep && !stale && now && JSON.stringify(now) !== JSON.stringify(g.recoverySettings || null) && g.recoverySettings !== undefined;
+  const mp = rep?.mapping;
+  const accounts = g.people ?? mp?.datasetNodes;
+  const inNet = mp?.networkPeople;
   return html`<section class="ob-section ob-recovery" id="ob-recovery" aria-labelledby="ob-rec-title">
     <div class="ob-row">
-      <h2 id="ob-rec-title" class="ob-h">Recovery check</h2>
+      <h2 id="ob-rec-title" class="ob-h">Recovery check: ${name}</h2>
       <span class="ob-spacer"></span>
       ${!stale ? html`<button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView?.('network')}>Open network</button>` : null}
     </div>
-    <p class="ob-text">${g.datasetName}: ${g.people?.toLocaleString('en-US') ?? '?'} people, ${g.events?.toLocaleString('en-US') ?? '?'} events${span ? `, ${fmtDay(new Date(span.start).toISOString())} to ${fmtDay(new Date(span.end).toISOString())}` : ''}.
+    <p class="ob-text">${accounts?.toLocaleString('en-US') ?? '?'} accounts${mp?.bots ? `, ${mp.bots} ${mp.bots === 1 ? 'bot' : 'bots'} left out of the network` : ''}${inNet != null && inNet !== accounts - (mp?.bots || 0) ? ` (${inNet.toLocaleString('en-US')} people in the network)` : ''}; ${g.events?.toLocaleString('en-US') ?? '?'} events${span ? `, ${fmtDay(new Date(span.start).toISOString())} to ${fmtDay(new Date(span.end).toISOString())}` : ''}.
       ${stale ? ' Other data has been loaded since; this check still refers to the generated world.' : ' Loaded for analysis.'}</p>
-    <p class="ob-note">Compares what the analysis finds (communities, brokers, content and change over time) with what was planted in the generated world. The network is built here with the default construction settings.</p>
+    <p class="ob-note">Did the analysis find what was planted? This compares what it finds (communities, brokers, content and change over time) with the generated world's ground truth. The network is built with ${rep && g.recoverySettings ? 'the construction settings in use when the check ran' : rep ? 'the default construction settings' : 'the construction settings in use now'}${rep ? ` (${settingsWords(g.recoverySettings)})` : ''}. To compare constructions, change them under Construction settings and run the check again.</p>
+    ${changed ? html`<p class="ob-note ob-warn" role="status">The construction settings have changed since this check ran. <button type="button" class="tlink" onClick=${runRecoveryCheck}>Run it again with the current settings</button></p>` : null}
     ${!available ? html`<p class="ob-note">The generator has no recovery check in this build.</p>` : null}
     ${check?.busy ? html`<p class="ob-note" role="status">Checking what the analysis recovers...</p>` : null}
     ${check?.error ? html`<p class="ob-err" role="alert">${check.error}</p>` : null}
@@ -320,7 +364,9 @@ function Recovery({ g, check, available, loaded }) {
   </section>`;
 }
 
-const fmtVal = v => (v === null || v === undefined ? '' : typeof v === 'number' ? (Number.isInteger(v) ? v.toLocaleString('en-US') : v.toFixed(2)) : String(v));
+// Three decimals, as the check computes them, so a value never reads
+// differently from the same number in a sentence (N15).
+const fmtVal = v => (v === null || v === undefined ? '' : typeof v === 'number' ? (Number.isInteger(v) ? v.toLocaleString('en-US') : v.toFixed(3)) : String(v));
 
 // The generator owns the report's shape ({ summary, checks[] }, see
 // src/generator/recovery.js). Each check reads as a verdict and a plain
@@ -332,6 +378,10 @@ function Report({ report }) {
   const areas = [...new Set(rows.map(r => r.area || 'other'))];
   return html`<div class="ob-stack" style="gap:1rem">
     ${report.summary ? html`<p class="ob-text"><strong>${report.summary}</strong></p>` : null}
+    ${report.rule ? html`<p class="ob-note"><strong>How verdicts are given.</strong> ${report.rule}</p>` : null}
+    <${HowToRead} means="Each row compares one planted feature with what the analysis found in the generated data: the verdict first, then the reading, then the numbers."
+      scale="Scores run from 0 (nothing in common with what was planted) to 1 (exactly what was planted). Chance is what a random guess would score on the same scale."
+      mistake="Reading Recovered as proof that a method works on real data: it says the method finds this planted structure in this kind of export, at this size and with these construction settings." />
     ${areas.map(a => html`<div class="ob-stack" style="gap:0">
       <h3 class="label">${AREA[a] || a}</h3>
       <ul class="ob-checks">${rows.filter(r => (r.area || 'other') === a).map(r => {
@@ -342,6 +392,10 @@ function Report({ report }) {
           <div class="ob-checks__head"><span class=${`flag flag--${v.cls}`}>${v.text}</span><span class="ob-checks__name">${r.name}</span></div>
           ${r.says ? html`<p class="ob-text">${r.says}</p>` : null}
           ${nums.length ? html`<p class="ob-note">${nums.join(' · ')}</p>` : null}
+          ${Array.isArray(r.brokers) && r.brokers.length ? html`<div class="table-wrap ob-brokers"><table class="tbl">
+            <caption class="visually-hidden">Planted brokers and their measured betweenness rank</caption>
+            <thead><tr><th scope="col">Planted broker</th><th scope="col" class="num">Betweenness rank</th></tr></thead>
+            <tbody>${r.brokers.map(b => html`<tr><td>${b.name}</td><td class="num">${b.rank ?? 'not in the network'}</td></tr>`)}</tbody></table></div>` : null}
         </li>`;
       })}</ul>
     </div>`)}

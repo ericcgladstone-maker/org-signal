@@ -8,6 +8,9 @@ export async function run({ page, open, shot, assert, step }) {
   await clickText(page, 'button', 'Add to roster');
   step('informants');
   await clickText(page, 'button', 'Next: Informants');
+  // A one-way relation, so the hand counts below are over ordered pairs.
+  await page.$eval('#ob-css-rel', el => { el.value = 'Advice'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForFunction(() => !document.querySelector('.ob label.check input[type=checkbox]')?.checked);
   for (const n of ['Ann', 'Bo', 'Cy']) await clickText(page, 'label.check', n);
   await page.waitForFunction(() => document.body.textContent.includes('3 informants'));
   await shot('1-informants');
@@ -25,6 +28,7 @@ export async function run({ page, open, shot, assert, step }) {
   await page.waitForFunction(() => document.body.textContent.includes('How each informant compares'));
   const rows = await page.$$eval('.tbl tbody tr', trs => trs.length);
   assert.ok(rows >= 3);
+  await page.waitForFunction(() => document.querySelector('.verdict__claim')?.textContent.includes('perceive'));
   await shot('3-results');
   await clickText(page, 'button', 'Analyze this network');
   await page.waitForFunction(() => window.__harness.loaded.length === 1);

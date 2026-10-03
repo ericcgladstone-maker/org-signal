@@ -34,6 +34,7 @@ Org Signal turns raw relational traces (exports, surveys, hand-drawn networks, s
 - Sources: `{ format, family, medium, view, context, tz, fileNames, egoKey, counts, warnings }`. `view` is one of `VIEWS`. Set `egoKey` (the node key of the person whose export it is) for ego views when known.
 - Optional source fields in use: `directed` (false = ties stored once and meant undirected, e.g. LinkedIn connections, drawn or survey networks), `variant` (export layout variant), `egoKeys` / `egoInferredFrom` (how the ego was identified), `window` (`{ start, end }` of a bounded export, e.g. calendar recurrence expansion), `tableKind` (tabular imports: events | edges | nodes).
 - Reactions target the reacted-to author with role `subject`. Meetings, Slack huddles and Purview transcripts are `copresence` events with `attendee` targets.
+- `source.defaultTieFilters` (optional): tie-field filters the source asks to apply by default, e.g. a stitched ego survey leaves out ties respondents only perceive between other people. `defaultSettings` copies them into `tieFields.filters`; the user can remove them.
 - After creation, change a label with `builder.setLabel(i, label)` and a context's visibility with `builder.setVisibility(ci, vis)`; never write the builder's arrays directly.
 - `detect()` may return `files` (the entries it claims) so the pipeline can hand unclaimed files (e.g. an HR CSV dropped next to a Slack export) to the profile join.
 

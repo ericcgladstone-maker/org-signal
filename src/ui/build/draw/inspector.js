@@ -131,7 +131,7 @@ function EdgePanel({ doc, e, apply, setSel }) {
       <${TypeSelect} id="ob-e-type" doc=${doc} value=${e.type} onChange=${v => apply(d => D.updateEdge(d, e.id, { type: v }), 'Tie type')} /></div>
     <div class="field"><label class="field__label" for="ob-e-w">Weight</label>
       <input class="input" id="ob-e-w" type="number" min="0" step="any" value=${e.weight} onChange=${ev => apply(d => D.updateEdge(d, e.id, { weight: ev.currentTarget.value }), 'Tie weight')} /></div>
-    <label class="check"><input type="checkbox" checked=${e.directed} onChange=${ev => apply(d => D.updateEdge(d, e.id, { directed: ev.currentTarget.checked }), 'Tie direction')} /> Directed</label>
+    <label class="check"><input type="checkbox" checked=${e.directed} onChange=${ev => apply(d => D.updateEdge(d, e.id, { directed: ev.currentTarget.checked }), 'Tie direction')} /> Directed (one-way)</label>
     <div class="ob-row">
       ${e.directed ? html`<button type="button" class="tlink" onClick=${() => apply(d => D.reverseEdge(d, e.id), 'Reverse tie')}>Reverse direction</button>` : null}
       <button type="button" class="tlink ob-danger" onClick=${() => { apply(d => D.removeEdges(d, [e.id]), 'Delete tie'); setSel({ nodes: [], edges: [] }); }}>Delete tie</button>
@@ -154,7 +154,7 @@ function DocPanel({ doc, apply, edgeDefaults, setEdgeDefaults }) {
       <h3 class="label">New ties</h3>
       <div class="field"><label class="field__label" for="ob-d-etype">Type</label>
         <${TypeSelect} id="ob-d-etype" doc=${doc} value=${edgeDefaults.type} onChange=${v => { apply(d => D.addEdgeType(d, v), 'Add tie type'); setEdgeDefaults({ ...edgeDefaults, type: v }); }} /></div>
-      <label class="check"><input type="checkbox" checked=${edgeDefaults.directed} onChange=${e => setEdgeDefaults({ ...edgeDefaults, directed: e.currentTarget.checked })} /> Directed</label>
+      <label class="check"><input type="checkbox" checked=${edgeDefaults.directed} onChange=${e => setEdgeDefaults({ ...edgeDefaults, directed: e.currentTarget.checked })} /> Directed (one-way)</label>
     </div>
 
     <div class="ob-stack" style="gap:.4rem">

@@ -12,7 +12,9 @@
 //     people:      [{ id, label, attrs{} }],
 //     attrColumns: [{ key, type }],
 //     attrColumns: [{ key, type }],            type one of ATTR_TYPES (common.js)
-//     relations:   [{ id, name, question, scale: 'binary'|'valued', max, fields: [TieField] }],
+//     relations:   [{ id, name, question, scale: 'binary'|'valued', max, fields: [TieField], weightField? }],
+//                  weightField: the key of the tie field whose value is the tie's
+//                  weight; '' = none; unset = the first 1..N scale field (C1)
 //     mode:        'single' | 'multi',
 //     ties:        { [relationId]: { 'from|to': value } }       single informant
 //     tieAttrs:    { [relationId]: { 'from|to': { [fieldKey]: value } } }   tie fields
@@ -418,7 +420,7 @@ export function mergeResponses(respondents, relationId, rule, people, fields = [
     const [a, b] = splitKey(k);
     canon.add((order.get(a) ?? 0) <= (order.get(b) ?? 0) ? pairKey(a, b) : pairKey(b, a));
   }
-  const ties = {}, attrs = {};
+  const ties = {}, attrs = {}, reports = {};
   let reciprocated = 0, oneSided = 0;
   for (const k of canon) {
     const [a, b] = splitKey(k);
@@ -430,9 +432,22 @@ export function mergeResponses(respondents, relationId, rule, people, fields = [
     if (k in ties) {
       const merged = combineTieValues(fields, f ? reportedAttrs[k] : null, g ? reportedAttrs[rk] : null, rule);
       if (merged && Object.keys(merged).length) attrs[k] = merged;
+      // Who named whom, each with their own answers, so the tie's evidence
+      // credits each nomination to the person who made it (C5).
+      reports[k] = [f && { from: a, to: b, value: f, attrs: reportedAttrs[k] || null }, g && { from: b, to: a, value: g, attrs: reportedAttrs[rk] || null }].filter(Boolean);
     }
   }
-  return { ties, attrs, directed: false, stats: { reported: Object.keys(reported).length, reciprocated, oneSided, ties: Object.keys(ties).length } };
+  return { ties, attrs, reports, directed: false, stats: { reported: Object.keys(reported).length, reciprocated, oneSided, ties: Object.keys(ties).length } };
+}
+
+// The tie field that carries a relation's tie value (C1): a rating such as
+// "Closeness, 1 to 5" asked about every tie becomes the tie's weight unless
+// the organizer says otherwise. A valued relation's own answer is the value.
+export function weightFieldOf(rel) {
+  if (!rel || rel.scale === 'valued') return null;
+  const fields = rel.fields || [];
+  if (typeof rel.weightField === 'string') return fields.find(f => f.key === rel.weightField && (f.type === 'scale' || f.type === 'number')) || null;
+  return fields.find(f => f.type === 'scale') || null;
 }
 
 export function coverage(model) {
@@ -492,20 +507,43 @@ export function writeRoster(b, model, { relationIds = null, source = {} } = {}) 
     b.node(k, { label: p.label, attrs });
   }
   const members = model.people.map(p => b.nodeIndex(keyOf.get(p.id)));
-  for (const { r, ties, attrs } of merged) {
+  const weightNotes = [];
+  for (const { r, ties, attrs, reports, directed } of merged) {
     const ctx = b.context('roster:rel:' + slug(r.name), { name: r.name, kind: 'survey', visibility: 'private', medium: 'survey', members });
+    const wf = weightFieldOf(r);
+    let unrated = 0, n = 0;
+    const withRel = a => (multiRel ? { relation: r.name, ...(a || {}) } : a);
     for (const [k, v] of Object.entries(ties)) {
       const [from, to] = splitKey(k);
       if (!keyOf.has(from) || !keyOf.has(to)) continue;
       // Field values were typed when entered or read from a response.
       const a = attrs?.[k] || null;
-      const ea = multiRel ? { relation: r.name, ...(a || {}) } : a;
-      // Undirected merged ties are one event each; the analysis symmetrises
-      // them when the network is built undirected (source.directed = false).
-      b.event({ type: 'declared', actor: b.nodeIndex(keyOf.get(from)), targets: [[b.nodeIndex(keyOf.get(to)), 'declared']], context: ctx, weight: Number(v) || 1, attrs: ea });
+      // The tie's weight: the rating field when there is one (combined by the
+      // merge rule, like the value), else the answer itself.
+      const rated = wf ? Number(a?.[wf.key]) : NaN;
+      if (wf && !Number.isFinite(rated)) unrated++;
+      const w = Number.isFinite(rated) && rated > 0 ? rated : Number(v) || 1;
+      n++;
+      const rep = reports?.[k];
+      if (rep?.length) {
+        // An undirected merged tie as the nominations behind it: each from
+        // the person who made it, with their own answers, sharing the tie's
+        // weight. The analysis symmetrises them (source.directed = false).
+        for (const x of rep) {
+          b.event({ type: 'declared', actor: b.nodeIndex(keyOf.get(x.from)), targets: [[b.nodeIndex(keyOf.get(x.to)), 'declared']], context: ctx, weight: w / rep.length, attrs: withRel(x.attrs) });
+        }
+      } else {
+        b.event({ type: 'declared', actor: b.nodeIndex(keyOf.get(from)), targets: [[b.nodeIndex(keyOf.get(to)), 'declared']], context: ctx, weight: w, attrs: withRel(a) });
+      }
       b.stat('ties');
     }
+    if (wf && n) {
+      const how = !directed && model.mode === 'multi' ? `, the ${model.mergeRule === 'intersection' ? 'smaller' : 'larger'} of the two answers when both people rated the tie` : '';
+      weightNotes.push(`${r.name}: each tie's weight is its ${wf.label}${wf.max ? ` (1 to ${wf.max})` : ''}${how}${unrated ? `; ${unrated} ${unrated === 1 ? 'tie has' : 'ties have'} no ${wf.label} answer and ${unrated === 1 ? 'counts' : 'count'} 1` : ''}. To count every tie as 1, choose "present or absent" for the tie weight in the construction settings.`);
+    }
   }
+  b.source.weightFields = merged.map(m => weightFieldOf(m.r)?.key || null);
+  for (const t of weightNotes) { b.warn('roster-tie-weight', t); b.source.warnings[b.source.warnings.length - 1].severity = 'info'; }
   if (model.mode === 'multi') {
     const c = coverage(model);
     if (c.missing.length) b.warn('roster-nonrespondents', `Roster members who did not respond (they can still receive ties): ${listNames(c.missing)}`, c.missing.length);

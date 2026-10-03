@@ -20,6 +20,41 @@ test('recovery check compares detected communities and brokers, not "not checked
   assert.match(byId.communities.name, /detected communities/);
 });
 
+test('decision 9: one verdict rule, planted brokers named with ranks, current construction settings', async () => {
+  const { scoreVerdict, RULE } = await import('../../src/generator/recovery.js');
+  const { defaultSettings } = await import('../../src/analysis/index.js');
+  const res = {};
+  for (const structure of ['distributed', 'bridge-dependent', 'siloed']) {
+    const r = await runGenerate({ context: 'workplace', medium: 'slack', structure, seed: 1, size: 120, timespan: SPAN, content: 'none', output: 'dataset' });
+    const { report } = await runRecovery(r.groundTruth, r.dataset, { seed: 1 });
+    assert.equal(report.rule, RULE);
+    const b = report.checks.find(c => c.id === 'bridges');
+    // J5: every planted broker by name, with a measured rank, in the reading too.
+    assert.equal(b.brokers.length, r.groundTruth.bridges.brokers.length);
+    for (const x of b.brokers) { assert.ok(x.name && x.rank >= 1, JSON.stringify(x)); assert.ok(b.says.includes(`${x.name} ${x.rank}`)); }
+    // J9: the verdict follows the stated rule from the share and its chance level (same unit).
+    assert.equal(b.verdict, scoreVerdict(b.value, b.baseline));
+    assert.ok(b.baseline < 0.1 && b.value <= 1);
+    // J13: accounts and bots are counted for the header.
+    assert.equal(report.mapping.datasetNodes, r.dataset.nodes.count);
+    assert.ok(report.mapping.networkPeople <= r.dataset.nodes.count - report.mapping.bots);
+    // N15: plain words with the terms in parentheses; no "communitys", dates as "24 Feb 2025".
+    const com = report.checks.find(c => c.id === 'communities');
+    assert.match(com.says, /\(agreement [\d.]+ out of 1; normalized mutual information \(NMI\)/);
+    for (const c of report.checks) { assert.doesNotMatch(c.name + c.says, /communitys|\d{4}-\d{2}-\d{2}|within 1 days/); }
+    res[structure] = { b, r };
+  }
+  // N24: a construction choice changes the network the check reads.
+  const { r } = res['bridge-dependent'];
+  const st = defaultSettings(r.dataset);
+  const repliesOnly = { ...st, rules: Object.fromEntries(Object.entries(st.rules).map(([k, v]) => [k, { ...v, on: k === 'reply' }])) };
+  const a = await runRecovery(r.groundTruth, r.dataset, { seed: 1 });
+  const b = await runRecovery(r.groundTruth, r.dataset, { seed: 1, settings: repliesOnly });
+  assert.equal(b.settings.given, true);
+  const cov = rep => rep.report.checks.find(c => c.id === 'tie-coverage').value;
+  assert.ok(cov(b) < cov(a), `${cov(b)} < ${cov(a)}`);
+});
+
 const count = ds => [ds.nodes.count, ds.events.count];
 async function readBack(download) {
   return runImport([{ blob: new Blob([download.bytes]), path: download.name }]);

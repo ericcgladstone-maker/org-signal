@@ -14,7 +14,7 @@ export const DEPT_BASES = [
   { id: 'sales', division: 'Sales', name: 'Sales', role: 'Account Executive', words: ['pipeline review', 'renewal', 'pricing quote', 'forecast', 'demo', 'discovery call', 'territory plan', 'order form'] },
   { id: 'mkt', division: 'Marketing', name: 'Marketing', role: 'Marketing Specialist', words: ['campaign brief', 'landing page', 'launch copy', 'webinar', 'newsletter', 'brand guidelines', 'ad spend report'] },
   { id: 'fin', division: 'Finance', name: 'Finance', role: 'Financial Analyst', words: ['budget model', 'quarterly close', 'invoice batch', 'expense report', 'variance analysis', 'audit checklist'] },
-  { id: 'people', division: 'Operations', name: 'People', role: 'People Partner', words: ['onboarding plan', 'offer letter', 'review cycle', 'benefits update', 'hiring plan', 'engagement survey'] },
+  { id: 'people', division: 'Operations', name: 'People Operations', role: 'People Partner', words: ['onboarding plan', 'offer letter', 'review cycle', 'benefits update', 'hiring plan', 'engagement survey'] },
   { id: 'ops', division: 'Operations', name: 'Operations', role: 'Operations Specialist', words: ['vendor contract', 'runbook', 'capacity plan', 'shipping schedule', 'warehouse report', 'process map'] },
   { id: 'design', division: 'Product', name: 'Design', role: 'Product Designer', words: ['mockups', 'prototype', 'design review', 'user flow', 'style guide', 'usability notes'] },
   { id: 'product', division: 'Product', name: 'Product', role: 'Product Manager', words: ['roadmap', 'spec', 'PRD', 'release notes', 'backlog', 'customer interviews'] },

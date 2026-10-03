@@ -112,9 +112,20 @@ export function defaultSettings(ds) {
     includeIsolates: true,
     // Tie fields (events.attrs): take each tie's amount from a numeric or
     // ordered field, and keep only ties whose fields match. See tieFieldPlan.
-    tieFields: { weight: null, filters: [] },
+    // A source may ask for tie-field filters by default (source.defaultTieFilters):
+    // a stitched ego survey leaves out the ties respondents only perceive
+    // between other people until the user includes them (ui-build, C2).
+    tieFields: { weight: null, filters: defaultTieFilters(ds) },
     _hasBots: hasBots,
   };
+}
+
+function defaultTieFilters(ds) {
+  const out = [];
+  for (const src of ds.meta?.sources || []) {
+    for (const f of src.defaultTieFilters || []) if (f && f.key && !out.some(x => x.key === f.key)) out.push({ ...f, values: Array.isArray(f.values) ? [...f.values] : f.values });
+  }
+  return out;
 }
 
 // Fill missing fields so callers may pass partial settings.

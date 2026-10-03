@@ -6,7 +6,7 @@
 
 import { html, useState } from '../../../vendor/preact.js';
 import { surveyLink, surveyFileText, fileStem, parseResponses, LINK_LIMIT } from '../../builders/share.js';
-import { downloadText, readFileText } from './shared.js';
+import { downloadText, readFileText, DraftInput } from './shared.js';
 
 // The app's own address (index.html's folder), wherever the builder is mounted.
 export function appBase() {
@@ -38,7 +38,7 @@ export function ShareLink({ makeDef, meta, onMeta, idPrefix = 'ob-share', privac
   return html`<div class="ob-stack ob-share">
     <div class="ob-grid-form">
       <div class="field"><label class="field__label" for=${idPrefix + '-title'}>Survey title respondents see</label>
-        <input id=${idPrefix + '-title'} class="input" value=${meta.title || ''} onInput=${e => onMeta({ title: e.currentTarget.value })} /></div>
+        <${DraftInput} id=${idPrefix + '-title'} value=${meta.title || ''} onInput=${v => onMeta({ title: v })} /></div>
     </div>
     <div class="field"><label class="field__label" for=${idPrefix + '-intro'}>Message to respondents (optional)</label>
       <textarea id=${idPrefix + '-intro'} class="input" rows="2" placeholder="Why you are asking, by when, and who to send the response to"
@@ -86,6 +86,7 @@ export function ResponsesIn({ onRead, idPrefix = 'ob-resp', busyLabel = 'Reading
       <textarea id=${idPrefix + '-paste'} class="input" rows="3" placeholder="-----BEGIN ORG SIGNAL RESPONSE----- ... (several can be pasted together)"
         value=${paste} onInput=${e => setPaste(e.currentTarget.value)}></textarea></div>
     <div class="ob-row"><button type="button" class="tlink" disabled=${!paste.trim()} onClick=${fromPaste}>Read the pasted responses</button></div>
+    <p class="ob-note ob-warn">Response files show exactly who named whom. Keep them to yourself: to share results with participants or a class, share the analyzed network or its exports (with contact details left out), not the files.</p>
   </div>`;
 }
 

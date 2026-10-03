@@ -15,17 +15,28 @@
 //                 [{ term, adopters }], { terms: [{ term, adoptions }] } (engine: diffusion)
 //                 or { cascades: [...] }; node = dataset index
 //
-// The report is { summary, checks: [{ id, name, area, planted, recovered,
-// metric, value, baseline, verdict, says }], details }. verdict is one of
-// 'recovered' | 'partly' | 'missed' | 'not checked'; `says` is the plain-
-// language reading. Nothing from the analysis engine is imported: the checks
-// are independent so they can judge it.
+// The report is { summary, rule, checks: [{ id, name, area, planted, recovered,
+// metric, value, baseline, verdict, says, brokers? }], details, mapping }.
+// verdict is one of 'recovered' | 'partly' | 'missed' | 'not checked', given
+// by one stated rule (RULE, J9); `says` is the plain-language reading, with
+// technical terms in parentheses. value and baseline are in the same unit.
+// Nothing from the analysis engine is imported: the checks are independent so
+// they can judge it.
 
 import vader from '../../vendor/vader.js';
 import { Rng } from './rng.js';
 import { ROLES, EVENT_TYPES, VISIBILITY } from '../core/model.js';
 
 const DAY = 86400000;
+
+// One verdict rule for every check (J9). Scores run from 0 to 1 (1 = what
+// was planted, exactly); differences and dates have their own clear cut-off.
+export const RULE = 'Recovered: the analysis finds most of what was planted, a score of at least 0.6 where 1 is a perfect match (for a difference: in the planted direction and clear, p < 0.05; for a date: within the tolerance). Partly: some of it, a score of at least 0.25 and at least twice what chance alone gives (for a difference: the right direction but not clear; for a date: within twice the tolerance). Missed: anything less.';
+export function scoreVerdict(score, chance = 0) {
+  if (score == null || !Number.isFinite(score)) return 'not checked';
+  if (score >= 0.6) return 'recovered';
+  return score >= 0.25 && score >= 2 * (chance || 0) ? 'partly' : 'missed';
+}
 
 export function recoveryCheck(truth, ds, a3, a4) {
   let net = null, results = {};
@@ -42,11 +53,14 @@ export function recoveryCheck(truth, ds, a3, a4) {
   surveyChecks(ctx);
   const done = ctx.checks.filter(c => c.verdict !== 'not checked');
   const ok = done.filter(c => c.verdict === 'recovered').length, part = done.filter(c => c.verdict === 'partly').length;
+  let bots = 0;
+  for (let k = 0; k < ds.nodes.count; k++) if (ds.nodes.isBot?.[k]) bots++;
   return {
     summary: done.length ? `${ok} of ${done.length} planted features recovered, ${part} partly; ${done.length - ok - part} missed.` : 'Nothing to check: no analysis results were given and the dataset holds nothing measurable.',
+    rule: RULE,
     checks: ctx.checks,
     details: ctx.details,
-    mapping: { matched: map.matched, datasetNodes: ds.nodes.count, truthPeople: truth.people.count, by: map.by },
+    mapping: { matched: map.matched, datasetNodes: ds.nodes.count, truthPeople: truth.people.count, by: map.by, networkPeople: net ? net.n : null, bots },
   };
 }
 
@@ -99,8 +113,11 @@ const nText = n => (Number.isFinite(n) ? n.toLocaleString('en-US') : String(n));
 
 // ---- 1. tie coverage: how much of the true network the observed data shows ----
 
+// With the network (net), what counts is the network as built with the
+// construction settings in use, so the numbers match the Network view (N15,
+// N24); without it, every pair with at least one event.
 function coverage(ctx) {
-  const { truth, ds, map } = ctx;
+  const { truth, ds, map, net } = ctx;
   const T = truth.ties;
   const n = truth.people.count;
   const key = (a, b) => (T.directed ? a * n + b : Math.min(a, b) * n + Math.max(a, b));
@@ -108,31 +125,38 @@ function coverage(ctx) {
   for (let i = 0; i < T.count; i++) truePairs.add(key(T.a[i], T.b[i]));
   const seen = new Set();
   let observedPairs = 0, onTrue = 0;
-  const e = ds.events;
-  for (let i = 0; i < e.count; i++) {
-    const a = map.toTruth[e.actor[i]];
-    if (a < 0) continue;
-    for (let j = e.tOff[i]; j < e.tOff[i + 1]; j++) {
-      const b = map.toTruth[e.tgt[j]];
-      if (b < 0 || b === a) continue;
-      const k = key(a, b);
-      if (seen.has(k)) continue;
-      seen.add(k); observedPairs++;
-      if (truePairs.has(k) || (T.directed && truePairs.has(key(b, a)))) onTrue++;
+  const see = (a, b) => {
+    if (a < 0 || b < 0 || b === a) return;
+    const k = key(a, b);
+    if (seen.has(k)) return;
+    seen.add(k); observedPairs++;
+    if (truePairs.has(k) || (T.directed && truePairs.has(key(b, a)))) onTrue++;
+  };
+  const fromNet = !!(net?.edges && net.nodeIds);
+  if (fromNet) {
+    for (let e = 0; e < net.edges.count; e++) see(map.toTruth[net.nodeIds[net.edges.src[e]]], map.toTruth[net.nodeIds[net.edges.dst[e]]]);
+  } else {
+    const e = ds.events;
+    for (let i = 0; i < e.count; i++) {
+      const a = map.toTruth[e.actor[i]];
+      if (a < 0) continue;
+      for (let j = e.tOff[i]; j < e.tOff[i + 1]; j++) see(a, map.toTruth[e.tgt[j]]);
     }
   }
   let coveredTrue = 0;
   for (const k of truePairs) if (seen.has(k)) coveredTrue++;
   const cov = truePairs.size ? coveredTrue / truePairs.size : null;
   const prec = observedPairs ? onTrue / observedPairs : null;
-  ctx.details.coverage = { trueTies: truePairs.size, observedPairs, observedOnTrueTies: onTrue, trueTiesSeen: coveredTrue };
+  ctx.details.coverage = { trueTies: truePairs.size, observedPairs, observedOnTrueTies: onTrue, trueTiesSeen: coveredTrue, fromNetwork: fromNet };
   const view = truth.observation?.view;
+  const where = fromNet ? 'the network as built' : 'the data';
   add(ctx, {
     id: 'tie-coverage', name: 'True ties visible in the data', area: 'observation',
-    planted: `${nText(truePairs.size)} true ties (${view} view)`, recovered: `${nText(coveredTrue)} seen; ${nText(observedPairs)} observed pairs, ${nText(onTrue)} of them true ties`,
+    planted: `${nText(truePairs.size)} true ties (${view} view)`,
+    recovered: fromNet ? `${nText(observedPairs)} ties in the network, ${nText(onTrue)} of them true ties` : `${nText(observedPairs)} pairs with at least one event, ${nText(onTrue)} of them true ties`,
     metric: 'share of true ties seen', value: r3(cov), baseline: null,
-    verdict: cov == null ? 'not checked' : view === 'full' ? (cov >= 0.7 ? 'recovered' : cov >= 0.4 ? 'partly' : 'missed') : 'not checked',
-    says: cov == null ? 'No true ties to compare.' : `${pct(cov)} of true ties show up as at least one interaction; ${prec == null ? 'no' : pct(prec)} of observed pairs are true ties.${view !== 'full' ? ` This is a ${view} view, so most of the network is expected to be invisible.` : ''}`,
+    verdict: view === 'full' ? scoreVerdict(cov) : 'not checked',
+    says: cov == null ? 'No true ties to compare.' : `${pct(cov)} of the true ties are in ${where} (${nText(coveredTrue)} of ${nText(truePairs.size)}); ${prec == null ? 'none' : pct(prec)} of the ${fromNet ? 'network\'s ties' : 'observed pairs'} are true ties.${view !== 'full' ? ` This is a ${view} view, so most of the network is expected to be invisible.` : ''}`,
   });
 }
 
@@ -158,14 +182,51 @@ function communities(ctx) {
   // Name the groups by what they are (departments, interest communities...),
   // never by the attribute key.
   const kinds = [...new Set((truth.communities.kinds || []).filter(Boolean))];
-  const what = kinds.length === 1 ? `${kinds[0]}s` : 'groups';
+  const what = kinds.length === 1 ? plural(kinds[0]) : 'groups';
+  const how = nmi >= 0.9 ? 'almost exactly match' : nmi >= 0.6 ? 'mostly match' : nmi >= 0.25 ? 'partly match' : 'do not match';
+  const extra = foldedValues(ctx);
   add(ctx, {
     id: 'communities', name: `Planted ${what} vs detected communities`, area: 'structure',
-    planted: `${kPlanted} groups`, recovered: `${kFound} communities over ${xs.length} people`,
-    metric: 'NMI (ARI)', value: r3(nmi), baseline: 0,
-    verdict: xs.length < 5 ? 'not checked' : nmi >= 0.6 ? 'recovered' : nmi >= 0.3 ? 'partly' : 'missed',
-    says: `Detected communities match the planted ${what} with NMI ${r3(nmi)} and ARI ${r3(ari)} (1 = identical, 0 = unrelated).`,
+    planted: `${kPlanted} planted ${what}${extra ? ` (${extra})` : ''}`, recovered: `${kFound} communities over ${xs.length} people`,
+    metric: 'agreement (NMI)', value: r3(nmi), baseline: 0,
+    verdict: xs.length < 5 ? 'not checked' : scoreVerdict(nmi),
+    says: `The communities found ${how} the planted ${what} (agreement ${r3(nmi)} out of 1; normalized mutual information (NMI) ${r3(nmi)}, adjusted Rand index (ARI) ${r3(ari)}; 0 = unrelated).`,
   });
+}
+
+const plural = w => (/[^aeiou]y$/.test(w) ? `${w.slice(0, -1)}ies` : /s$/.test(w) ? w : `${w}s`);
+
+// Values of the grouping attribute that are not planted groups (the CEO's
+// "Executive" department), with the planted group they are counted in, so
+// "7 planted departments" squares with 8 in the Department column (J13).
+function foldedValues(ctx) {
+  const { truth, ds, map } = ctx;
+  const names = truth.communities?.names || [], planted = truth.communities?.membership;
+  if (!ds.nodes.attrs || !planted) return '';
+  const known = new Set(names.map(String));
+  // The visible column the groups were planted from (Department): the one,
+  // other than the planted-group column itself, whose values mostly equal
+  // each person's planted group.
+  let attr = null, best = 0;
+  const keys = new Set();
+  for (let k = 0; k < Math.min(ds.nodes.count, 500); k++) for (const key of Object.keys(ds.nodes.attrs[k] || {})) keys.add(key);
+  for (const key of keys) {
+    if (key === truth.communities?.attr || key === 'planted_group') continue;
+    let same = 0, n = 0;
+    for (let k = 0; k < ds.nodes.count; k++) { const i = map.toTruth[k]; const v = ds.nodes.attrs[k]?.[key]; if (i < 0 || v == null) continue; n++; if (String(v) === String(names[planted[i]])) same++; }
+    if (n && same / n > best) { best = same / n; attr = key; }
+  }
+  if (!attr || best < 0.8) return '';
+  const extra = new Map();
+  for (let k = 0; k < ds.nodes.count; k++) {
+    const v = ds.nodes.attrs[k]?.[attr];
+    const i = map.toTruth[k];
+    if (v == null || v === '' || known.has(String(v)) || i < 0) continue;
+    const e = extra.get(v) || { n: 0, into: new Set() };
+    e.n++; if (planted[i] >= 0) e.into.add(names[planted[i]]);
+    extra.set(v, e);
+  }
+  return [...extra].map(([v, e]) => `the ${attr} column also has ${v}: ${e.n} ${e.n === 1 ? 'person' : 'people'}, planted with ${[...e.into].join(' and ') || 'no group'}`).join('; ');
 }
 
 // Dense integer codes for arbitrary labels.
@@ -229,13 +290,17 @@ function bridges(ctx) {
   const hit = top.filter(i => set.has(i)).length, hit2 = top2.filter(i => set.has(i)).length;
   const p = k ? hit / k : null, base = ranked.length ? k / ranked.length : null;
   const ranks = brokers.map(b => ranked.findIndex(x => x[1] === b) + 1).filter(x => x > 0);
+  // Every planted broker by name, with the rank measured here (J5), best first.
+  const named = brokers.map(b => ({ name: truth.people.labels[b], key: truth.people.keys?.[b], rank: ranked.findIndex(x => x[1] === b) + 1 || null }))
+    .sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
   ctx.details.bridges = { k, hitsAtK: hit, hitsAt2K: hit2, brokerRanks: ranks, ranked: ranked.length };
   add(ctx, {
     id: 'bridges', name: 'Planted brokers rank high on betweenness', area: 'structure',
     planted: `${k} brokers`, recovered: `${hit} in the top ${k}, ${hit2} in the top ${2 * k}`,
-    metric: 'precision@k', value: r3(p), baseline: r3(base),
-    verdict: p >= 0.5 ? 'recovered' : p >= 2 * base && hit > 0 ? 'partly' : 'missed',
-    says: `${hit} of the ${k} planted brokers are among the ${k} people with the highest betweenness (chance alone: about ${r3(base * k)}). Median broker rank ${median(ranks) ?? 'n/a'} of ${ranked.length}.`,
+    metric: `share of the planted brokers in the top ${k} (precision at k)`, value: r3(p), baseline: r3(base),
+    verdict: scoreVerdict(p, base),
+    brokers: named,
+    says: `${hit} of the ${k} planted brokers ${hit === 1 ? 'is' : 'are'} among the ${k} people with the highest betweenness: a share of ${r3(p)}, against ${r3(base)} for ${k} people picked at random. Where each planted broker ranks (of ${ranked.length}): ${named.map(x => `${x.name} ${x.rank ?? 'not in the network'}`).join(', ')}.`,
   });
 }
 
@@ -263,10 +328,11 @@ function betweennessFidelity(ctx) {
   add(ctx, {
     id: 'betweenness-fidelity', name: 'Measured betweenness matches the true network', area: 'structure',
     planted: 'betweenness on the true ties', recovered: `Spearman rho ${r3(rho)} over ${xs.length} people`,
-    metric: 'Spearman rank correlation', value: r3(rho), baseline: null,
-    verdict: rho >= 0.9 ? 'recovered' : rho >= 0.7 ? 'partly' : 'missed',
-    says: rho >= 0.9 ? `Betweenness measured from the data ranks people almost exactly as the true network does (rho ${r3(rho)}).`
-      : `Betweenness measured from the data ranks people differently from the true network (rho ${r3(rho)}); the observation (what the data shows) or the construction settings distort brokerage.`,
+    metric: 'rank correlation (Spearman)', value: r3(rho), baseline: null,
+    verdict: scoreVerdict(rho),
+    says: rho >= 0.9 ? `Betweenness measured from the data ranks people almost exactly as the true network does (rank correlation, Spearman rho ${r3(rho)}).`
+      : rho >= 0.6 ? `Betweenness measured from the data ranks people broadly as the true network does (rank correlation, Spearman rho ${r3(rho)}), with some people out of place.`
+        : `Betweenness measured from the data ranks people differently from the true network (rank correlation, Spearman rho ${r3(rho)}): what the data shows, or the construction settings, distort brokerage.`,
   });
 }
 
@@ -337,7 +403,7 @@ function affectChecks(ctx) {
       else { const A = rows.filter(r => r.g === x.high).map(r => r.s), B = rows.filter(r => r.g === x.low).map(r => r.s); hi = mean(A); lo = mean(B); test = welch(A, B); }
       const d = hi - lo;
       const ok = d > 0.03 && (!test || test.p < 0.05);
-      add(ctx, { id: 'affect-groups', name: x.description, area: 'content', planted: `valence gap ${x.plantedDelta}`, recovered: `measured gap ${r3(d)}`, metric: 'mean compound difference', value: r3(d), baseline: 0,
+      add(ctx, { id: 'affect-groups', name: x.description, area: 'content', planted: `valence gap ${x.plantedDelta}`, recovered: `measured gap ${r3(d)}`, metric: 'difference in mean tone (VADER compound)', value: r3(d), baseline: 0,
         verdict: ok ? 'recovered' : d > 0 ? 'partly' : 'missed',
         says: `Measured with ${src}: ${x.highName} ${r3(hi)} vs ${x.lowName} ${r3(lo)}${test ? ` (two-sample test, ${pText(test.p)})` : ''}. The planted direction is ${ok ? 'clearly' : d > 0 ? 'weakly' : 'not'} visible.` });
     } else if (x.kind === 'public-private') {
@@ -345,7 +411,7 @@ function affectChecks(ctx) {
       if (!A.length || !B.length) { add(ctx, { id: 'affect-visibility', name: x.description, area: 'content', planted: `gap ${x.plantedDelta}`, recovered: null, metric: 'public minus private', value: null, verdict: 'not checked', says: 'The observed data has only one of public or private messages.' }); continue; }
       const d = mean(A) - mean(B), test = welch(A, B);
       const same = Math.sign(d) === Math.sign(x.plantedDelta) && test.p < 0.05;
-      add(ctx, { id: 'affect-visibility', name: x.description, area: 'content', planted: `public minus private ${x.plantedDelta}`, recovered: `measured ${r3(d)}`, metric: 'public minus private compound', value: r3(d), baseline: 0,
+      add(ctx, { id: 'affect-visibility', name: x.description, area: 'content', planted: `public minus private ${x.plantedDelta}`, recovered: `measured ${r3(d)}`, metric: 'tone in public minus private (VADER compound)', value: r3(d), baseline: 0,
         verdict: same ? 'recovered' : Math.sign(d) === Math.sign(x.plantedDelta) ? 'partly' : 'missed',
         says: `Public messages average ${r3(mean(A))}, private ${r3(mean(B))} (two-sample test, ${pText(test.p)}).` });
     } else if (x.kind === 'shift') {
@@ -353,12 +419,12 @@ function affectChecks(ctx) {
       const sel = rows.filter(r => (who ? who.has(r.p) : r.g === x.group));
       const until = x.until ?? Infinity;
       const before = sel.filter(r => r.t < x.t).map(r => r.s), after = sel.filter(r => r.t >= x.t && r.t < until).map(r => r.s);
-      if (before.length < 5 || after.length < 5) { add(ctx, { id: 'affect-shift', name: x.description, area: 'content', planted: `shift ${x.plantedDelta} at ${iso(x.t)}`, recovered: null, metric: 'after minus before', value: null, verdict: 'not checked', says: 'Too few messages from the affected people on one side of the shift.' }); continue; }
+      if (before.length < 5 || after.length < 5) { add(ctx, { id: 'affect-shift', name: x.description, area: 'content', planted: `shift ${x.plantedDelta} on ${day(x.t)}`, recovered: null, metric: 'after minus before', value: null, verdict: 'not checked', says: 'Too few messages from the affected people on one side of the shift.' }); continue; }
       const d = mean(after) - mean(before), test = welch(after, before);
       const ok = Math.sign(d) === Math.sign(x.plantedDelta) && test.p < 0.05;
-      add(ctx, { id: 'affect-shift', name: `${x.description}${Number.isInteger(x.group) && ctx.truth.communities?.names?.[x.group] ? ` (${ctx.truth.communities.names[x.group]})` : ''}, ${iso(x.t).slice(0, 10)}`, area: 'content', planted: `shift ${x.plantedDelta} at ${iso(x.t)}`, recovered: `measured ${r3(d)}`, metric: 'after minus before compound', value: r3(d), baseline: 0,
+      add(ctx, { id: 'affect-shift', name: `${x.description}${Number.isInteger(x.group) && ctx.truth.communities?.names?.[x.group] ? ` (${ctx.truth.communities.names[x.group]})` : ''}, ${day(x.t)}`, area: 'content', planted: `shift ${x.plantedDelta} on ${day(x.t)}`, recovered: `measured ${r3(d)}`, metric: 'tone after minus before (VADER compound)', value: r3(d), baseline: 0,
         verdict: ok ? 'recovered' : Math.sign(d) === Math.sign(x.plantedDelta) ? 'partly' : 'missed',
-        says: `Mean sentiment of the affected people moves from ${r3(mean(before))} to ${r3(mean(after))} (two-sample test, ${pText(test.p)}).` });
+        says: `The mean tone (sentiment) of the affected people moves from ${r3(mean(before))} to ${r3(mean(after))} (two-sample test, ${pText(test.p)}).` });
     }
   }
 }
@@ -396,12 +462,13 @@ function shiftChecks(ctx) {
   const uniq = [];
   for (const e of planted) if (!uniq.some(u => Math.abs(u.t - e.t) < DAY && u.type === e.type)) uniq.push(e);
   for (const e of uniq) {
-    if (!det) { add(ctx, { id: 'shift-' + e.type, name: `Planted ${e.type} at ${iso(e.t)}`, area: 'time', planted: e.description, recovered: null, metric: 'days from nearest detected shift', value: null, verdict: 'not checked', says: 'No detected shifts were given.' }); continue; }
+    if (!det) { add(ctx, { id: 'shift-' + e.type, name: `Planted ${e.type} on ${day(e.t)}`, area: 'time', planted: e.description, recovered: null, metric: 'days from nearest detected shift', value: null, verdict: 'not checked', says: 'No detected shifts were given.' }); continue; }
     const near = det.length ? Math.min(...det.map(t => Math.abs(t - e.t))) : Infinity;
-    add(ctx, { id: 'shift-' + e.type, name: `Planted ${e.type} at ${iso(e.t)}`, area: 'time', planted: e.description, recovered: Number.isFinite(near) ? `nearest detected shift ${r3(near / DAY)} days away` : 'no shift detected',
-      metric: 'days to nearest detected shift', value: Number.isFinite(near) ? r3(near / DAY) : null, baseline: r3(tol / DAY),
+    const nd = Math.round(near / DAY), td = Math.round(tol / DAY);
+    add(ctx, { id: 'shift-' + e.type, name: `Planted ${e.type} on ${day(e.t)}`, area: 'time', planted: e.description, recovered: Number.isFinite(near) ? `nearest detected shift ${days(nd)} away` : 'no shift detected',
+      metric: `days to the nearest detected shift (tolerance ${td})`, value: Number.isFinite(near) ? r3(near / DAY) : null, baseline: null,
       verdict: near <= tol ? 'recovered' : near <= 2 * tol ? 'partly' : 'missed',
-      says: near <= tol ? `A shift was detected within ${Math.round(near / DAY)} days of the planted ${e.type}.` : `No detected shift falls within ${Math.round(tol / DAY)} days of the planted ${e.type}.` });
+      says: near <= tol ? `A shift was detected ${nd ? `within ${days(nd)}` : 'on the day'} of the planted ${e.type} (tolerance ${days(td)}).` : `No detected shift falls within ${days(td)} of the planted ${e.type}.` });
   }
 }
 
@@ -436,7 +503,7 @@ function diffusionChecks(ctx) {
       src = 'the given diffusion results';
     }
     if (!detected.size) {
-      add(ctx, { id: 'diffusion-' + c.term, name: `Spread of "${c.term}"`, area: 'diffusion', planted: `${c.adopters.length} adopters from ${truth.people.labels[c.seed]}`, recovered: 'no users found', metric: 'adopter recall', value: 0, verdict: ctx.ds.events.text.some(Boolean) ? 'missed' : 'not checked', says: ctx.ds.events.text.some(Boolean) ? 'Nobody in the observed data uses the term.' : 'The dataset has no text.' });
+      add(ctx, { id: 'diffusion-' + c.term, name: `Spread of "${c.term}"`, area: 'diffusion', planted: `${c.adopters.length} adopters, first user ${truth.people.labels[c.seed]}`, recovered: 'no users found', metric: 'adopter recall', value: 0, verdict: ctx.ds.events.text.some(Boolean) ? 'missed' : 'not checked', says: ctx.ds.events.text.some(Boolean) ? 'Nobody in the observed data uses the term.' : 'The dataset has no text.' });
       continue;
     }
     let tp = 0;
@@ -468,15 +535,18 @@ function diffusionChecks(ctx) {
     ctx.details['diffusion:' + c.term] = { planted: planted.size, writers: c.users?.length ?? null, detected: detected.size, truePositives: tp, tieShare: obsShare, nullTieShare: nullShare, seedFirst, spearman: rho };
     const along = obsShare > nullShare + 0.05;
     if (detected.size < 3) {
-      add(ctx, { id: 'diffusion-' + c.term, name: `Spread of "${c.term}"`, area: 'diffusion', planted: `${planted.size} adopters from seed ${truth.people.labels[c.seed]}`, recovered: `${detected.size} users found`, metric: 'users found', value: detected.size, verdict: 'not checked', says: 'Too few people use the term in the observed data to judge how it spread.' });
+      add(ctx, { id: 'diffusion-' + c.term, name: `Spread of "${c.term}"`, area: 'diffusion', planted: `${planted.size} adopters, first user ${truth.people.labels[c.seed]}`, recovered: `${detected.size} users found`, metric: 'users found', value: detected.size, verdict: 'not checked', says: 'Too few people use the term in the observed data to judge how it spread.' });
       continue;
     }
+    // Little room: when shuffled timing already gives nearly every later user
+    // an earlier-using neighbor, the comparison cannot show much (N8).
+    const ceiling = nullShare >= 0.85;
     add(ctx, {
       id: 'diffusion-' + c.term, name: `Spread of "${c.term}" along true ties`, area: 'diffusion',
-      planted: `${planted.size} adopters from seed ${truth.people.labels[c.seed]}`, recovered: `${detected.size} users found (${src}), ${tp} of them planted adopters`,
+      planted: `${planted.size} adopters, first user ${truth.people.labels[c.seed]}`, recovered: `${detected.size} users found (${src}), ${tp} of them planted adopters`,
       metric: 'share of later users with an earlier-using true neighbor', value: r3(obsShare), baseline: r3(nullShare),
-      verdict: precision >= 0.8 && along && seedEarly ? 'recovered' : precision >= 0.5 && (along || seedEarly) ? 'partly' : 'missed',
-      says: `${seedFirst ? 'The seed is the first user' : seedEarly ? `The seed is user number ${seedRank + 1}` : 'The planted seed is not among the first users found'}; ${pct(obsShare)} of later users had a tied earlier user (${pct(nullShare)} expected if timing were random). Precision ${r3(precision)}, recall of writers ${r3(recall)}${Number.isFinite(rho) ? `, adoption-time rank correlation ${r3(rho)}` : ''}.`,
+      verdict: precision >= 0.6 && along && seedEarly ? 'recovered' : precision >= 0.25 && (along || seedEarly) ? 'partly' : 'missed',
+      says: `${seedFirst ? 'The planted first user is the first user found' : seedEarly ? `The planted first user is user number ${seedRank + 1} found` : 'The planted first user is not among the first users found'}; ${pct(obsShare)} of later users had an earlier user among their true ties, against ${pct(nullShare)} when the times are shuffled. ${pct(precision)} of the users found are planted adopters (precision), and they include ${pct(recall)} of the people who wrote the term (recall)${Number.isFinite(rho) ? `; adoption order matches with rank correlation ${r3(rho)}` : ''}. This check uses the true ties, which the Diffusion view cannot see: it uses the ties in the data, so the two can disagree.${ceiling ? ` Shuffled timing already reaches ${pct(nullShare)}, so there is little room to show spread along ties either way.` : ''}`,
     });
   }
 }
@@ -586,7 +656,9 @@ function mean(a) { if (!a.length) return NaN; let s = 0; for (const x of a) s +=
 function variance(a, m) { let s = 0; for (const x of a) s += (x - m) ** 2; return a.length > 1 ? s / (a.length - 1) : 0; }
 function median(a) { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; }
 function pct(x) { return x == null || !Number.isFinite(x) ? 'n/a' : `${Math.round(x * 100)}%`; }
-function iso(t) { return new Date(t).toISOString().slice(0, 10); }
+// "24 Feb 2025", as every view writes dates.
+function day(t) { return new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }); }
+const days = n => `${n} ${n === 1 ? 'day' : 'days'}`;
 
 // Welch t-test with a normal approximation to the p-value (fine for the sample sizes here).
 export function welch(A, B) {

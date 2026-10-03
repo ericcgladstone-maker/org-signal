@@ -4,7 +4,7 @@
 //
 //   loadContexts()            -> { contexts (normalised), devFallback, error }
 //   startGenerate(spec, { onProgress }) -> { promise, cancel, runId }
-//   startRecovery({ seed, runId, groundTruth, dataset })
+//   startRecovery({ seed, runId, groundTruth, dataset, settings })
 //                             -> Promise<{ report } | { missing[] }>
 //     Checks the run `runId`. The worker answers from its own copy when it
 //     still holds that run; otherwise groundTruth and dataset (kept in
@@ -72,12 +72,12 @@ export function startGenerate(spec, { onProgress = () => {} } = {}) {
   return { promise, cancel: () => cancel(), runId: id };
 }
 
-export function startRecovery({ seed = 1, runId = null, groundTruth = null, dataset = null } = {}) {
+export function startRecovery({ seed = 1, runId = null, groundTruth = null, dataset = null, settings = null } = {}) {
   const w = getWorker();
   const held = w && runId != null && workerRun === runId;
   if (!w) {
     if (!groundTruth || !dataset) return Promise.resolve({ missing: ['a generated dataset in this session'] });
-    return import('./run.js').then(({ runRecovery }) => runRecovery(groundTruth, dataset, { seed }));
+    return import('./run.js').then(({ runRecovery }) => runRecovery(groundTruth, dataset, { seed, settings }));
   }
   if (!held && (!groundTruth || !dataset)) return Promise.resolve({ missing: ['a generated dataset in this session'] });
   const id = ++seq;
@@ -88,6 +88,6 @@ export function startRecovery({ seed = 1, runId = null, groundTruth = null, data
       if (data.type === 'recovery') resolve(data.result); else reject(new Error(data.message));
     };
     w.addEventListener('message', onMsg);
-    w.postMessage(held ? { type: 'recovery', id, seed, runId } : { type: 'recovery', id, seed, runId, groundTruth, dataset });
+    w.postMessage(held ? { type: 'recovery', id, seed, runId, settings } : { type: 'recovery', id, seed, runId, settings, groundTruth, dataset });
   });
 }

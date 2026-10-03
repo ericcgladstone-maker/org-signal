@@ -70,7 +70,7 @@ function Privacy() {
       <li>This page has no server behind it. Nothing you enter is uploaded or sent anywhere.</li>
       <li>The survey itself came inside the link (the part after #, which browsers never send to a website).</li>
       <li>When you finish, you download a small response file and send it to the organizer yourself, by email or chat. Until then, your answers exist only in this browser.</li>
-      <li>A draft is kept in this browser so you can come back to it; Start over deletes it.</li>
+      <li>A draft is kept in this browser so you can come back to it; Clear my answers deletes it.</li>
     </ul>
   </section>`;
 }
@@ -81,7 +81,7 @@ function Survey({ def }) {
   const [draft, setDraft] = useState(() => storage.get(draftKey(def), null) || { personId: null, label: '', answers: {}, session: null, step: 0 });
   useEffect(() => { storage.set(draftKey(def), draft); }, [draft]);
   const patch = p => setDraft(d => ({ ...d, ...(typeof p === 'function' ? p(d) : p) }));
-  const startOver = () => { if (!confirm('Start over? Your answers in this browser are deleted.')) return; storage.remove(draftKey(def)); setDraft({ personId: null, label: '', answers: {}, session: null, step: 0 }); };
+  const startOver = () => { if (!confirm('Clear your answers? Everything you entered in this browser is deleted.')) return; storage.remove(draftKey(def)); setDraft({ personId: null, label: '', answers: {}, session: null, step: 0 }); };
   const steps = def.kind === 'roster' ? rosterSteps(def) : egoSteps(def, draft);
   const step = Math.min(draft.step || 0, steps.length - 1);
   const cur = steps[step];
@@ -93,7 +93,7 @@ function Survey({ def }) {
     </div></header>
     ${step === 0 ? html`<${Privacy} />` : null}
     <div class="ob-row"><span class="meta">Step ${step + 1} of ${steps.length}</span><span class="ob-spacer"></span>
-      <button type="button" class="tlink tlink--quiet" onClick=${startOver}>Start over</button></div>
+      <button type="button" class="tlink tlink--quiet" onClick=${startOver}>Clear my answers</button></div>
     <div class="ob-progress" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax=${steps.length} aria-valuenow=${step + 1}><span style=${`width:${((step + 1) / steps.length) * 100}%`}></span></div>
     <h2 id="rs-step" tabindex="-1" class="ob-h">${cur.title}</h2>
     <${cur.C} key=${step} def=${def} draft=${draft} patch=${patch} go=${go} rel=${cur.rel} index=${cur.index} />
@@ -113,7 +113,8 @@ function WhoStep({ def, draft, patch }) {
       <p class="ob-note">Find your own name on the list. Your answers are matched to it.</p>
       ${me ? html`<p class="rs-me">You are <strong>${me.label}</strong>. <button type="button" class="tlink tlink--quiet" onClick=${() => patch({ personId: null, label: '' })}>Not you? Choose again</button></p>`
         : html`<div style="max-width:24rem"><${Combobox} id="rs-who" label="Your name" items=${def.people} onPick=${x => patch({ personId: x.id, label: x.label })}
-            placeholder="Type your name" /></div>`}
+            placeholder="Type your name"
+            noMatch=${t => `No one called "${t}" is on the list. Check the spelling, or type just your first name or your surname.`} /></div>`}
     </div>`;
   }
   return html`<div class="field" style="max-width:24rem"><label class="field__label" for="rs-name">Your name</label>
@@ -182,7 +183,8 @@ function egoSteps(def, draft) {
   const steps = [who];
   steps.push({ title: 'The people you know', C: EgoNames, ready: d => (d.session?.alters?.length || 0) > 0, why: 'Name at least one person to continue.' });
   if (def.ego.interpreters.length || def.ego.tieFields.length) steps.push({ title: 'About each person', C: EgoDescribe });
-  if (def.ego.askTies && (draft.session?.alters?.length || 0) >= 2) steps.push({ title: 'Who knows whom', C: EgoTies });
+  // Always present when asked, so the step count does not change mid-survey (C16).
+  if (def.ego.askTies) steps.push({ title: 'Who knows whom', C: EgoTies });
   steps.push({ title: 'Send your answers', C: FinishStep });
   return steps;
 }
@@ -202,7 +204,7 @@ function useSession(def, draft, patch) {
 
 function EgoNames({ def, draft, patch }) {
   const [s, update] = useSession(def, draft, patch);
-  const ctx = def.people.length ? { roster: def.people, selfId: draft.personId, allowOthers: def.ego.allowOthers } : {};
+  const ctx = def.people.length ? { roster: def.people, selfId: draft.personId, allowOthers: def.ego.allowOthers, respondent: true } : { respondent: true };
   return html`<div class="ego"><${NamesStep} s=${s} update=${update} ctx=${ctx} /></div>`;
 }
 function EgoDescribe({ def, draft, patch }) {
@@ -228,17 +230,20 @@ function FinishStep({ def, draft }) {
   try { response = make(); } catch (e) { err = e.message; }
   if (err) return html`<p class="ob-err" role="alert">${err}</p>`;
   const text = responseToText(response);
-  const download = () => { const r = make(); downloadText(responseFileName(r), responseFileText(r), 'application/json'); };
+  const [saved, setSaved] = useState(null);
+  const download = () => { const r = make(); const name = responseFileName(r); downloadText(name, responseFileText(r), 'application/json'); setSaved(`Saved ${name} to your downloads folder. Now send it to the organizer.`); };
   const copy = async () => { const ok = await copyText(responseToText(make())); setCopied(ok ? 'Copied. Paste it into an email to the organizer.' : 'Copying is blocked here; select the text below and copy it.'); };
   return html`<div class="ob-stack">
     <${Summary} def=${def} response=${response} />
-    <p>Download your response and send the file to the person who sent you this survey, by email or chat. It holds only your answers and the survey's questions and names.</p>
+    <p>Download your response and send the file to the person who sent you this survey, the way they asked (for example a course dropbox, email or chat). It holds only your answers, shown above, and the survey's questions and names.</p>
     <div class="ob-row" style="gap:.75rem 1.5rem">
       <button type="button" class="btn btn--primary" onClick=${download}>Download my response</button>
       <button type="button" class="tlink" onClick=${copy}>Copy it as text instead</button>
     </div>
+    ${saved ? html`<p class="ob-good" role="status">${saved}</p>` : null}
     ${copied ? html`<p class="ob-note" role="status">${copied}</p>` : null}
     <details><summary class="tlink">Show the text</summary>
+      <p class="ob-note">The first lines say what you answered in words; the block of letters after them is the same answers packed so they arrive intact.</p>
       <label class="visually-hidden" for="rs-text">Your response as text</label>
       <textarea id="rs-text" class="input rs-text" rows="8" readonly value=${text} onFocus=${e => e.currentTarget.select()}></textarea></details>
     <p class="ob-note">You can change your answers and download again; the organizer uses the latest response from each person.</p>

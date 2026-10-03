@@ -116,7 +116,10 @@ test('toDataset: single informant and multi with merge rule', () => {
   m.responses = { respondents: [
     { personId: 'A', ties: { r: { 'A|B': 1 } } }, { personId: 'B', ties: { r: { 'B|A': 1, 'B|C': 1 } } }] };
   const ds2 = toDataset(m);
-  assert.equal(ds2.events.count, 1);
+  // One reciprocated tie, written as the two nominations behind it (C5).
+  assert.equal(ds2.events.count, 2);
+  assert.deepEqual([ds2.events.actor[0], ds2.events.actor[1]], [0, 1]);
+  assert.equal(ds2.events.weight[0] + ds2.events.weight[1], 1);
   assert.equal(ds2.meta.sources[0].directed, false);
   assert.equal(ds2.nodes.attrs[2].responded, false);
   assert.equal(ds2.meta.sources[0].warnings[0].code, 'roster-nonrespondents');

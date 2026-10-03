@@ -34,9 +34,10 @@ export async function runGenerate(spec, progress = () => {}) {
 }
 
 // Recovery check: build the network from the generated dataset with the
-// analysis defaults, compute what recoveryCheck compares against, and ask
-// the generator for its report. Returns { report } or { missing: [...] }.
-export async function runRecovery(groundTruth, ds, { seed = 1 } = {}) {
+// construction settings in use (settings; the analysis defaults when none are
+// given), compute what recoveryCheck compares against, and ask the generator
+// for its report. Returns { report, settings } or { missing: [...] }.
+export async function runRecovery(groundTruth, ds, { seed = 1, settings: given = null } = {}) {
   const missing = [];
   let gen, an;
   try { gen = await generator(); } catch (e) { missing.push(`generator module (${e.message})`); }
@@ -46,7 +47,7 @@ export async function runRecovery(groundTruth, ds, { seed = 1 } = {}) {
     if (an && typeof an[fn] !== 'function') missing.push(`${fn} in src/analysis/index.js`);
   }
   if (missing.length) return { missing };
-  const settings = await an.defaultSettings(ds);
+  const settings = given && typeof an.normalizeSettings === 'function' ? an.normalizeSettings(ds, given) : await an.defaultSettings(ds);
   const net = await an.buildNetwork(ds, settings);
   const results = { settings };
   const tryStep = async (key, f) => { try { results[key] = await f(); } catch (e) { results[key + 'Error'] = e.message; } };
@@ -61,5 +62,5 @@ export async function runRecovery(groundTruth, ds, { seed = 1 } = {}) {
   if (results.communities?.membership) results.membership = results.communities.membership;
   if (results.metrics) results.nodeMetrics = results.metrics;
   const report = await gen.recoveryCheck(groundTruth, ds, net, results);
-  return { report, settings: { directed: settings?.directed, weighting: settings?.weighting } };
+  return { report, settings: { directed: settings?.directed, weighting: settings?.weighting, given: !!given } };
 }

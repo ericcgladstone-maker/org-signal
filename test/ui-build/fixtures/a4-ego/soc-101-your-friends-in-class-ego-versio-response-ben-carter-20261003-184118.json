@@ -1,0 +1,164 @@
+{
+ "format": "orgsignal-response",
+ "version": 1,
+ "survey": {
+  "id": "s42de9925ef",
+  "kind": "ego",
+  "title": "SOC 101: your friends in class (ego version)",
+  "hash": "ccb89a01"
+ },
+ "respondent": {
+  "personId": "p31d751ae42",
+  "label": "Ben Carter"
+ },
+ "created": "2026-10-03T18:41:18.493Z",
+ "answers": {
+  "alters": [
+   {
+    "id": "af3ab6083f3",
+    "label": "Leo Park",
+    "generators": [
+     "ge064458ad7"
+    ],
+    "attrs": {
+     "closeness": "5"
+    },
+    "personId": "p410cfcd579"
+   },
+   {
+    "id": "a022285aea3",
+    "label": "Diego Morales",
+    "generators": [
+     "ge064458ad7"
+    ],
+    "attrs": {
+     "closeness": "4"
+    },
+    "personId": "p220dfc4c7f"
+   },
+   {
+    "id": "a8234db040a",
+    "label": "Chloe Nguyen",
+    "generators": [
+     "ge064458ad7"
+    ],
+    "attrs": {
+     "closeness": "2"
+    },
+    "personId": "pd9635229cc"
+   },
+   {
+    "id": "a6c7886c773",
+    "label": "Gabe Turner",
+    "generators": [
+     "ge064458ad7"
+    ],
+    "attrs": {
+     "closeness": "3"
+    },
+    "personId": "pcea84a2002"
+   }
+  ],
+  "contexts": [],
+  "ties": {
+   "a022285aea3|af3ab6083f3": true,
+   "a6c7886c773|af3ab6083f3": true,
+   "a022285aea3|a6c7886c773": true
+  }
+ },
+ "definition": {
+  "format": "orgsignal-survey",
+  "version": 1,
+  "id": "s42de9925ef",
+  "kind": "ego",
+  "title": "SOC 101: your friends in class (ego version)",
+  "intro": "Pick yourself, then name your friends in this class and say which of them know each other. Download the response file and upload to Canvas A4b.",
+  "createdAt": "2026-10-03T18:38:57.357Z",
+  "people": [
+   {
+    "id": "p410cfcd579",
+    "label": "Leo Park"
+   },
+   {
+    "id": "pcba9ffa5ee",
+    "label": "Priyanka Rao"
+   },
+   {
+    "id": "pfc531a7c59",
+    "label": "Sam Whitfield"
+   },
+   {
+    "id": "p6f9c6026b5",
+    "label": "Aisha Bello"
+   },
+   {
+    "id": "p31d751ae42",
+    "label": "Ben Carter"
+   },
+   {
+    "id": "pd9635229cc",
+    "label": "Chloe Nguyen"
+   },
+   {
+    "id": "p220dfc4c7f",
+    "label": "Diego Morales"
+   },
+   {
+    "id": "pebbdd58c2d",
+    "label": "Emma Lindqvist"
+   },
+   {
+    "id": "pe9ae71a022",
+    "label": "Farah Haddad"
+   },
+   {
+    "id": "pcea84a2002",
+    "label": "Gabe Turner"
+   }
+  ],
+  "ego": {
+   "generators": [
+    {
+     "id": "ge064458ad7",
+     "name": "Friends in class",
+     "prompt": "Which classmates in SOC 101 do you consider friends? Name as many as apply.",
+     "cap": 10
+    }
+   ],
+   "interpreters": [
+    {
+     "id": "closeness",
+     "name": "closeness",
+     "label": "Closeness (1 to 5)",
+     "type": "ordinal",
+     "options": [
+      {
+       "value": "1",
+       "label": "1 Distant"
+      },
+      {
+       "value": "2",
+       "label": "2"
+      },
+      {
+       "value": "3",
+       "label": "3"
+      },
+      {
+       "value": "4",
+       "label": "4"
+      },
+      {
+       "value": "5",
+       "label": "5 Very close"
+      }
+     ]
+    }
+   ],
+   "tieFields": [],
+   "askTies": true,
+   "allowOthers": true
+  }
+ },
+ "checksum": "crc32:0eecbe8f"
+}

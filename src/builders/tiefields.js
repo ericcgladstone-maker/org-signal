@@ -30,6 +30,7 @@ export const TIE_FIELD_PRESETS = [
   { id: 'tie_type', key: 'tie_type', label: 'Type of tie', type: 'choice', multiple: true,
     options: ['Advice', 'Collaboration', 'Information', 'Friendship', 'Support', 'Other'] },
   { id: 'strength', key: 'strength', label: 'Strength', type: 'scale', max: 5 },
+  { id: 'closeness', key: 'closeness', label: 'Closeness', type: 'scale', max: 5 },
   { id: 'frequency', key: 'frequency', label: 'How often', type: 'choice', ordered: true,
     options: ['Less than monthly', 'Monthly', 'Weekly', 'Daily'] },
   { id: 'duration', key: 'years_known', label: 'Years known', type: 'number' },

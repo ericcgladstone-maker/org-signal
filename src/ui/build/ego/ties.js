@@ -162,8 +162,8 @@ export function TiesStep({ s, update }) {
   return html`<div class="ob-stack">
     <div class="ob-section"><h3>Sort into settings</h3><${ContextSorter} s=${s} update=${update} /></div>
     <div class="ob-section">
-      <h3>Fix the exceptions</h3>
-      <p class="ob-note">${on} of ${ties.length} pairs know each other; ${exc} ${exc === 1 ? 'exception' : 'exceptions'} to the settings.</p>
+      <h3>${s.contexts.length ? 'Fix the exceptions' : 'Pairs who know each other'}</h3>
+      <p class="ob-note">${on} of ${ties.length} pairs know each other${s.contexts.length ? `; ${exc} ${exc === 1 ? 'pair differs' : 'pairs differ'} from what the settings imply` : ', each set by hand (no settings yet)'}.</p>
       <div class="ego-ties-grid">
         <${TieCanvas} s=${s} update=${update} />
         <${PairList} s=${s} update=${update} />

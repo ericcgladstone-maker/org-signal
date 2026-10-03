@@ -345,3 +345,24 @@ label.rs-person{justify-content:flex-start;cursor:pointer}
   .ego .ego-describe td{border:0;padding:.2rem 0;min-width:0}
   .ego .ego-describe td[data-label]::before{content:attr(data-label);display:block;font-size:var(--fs-foot,.8125rem);color:var(--text-muted);margin-bottom:.15rem}
 }
+
+/* ---- worked examples (Draw) ---- */
+.ob-canvas .ob-hint button{pointer-events:auto}
+.ob-hint__examples{display:flex;flex-wrap:wrap;gap:.25rem .6rem;justify-content:center;align-items:baseline}
+.ob-menu__label{margin-top:.25rem}
+.ob-example{border-left:2px solid var(--accent-dim);padding:.5rem 0 .5rem .85rem;max-width:var(--measure,66ch)}
+.ob-example > summary{cursor:pointer;font-size:var(--fs-small,.875rem);color:var(--text-2)}
+.ob-example > summary .label{margin-right:.35rem}
+.ob-example[open] > summary{margin-bottom:.4rem}
+.ob-howto{margin:.25rem 0 .75rem}
+
+/* Keyboard-only instructions are hidden on touch screens and phones (C14, M16). */
+@media (max-width:600px), (pointer:coarse){.ob .ob-kbdonly{display:none}}
+.ob .ob-touchonly{display:none}
+@media (max-width:600px), (pointer:coarse){.ob .ob-touchonly{display:inline}}
+
+/* Builder tabs wrap on a phone instead of cutting off "Paste ties" (C14). */
+@media (max-width:600px){.ob-view > .tabs{flex-wrap:wrap;row-gap:.25rem}}
+.ego-measures__list dd{max-width:var(--measure,66ch)}
+/* Bigger cells for fingers; the grid scrolls inside its own frame (M16). */
+@media (pointer:coarse){.ob-matrix td{width:2.6rem;min-width:2.6rem;height:2.6rem}}

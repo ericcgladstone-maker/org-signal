@@ -17,7 +17,7 @@ let seq = 0;
 // allowed (Enter with nothing highlighted). freeText: label for the free-text
 // option shown at the end of the list ("Add “x”"), or null.
 export function Combobox({ id, label, items, onPick, onText = null, placeholder = 'Type a name', disabled = false,
-  hideLabel = false, freeText = null, limit = 8, value = null, onInput = null, clearOnPick = true, describedBy }) {
+  hideLabel = false, freeText = null, limit = 8, value = null, onInput = null, clearOnPick = true, describedBy, noMatch = null }) {
   const uidRef = useRef(id || `ob-cb-${++seq}`);
   const cid = uidRef.current;
   const [text, setText] = useState(value ?? '');
@@ -65,6 +65,7 @@ export function Combobox({ id, label, items, onPick, onText = null, placeholder 
           : html`<span>${o.x.label}</span>${o.x.hint ? html`<span class="ob-combo__hint">${o.x.hint}</span>` : null}`}
       </li>`)}
     </ul>
+    ${noMatch && text.trim() && !options.length ? html`<p class="ob-note ob-warn" role="status">${noMatch(text.trim())}</p>` : null}
   </div>`;
 }
 

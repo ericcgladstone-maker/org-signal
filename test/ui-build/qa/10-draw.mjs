@@ -124,11 +124,17 @@ export async function run({ page, width, open, shot, assert, step }) {
   assert.equal((await nodeCentres(page)).map(n => n.t).join('|'), before);
   await clickAria(page, 'Redo');
 
-  step('example and hulls');
-  await fileMenu(page, 'Load example');
+  step('example and hulls (asks before replacing the drawing; Undo brings it back)');
+  const drawn = await page.$$eval('[data-node]', e => e.length);
+  await fileMenu(page, 'Two teams and a broker');
   await sleep(100);
-  assert.equal(await page.$$eval('[data-node]', e => e.length), 8);
+  assert.equal(await page.$$eval('[data-node]', e => e.length), 9);
   assert.ok(await page.$$eval('.hull', e => e.length) === 2, 'two group hulls');
+  assert.ok(await page.$eval('.ob-example', el => el.textContent.includes('Hal Novak has the highest betweenness')), 'what to look for');
+  await clickAria(page, 'Undo');
+  assert.equal(await page.$$eval('[data-node]', e => e.length), drawn);
+  await clickAria(page, 'Redo');
+  assert.equal(await page.$$eval('[data-node]', e => e.length), 9);
   await page.$eval('.ob-canvas', el => el.scrollIntoView({ block: 'center' }));
   await shot('example');
 
@@ -136,6 +142,7 @@ export async function run({ page, width, open, shot, assert, step }) {
   await page.$eval('.ob-canvas svg', el => el.focus());
   await page.keyboard.type('?');
   await page.waitForSelector('.dialog');
+  assert.ok(await page.$eval('.dialog', el => el.textContent.includes('How to draw')));
   await shot('help');
   await page.keyboard.press('Escape');
   await sleep(50);
@@ -144,14 +151,14 @@ export async function run({ page, width, open, shot, assert, step }) {
   step('table view');
   await clickButton(page, 'Table');
   await page.waitForSelector('.ob-drawtable');
-  assert.equal(await page.$$eval('.ob-drawtable section:first-child tbody tr', r => r.length), 8);
+  assert.equal(await page.$$eval('.ob-drawtable section:first-child tbody tr', r => r.length), 9);
   step('table: remove a row, undo with the keyboard');
   await page.click('.ob-rm-node');
   await sleep(80);
-  assert.equal(await page.$$eval('.ob-drawtable section:first-child tbody tr', r => r.length), 7);
+  assert.equal(await page.$$eval('.ob-drawtable section:first-child tbody tr', r => r.length), 8);
   await page.keyboard.down('Meta'); await page.keyboard.press('z'); await page.keyboard.up('Meta');
   await sleep(80);
-  assert.equal(await page.$$eval('.ob-drawtable section:first-child tbody tr', r => r.length), 8);
+  assert.equal(await page.$$eval('.ob-drawtable section:first-child tbody tr', r => r.length), 9);
   await shot('table');
   await clickButton(page, 'Canvas');
 
@@ -159,7 +166,8 @@ export async function run({ page, width, open, shot, assert, step }) {
   await clickButton(page, 'Analyze this network');
   await page.waitForFunction(() => window.__harness.loaded.length > 0, { timeout: 5000 });
   const res = await page.evaluate(() => { const d = window.__harness.loaded[0].ds; return { n: d.nodes.count, e: d.events.count, view: d.meta.sources[0].view }; });
-  assert.equal(res.n, 8);
+  assert.equal(res.n, 9);
   assert.equal(res.view, 'full');
-  assert.ok(res.e >= 11);
+  assert.equal(res.e, 16);
+  assert.equal(await page.evaluate(() => window.__harness.loaded[0].ds.meta.sources[0].directed), false);
 }
