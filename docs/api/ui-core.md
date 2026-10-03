@@ -69,7 +69,7 @@ Tokens live in `assets/theme.css` (type, frame, site colors) and the data palett
 
 ## Shell and store
 
-`src/ui/app.js` mounts the shell: masthead and primary navigation (Data, Network, People, Groups, Content, Time, Generate, Build, Ask, Methods & Export), the active view (lazy-loaded, so a failing module only breaks its own view), the construction settings drawer, notices, and the job status bar. The URL hash holds the view (`#network`).
+`src/ui/app.js` mounts the shell: masthead and primary navigation in workflow order (decision 2: **Get a network** Data · Build · Generate | **Explore** Network · People · Groups · Content · Time | **Report** Methods & Export · Ask | **Learn**), the Explanations switch, the active view (lazy-loaded, so a failing module only breaks its own view), the construction settings drawer, notices, and the job status bar. The URL hash holds the view (`#network`).
 
 `store.actions` (registered in `src/ui/actions.js`):
 
@@ -78,20 +78,61 @@ Tokens live in `assets/theme.css` (type, frame, site colors) and the data palett
 | `loadDataset(ds, { mode: 'replace' \| 'add', name })` | With `add`, merges with the current dataset through `mergeDatasets`. Loads into the engine, builds with `defaultSettings`, computes node and network metrics, communities (ordered by size), applicability and the import report. Resolves when done; throws on failure. |
 | `rebuild(settings, { quiet })` | Rebuild the network and every metric with new construction settings. Communities keep their numbers by overlap with the previous partition. Unless `quiet`, a notice states the before/after counts, how many people changed community and which settings changed (also stored as `lastRebuild = { at, lines, changes }`). |
 | `replaceDataset(ds)` | Load a derived dataset (identity merges, profile joins) and keep the list of loaded sources. |
-| `setView(view)` | Switch view, update the hash, move focus to the view heading. |
+| `setView(view)` | Switch view, update the hash, move focus to the view heading. `setView('learn/<key>')` opens Learn at that concept. Hash parameters after `?` are kept when the view does not change (views read them themselves). |
 | `select(nodes)` | Shared selection, dataset node indices. |
 | `notify(level, text, { timeout, detail, action })` / `dismiss(id)` | Notices: `info`, `warn`, `error`, at the bottom right. Errors stay until dismissed; info (6 s, 10 s with `detail`) and warnings (12 s) pause while the pointer or focus is in the stack. `detail` is a list of lines, `action` is `{ label, onClick }` shown as a text link. |
 | `announce(text)` | Speak through the shell's permanent polite live region (`#announcer`). Jobs announce start, quarter marks, phase changes (at most every 2.5 s) and the end on their own. |
 | `focus(target, { fallback, scroll })` | After an action, move focus to a selector or element once the view has re-rendered; falls back to the view heading. The shell also moves focus to the heading whenever the focused control is removed and focus would drop to the page body. |
-| `startOver()` | Clear everything loaded in this tab (dataset, network, results, `generated`, notices), remount the views and return to Data. The masthead's "Start over" asks first. |
+| `startOver()` | Clear everything loaded in this tab (dataset, network, results, `generated`, notices), remount the views and return to Data. The masthead's "Clear loaded data" asks first. Builders say "New ..." for their own drafts. |
+| `setExplain(on)` | The Explanations switch: sets `store.explain` and keeps the choice as the one localStorage preference (`orgsignal.explain`, wrapped in try/catch; default on). |
+| `loadSample()` | Load the sample organization (the Data view's `SAMPLE_SPEC` through Generate's `generateAndAnalyze`, with its recovery check). Returns to the view it was called from (Generate hands off to Network). Resolves `true` when loaded. Use it for every "explore the sample" link. |
 | `runJob(label, fn(signal, progress))` | Status-bar entry with progress and a Cancel button that aborts `signal`. |
 | `openDrawer()` / `closeDrawer()` | Construction settings drawer. |
 
 Respondent mode: when the address is `#survey=1.<data>` (a share link) or `#respond` (a survey file), `boot()` mounts `src/ui/build/respond/index.js` instead of the shell: no navigation, actions, engine or leave warning, only the survey (docs/api/ui-build.md, Shared surveys). A survey link pasted into a running tab reloads into that mode.
 
-Shell behavior: the masthead shows "Analyzing: <short name>" with Start over whenever data is loaded (a row under the bar below 1060px, with `--header-h` growing to match); leaving or reloading the page with data loaded asks first (`beforeunload`); `document.title` is "<View> · <dataset> · Org Signal".
+Shell behavior: the masthead shows "Analyzing: <short name>" with "Clear loaded data" whenever data is loaded (a row under the bar below 1280px, with `--header-h` growing to match); leaving or reloading the page with data loaded asks first (`beforeunload`); `document.title` is "<View> · <dataset> · Org Signal".
+
+`VIEWS` (actions.js) entries are `{ id, label, group, desc, purpose?, shows? }`: `desc` is the one line under each link in the phone menu and the link title on desktop; `purpose` (a question) and `shows` (2-3 things) feed `NeedsData` and `ViewHead`. `parseHash(hash) -> { view, key }`. Content and Time links stay live but show a muted "no text" / "no dates" when the loaded data cannot feed them.
 
 Store keys written by ui-core besides those in `store.js`: `methodsLog` (analyses run on the current network, recorded by `services/engine.js` and read by the methods appendix: `{ groups, nullModel, resampling, time, affect, keywords, topics, diffusion }`, each a list of the options used; cleared on load and rebuild), `lastRebuild`, `epoch` (bumped by Start over), `llm.codes` (Ask: send names as codes, default on), `report` (import report), `communities` (`{ membership (network order), modularity, count, sizes, ... }`, renumbered by size so color slot 1 is the largest group), `applicability`, `metrics = { node: { metric: Float64Array (network order) }, network: {...}, meta }`, `network = { n, edgeCount, directed, nodeIds, summary, settings, version }`, `notices`, and `ui = { drawer, menuOpen, profile, profileFile }`. `store.llm` holds `provider`, `model` and `remember` only; API keys live in `src/llm/keys.js` `createKeyStore()` and never in the store.
+
+## Beginner support: shared components (round 2)
+
+All in `src/ui/components/common.js`. Use these rather than local look-alikes; they respect the Explanations switch where noted and are styled in `app.css`.
+
+**`Term({ k, children?, label? })`**: a term with a dotted underline. Click, tap, Enter or Space opens a popover with the plain meaning from the glossary (`src/analysis/glossary.js`, aliases `z`, `p`, `seed`, `community`, `distance`) and "More in Learn" linking to `#learn/<key>`. Closes on outside click and Escape. Inline anywhere, including inside sentences: ``html`Most often on the route between others (<${Term} k="betweenness" />)` `` or ``html`<${Term} k="tie">ties</${Term}>` ``. Terms always render (the switch hides explanations, not words).
+
+**`HowToRead({ means, scale, example, mistake, title?, open?, children? })`**: a "How to read this" disclosure (closed by default; `open` to start open): what the number means, what counts as big or small, one sentence from the live data that the caller builds (`example`), and one common mistake. Each part optional. Renders nothing when Explanations is off.
+
+**`NeedsData({ title, purpose?, shows?, view? })`**: the empty state for a view that needs a network (L4). States the view's question and what it will show (defaults from the view's `VIEWS` entry, found by `title` or `view` id), then "Explore the sample" (primary; `store.actions.loadSample()`, stays on this view), "Draw or type a small network" (Build), "Analyze your own exports" (Data), and "Learn the ideas". `<${NeedsData} title="Groups" />` is enough.
+
+**`Verdict({ verdict, plain?, details?, level? })`**: verdict-first statistic (decision 5): the plain sentence (`.verdict__claim`), then the number in plain words (`.verdict__plain`), then the technical basis (`.basis`, always shown). `level` adds a flag before the verdict.
+Helpers for the sentence:
+- `pAtFloor(p, reps)`: p is the smallest value the test can give, 1/(reps+1).
+- `nullInWords(p, reps, { what = 'random networks' })`: "none of the 200 random networks came this close (p ≤ 1/201)" at the floor, else "7 of the 200 random networks came this close (p = 0.040)". `what` for other nulls ("shuffled timelines").
+- `pShort(p, reps)`: "p ≤ 1/201" or "p = 0.040", for tables and basis lines.
+- `chanceWords(z, { more, less })`: "about what chance gives" (|z| < 2), "more than chance", "far more than chance" (|z| ≥ 4), or with `less`.
+
+**Explanations switch.** `store.explain` (boolean, default true; `useExplain()` reads it; `store.actions.setExplain(on)` sets it). A quiet "Explanations: on/off" control in the masthead (in the phone menu, at the end) and in Learn. When off: `HowToRead` blocks and any gloss you mark as an explanation are hidden. The always-shown measure glosses (`MetricName gloss`, profile and whole-network rows) stay.
+
+**`ViewHead({ title, intro, actions, purpose? })`**: intros lead with the view's purpose (L18). Without `purpose`, a view in `VIEWS` with a `purpose` gets it prefixed when the intro does not already ask a question; pass your own question as `purpose`, or `purpose={false}` for none.
+
+**Flags carry their reason (C8).** `Flag({ level, reason?, iconOnly? })`: with `reason`, the flag is a button that opens the reason on click, tap or Enter. `MetricName` and `MetricInfo` do this for applicability. `applicabilityView(ap) -> { level, reason, small }` drops "Very small network" from the flag (it applies to every measure of a tiny network) and the tooltip says it once, calmly (`SMALL_NETWORK_NOTE`, M7). Show one small-network note per view yourself if you need it.
+
+**Context-filtered tooltips (L17).** `MetricName`/`MetricInfo` tooltips open on hover, focus, click or tap; they show the plain meaning first, then only the reliability clauses that can apply (`reliabilityFor(text, dataContext(ds, net))`: nothing about 3,000+ people or Spearman on small networks, no construction rules, broadcast cutoff or resampling for hand-entered ties, no one-person-export caveat without an ego source).
+
+**Popovers close on outside click and Escape (M10).** `useDismiss(open, onClose(why), [refs])` for your own popovers (`why` is `'escape'` or `'outside'`; return focus on Escape), `useDetailsDismiss(ref)` for a `<details>` used as a menu (People > Columns), and `Pop({ trigger, label, className, children, wide })` for a click-to-open popover.
+
+**Notices keep off maps (C14).** Besides `data-sticky-bottom`, mark any area notices must not cover with `data-notice-avoid` (the Network map `.net` is recognized as is). The stack moves above or below it, or collapses to one line (tap to read).
+
+**Device hints and downloads (C14).** `useTouch()` is true on coarse-pointer screens: say "Tap" instead of "Click" and leave out keyboard-only tips there. `download(data, filename, mime, { quiet })` now confirms with a "Downloaded <filename>." notice (a phone shows no download bar); identical notices are shown once, so a view that already announces the same text is not doubled.
+
+### Learn (`#learn`, `src/ui/views/learn.js`, `src/ui/views/learn/**`)
+
+Concepts (every glossary entry, grouped; meaning from the glossary, plus where you see it, how to read it and the common mistake from `learn/concepts.js` `TEACH`), figures for degree, betweenness, closeness, clustering and constraint (`learn/diagrams.js`), "Find it in the app" (`TASKS`, mapped to assignments A1-A12) and worked examples (`EXAMPLES`). Each concept has an anchor: link to `#learn/<glossary key>` (or an alias).
+
+**Learn links to Build examples.** Learn emits `#build?example=<id>` with these ids: `two-cliques-broker`, `path-and-star`, `ring-small-world`, `class-friendships`, `ego-10`. Build reads `example` from `location.hash` (`new URLSearchParams(location.hash.split('?')[1])`) and opens that example; the shell keeps the parameter while the view is Build.
 
 ## Services layer (`src/ui/services/`)
 
@@ -111,7 +152,7 @@ Every call into another owner's module goes through these adapters, so an API ch
 
 ## Views
 
-`src/ui/views/`: `data.js`, `drawer.js` (construction settings), `network.js`, `people.js`, `groups.js`, `content.js`, `time.js`, `ask.js`, `methods.js`, `external.js` (mounts `BuildView` from `src/ui/build/index.js` and `GenerateView` from `src/ui/generate/index.js`, lazily, with a "not available yet" state if either fails to load).
+`src/ui/views/`: `data.js`, `learn.js`, `drawer.js` (construction settings), `network.js`, `people.js`, `groups.js`, `content.js`, `time.js`, `ask.js`, `methods.js`, `external.js` (mounts `BuildView` from `src/ui/build/index.js` and `GenerateView` from `src/ui/generate/index.js`, lazily, with a "not available yet" state if either fails to load).
 
 Shared pieces in `src/ui/components/`: `common.js` (tooltips, `MetricName` with glossary and applicability, flags, `useEngine` results cached per network version), `charts.js` (line, bar, histogram, heatmap, sparkline), `vtable.js` (virtualised table). `src/ui/lib/`: formatting, palette, dataset readers, Markdown rendering (to Preact nodes, never `innerHTML`), and the shared layout cache.
 

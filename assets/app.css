@@ -496,7 +496,9 @@ pre.code{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);fon
 /* On narrow screens the chip moves to its own row under the bar. */
 .loaded-row{display:none}
 @media (max-width:1240px){ .loaded__name{max-width:10rem} }
-@media (max-width:1060px){
+/* With Learn and the Explanations switch the row is full below 1280px: the
+   chip takes its own row under the bar there (and on phones). */
+@media (max-width:1280px){
   .app-header__end > .loaded{display:none}
   .loaded-row{display:block;border-top:1px solid var(--rule)}
   .loaded-row .loaded{border-left:0;padding-left:0;min-height:2.5rem;justify-content:space-between}
@@ -539,3 +541,119 @@ pre.code{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);fon
 .view--bare{padding:0}
 /* Align the mounted views with the masthead gutter. */
 .view--bare > .ob-view,.view--bare > section{padding-inline:var(--pad-app)}
+
+/* ---------- navigation groups, descriptions, Explanations switch (round 2) ---------- */
+/* Desktop: groups separated by the thin rules, descriptions as titles only.
+   Phone menu: small mono group labels and a description under each link. */
+.nav-group__label{display:none}
+.nav-link__label{display:inline-flex;align-items:baseline;gap:.35rem}
+.nav-link__note{font-family:var(--mono);font-size:.625rem;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);font-weight:400}
+.nav-link__desc{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.app-nav a[data-note]{color:var(--text-muted)}
+.app-nav a[data-note][aria-current='page']{color:var(--text)}
+.explain-switch{background:none;border:0;padding:.45rem 0;font:inherit;font-size:var(--fs-foot);color:var(--text-muted);cursor:pointer;white-space:nowrap;min-height:var(--target);border-bottom:1px solid transparent}
+.explain-switch:hover{color:var(--text);border-bottom-color:var(--rule-strong)}
+.explain-switch__v{color:var(--text-2);font-weight:600}
+.nav-explain{padding-left:.25rem}
+/* With data loaded the masthead also holds the loaded chip; the brand's
+   descriptor gives way first so the views keep one row. */
+@media (max-width:1500px){ :root[data-loaded='true'] .app-header__inner .brand__desc{display:none} }
+@media (max-width:1060px){
+  :root[data-loaded='true'] .app-header__inner .brand__desc{display:block}
+  .nav-group__label{display:block;font-family:var(--mono);font-size:var(--fs-mono-th);letter-spacing:var(--ls-mono);text-transform:uppercase;color:var(--text-muted);padding:1rem 0 .2rem}
+  .app-nav a{flex-direction:column;align-items:flex-start;justify-content:center;gap:.1rem;padding:.6rem 0}
+  .nav-link__desc{position:static;width:auto;height:auto;overflow:visible;clip:auto;white-space:normal;font-size:var(--fs-foot);color:var(--text-muted);font-weight:400}
+  .nav-explain{padding:1rem 0 0}
+  .explain-switch{font-size:var(--fs-small)}
+}
+
+/* ---------- click-to-open popovers: Term, reasoned flags (round 2) ---------- */
+.pop-wrap{position:relative;display:inline}
+.pop-trigger{background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer;text-align:inherit}
+/* Term: a dotted underline, like the site's footnote links. */
+.pop-trigger.term{display:inline;color:inherit;text-decoration:underline dotted var(--text-muted);text-decoration-thickness:1px;text-underline-offset:.22em}
+.pop-trigger.term:hover,.pop-trigger.term[aria-expanded='true']{text-decoration-color:var(--accent)}
+.flag--btn{cursor:pointer;border-bottom:1px dotted currentColor;padding-bottom:1px;min-height:var(--target)}
+.flag--btn:hover{color:var(--text)}
+.pop{position:fixed;z-index:400;display:block;width:max-content;max-width:min(22rem,calc(100vw - 16px));padding:.7rem .8rem;background:var(--bg-deep);border:1px solid var(--rule-strong);color:var(--text-2);
+  font-family:var(--sans);font-size:.8125rem;line-height:1.5;letter-spacing:0;text-transform:none;font-weight:400;white-space:normal;text-align:left;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+.pop--wide{max-width:min(30rem,calc(100vw - 16px))}
+.pop strong{display:block;color:var(--text);font-weight:600;margin-bottom:.2rem}
+.pop__p{display:block}
+.pop__more{margin-top:.5rem;font-size:var(--fs-foot)}
+
+/* ---------- How to read this, verdicts, purposeful empty states (round 2) ---------- */
+.howto{max-width:var(--measure)}
+.howto > summary{color:var(--text-2)}
+.howto__body{margin:.2rem 0 .6rem;font-size:var(--fs-small)}
+.howto__body p + p{margin-top:.4rem}
+.howto__k{color:var(--text);font-weight:600}
+.verdict{max-width:var(--measure)}
+.verdict__claim{color:var(--text);font-size:var(--fs-body);line-height:1.5}
+.verdict__plain{color:var(--text-2);font-size:var(--fs-small);margin-top:.3rem}
+.verdict__details{margin-top:.3rem}
+.view__purpose{color:var(--text)}
+.needs{padding-top:0}
+.needs__shows{margin:0 0 1.75rem;padding-left:1.1rem;color:var(--text-2);max-width:var(--measure)}
+.needs__shows li + li{margin-top:.3rem}
+.needs__h{font-weight:500;font-size:var(--fs-h2);letter-spacing:-.012em;padding-top:1.5rem;border-top:1px solid var(--rule)}
+.needs__lead{margin-top:.5rem;color:var(--text-2);max-width:56ch}
+.needs__acts{margin-top:1.1rem;gap:.75rem 1.5rem}
+.needs__learn{margin-top:1.5rem}
+
+/* Notices over a map on a phone: one short line, tap to read (C14). */
+.notices--compact .notice{padding:.45rem .6rem;align-items:center}
+.notice__more{background:none;border:0;padding:0;font:inherit;color:var(--text-2);text-align:left;cursor:pointer;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;min-height:var(--target)}
+
+/* ---------- Learn (round 2) ---------- */
+.learn__jump{padding-bottom:1.25rem;align-items:baseline}
+.learn__explain{flex:1 1 20rem;text-align:right}
+.learn__explain .tlink{font-size:var(--fs-foot);margin-left:.4rem}
+.learn__part > h2{font-size:var(--fs-h2)}
+.learn__part > .prose{margin-bottom:1rem}
+.tasks{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,26rem),1fr));gap:0 2.5rem}
+.task{display:grid;grid-template-columns:2.75rem minmax(0,1fr);gap:.75rem;padding:.85rem 0;border-top:1px solid var(--rule)}
+.task__a{padding-top:.2rem}
+.task__q{color:var(--text);font-weight:600}
+.task__how{color:var(--text-2);font-size:var(--fs-small);margin-top:.2rem}
+.task__links{margin-top:.35rem;gap:.25rem 1.25rem}
+.task__links .small{white-space:normal}
+.examples{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,22rem),1fr));gap:0 2.5rem}
+.example{padding:.85rem 0;border-top:1px solid var(--rule)}
+.example__title{font-size:1rem;font-weight:600}
+.example__what{color:var(--text-2);font-size:var(--fs-small);margin:.25rem 0 .35rem;max-width:var(--measure)}
+.learn__concepts-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:.75rem 2rem;margin-bottom:.5rem}
+.learn__concepts-head h2{font-size:var(--fs-h2);font-weight:600;margin:0}
+.learn__search{width:min(100%,20rem)}
+.learn__sec{margin-top:2.25rem}
+.learn__sec-intro{margin-bottom:.5rem}
+.concept{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem 2.5rem;max-width:66rem;padding:1.1rem 0;border-top:1px solid var(--rule);scroll-margin-top:calc(var(--header-h) + 1rem)}
+.concept--fig{grid-template-columns:minmax(0,1fr) 15rem}
+.concept:focus{outline:none}
+.concept.is-target .concept__name{box-shadow:inset 2px 0 0 var(--accent);padding-left:.6rem;margin-left:-.6rem}
+.concept__name{font-size:1.0625rem;font-weight:600;letter-spacing:-.01em}
+.concept__anchor{color:var(--text);text-decoration:none}
+.concept__anchor:hover{text-decoration:underline;text-decoration-color:var(--rule-strong);text-underline-offset:.2em}
+.concept__meaning{color:var(--text);margin-top:.3rem;max-width:var(--measure)}
+.concept__dl{display:grid;grid-template-columns:10rem minmax(0,1fr);gap:.4rem 1.25rem;margin:.8rem 0 0;font-size:var(--fs-small);max-width:calc(var(--measure) + 11rem)}
+.concept__dl dt{font-family:var(--mono);font-size:var(--fs-mono-th);letter-spacing:var(--ls-mono-th);text-transform:uppercase;color:var(--text-muted);padding-top:.2rem}
+.concept__dl dd{margin:0;color:var(--text-2)}
+.concept__where{display:flex;flex-wrap:wrap;gap:.2rem 1.25rem}
+.concept__where .tlink{white-space:normal}
+.concept__k{color:var(--text);font-weight:600}
+.concept__more{max-width:var(--measure)}
+.learn-fig{margin:0;align-self:start}
+.learn-fig svg{width:100%;height:auto;max-width:15rem}
+.learn-fig figcaption{font-size:var(--fs-foot);color:var(--text-muted);margin-top:.4rem;line-height:1.45}
+.lf-tie{stroke:var(--edge);stroke-width:1.5}
+.lf-tie--key{stroke:var(--cat-1);stroke-width:2}
+.lf-tie--missing{stroke:var(--text-muted);stroke-width:1.25;stroke-dasharray:3 4}
+.lf-node{fill:var(--node);stroke:var(--bg);stroke-width:2}
+.lf-node--focus{fill:var(--cat-1)}
+.lf-text{fill:var(--text-2);font-family:var(--sans);font-size:11px}
+@media (max-width:760px){
+  .concept--fig{grid-template-columns:minmax(0,1fr)}
+  .concept__dl{grid-template-columns:minmax(0,1fr);gap:.15rem}
+  .concept__dl dd + dt{margin-top:.5rem}
+  .learn__explain{text-align:left;flex-basis:100%}
+}

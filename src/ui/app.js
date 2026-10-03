@@ -5,11 +5,11 @@
 
 import { html, render, useState, useEffect, useRef } from '../../vendor/preact.js';
 import { store, useStore } from './store.js';
-import { registerActions, VIEWS, formatProgress, shortName } from './actions.js';
+import { registerActions, VIEWS, NAV_GROUPS, parseHash, formatProgress, shortName } from './actions.js';
 import { initEngine, engineStatus } from './services/engine.js';
 import { MOCK, mockSize } from './services/modules.js';
 import { Icon, Loading, ErrorLine, ViewHead } from './components/common.js';
-import { hasText } from './lib/dsutil.js';
+import { hasText, timeExtent } from './lib/dsutil.js';
 
 const loaders = {
   data: () => import('./views/data.js').then(m => m.DataView),
@@ -20,13 +20,16 @@ const loaders = {
   time: () => import('./views/time.js').then(m => m.TimeView),
   ask: () => import('./views/ask.js').then(m => m.AskView),
   methods: () => import('./views/methods.js').then(m => m.MethodsView),
+  learn: () => import('./views/learn.js').then(m => m.LearnView),
   build: () => import('./views/external.js').then(m => m.BuildMount),
   generate: () => import('./views/external.js').then(m => m.GenerateMount),
 };
 const loaded = {};
 
-// "Analyzing: <name>" and Start over, in the masthead whenever data is loaded
-// (decision 7). Start over asks first, because nothing is stored.
+// "Analyzing: <name>" and "Clear loaded data", in the masthead whenever data
+// is loaded (decision 7). It asks first, because nothing is stored. Builders
+// use "New ..." for their own drafts, so "Start over" no longer means two
+// things (L15, decision 4).
 function Loaded() {
   const ds = useStore(s => s.dataset);
   const [ask, setAsk] = useState(false);
@@ -46,12 +49,12 @@ function Loaded() {
   const n = ds.nodes?.count ?? 0;
   return html`<div class="loaded">
     <span class="loaded__name" title=${`${name}: ${n.toLocaleString('en-US')} people`}><span class="loaded__label">Analyzing: </span><strong>${shortName(name)}</strong></span>
-    <button type="button" class="tlink tlink--quiet" ref=${btn} aria-expanded=${String(ask)} aria-controls="startOver" onClick=${() => setAsk(!ask)}>Start over</button>
+    <button type="button" class="tlink tlink--quiet" ref=${btn} aria-expanded=${String(ask)} aria-controls="startOver" onClick=${() => setAsk(!ask)}>Clear loaded data</button>
     ${ask && html`<div class="confirm" id="startOver" ref=${box} role="dialog" aria-labelledby="startOverH">
-      <p id="startOverH"><strong style="color:var(--text)">Start over?</strong></p>
+      <p id="startOverH"><strong style="color:var(--text)">Clear loaded data?</strong></p>
       <p>This clears ${shortName(name, 48)}, the network and every result from this tab. Loaded data is not kept anywhere, so it cannot be brought back unless you save a project first. Drafts in Build stay saved in this browser.</p>
       <div class="tlinks">
-        <button type="button" class="tlink tlink--danger" onClick=${() => { setAsk(false); store.actions.startOver(); }}>Clear everything</button>
+        <button type="button" class="tlink tlink--danger" onClick=${() => { setAsk(false); store.actions.startOver(); }}>Clear it</button>
         <button type="button" class="tlink tlink--arrow" onClick=${() => { setAsk(false); store.actions.setView('methods'); store.actions.focus('#proj-h'); }}>Save a project first</button>
         <button type="button" class="tlink tlink--quiet" onClick=${() => { setAsk(false); btn.current?.focus(); }}>Cancel</button>
       </div>
@@ -59,11 +62,36 @@ function Loaded() {
   </div>`;
 }
 
+// Views that cannot apply to what is loaded stay as links with a muted reason
+// (decision 2): Content needs message text, Time needs dates.
+function useNavNotes(ds) {
+  const [notes, setNotes] = useState({});
+  useEffect(() => {
+    if (!ds) { setNotes({}); return; }
+    const out = {};
+    if (!hasText(ds)) out.content = 'no text';
+    const [lo] = timeExtent(ds);
+    if (!Number.isFinite(lo)) out.time = 'no dates';
+    setNotes(out);
+  }, [ds]);
+  return notes;
+}
+
+const NOTE_TITLE = { 'no text': 'This data has no message text', 'no dates': 'This data has no dates' };
+
+// The Explanations switch (decision 1): a quiet text control. On shows the
+// "How to read this" blocks and term glosses; the reader's choice is kept.
+function ExplainSwitch({ className = '' }) {
+  const on = useStore(s => s.explain !== false);
+  return html`<button type="button" class=${`explain-switch ${className}`} aria-pressed=${String(on)}
+      title="Show or hide the How to read this blocks and term explanations"
+      onClick=${() => store.actions.setExplain(!on)}>Explanations: <span class="explain-switch__v">${on ? 'on' : 'off'}</span></button>`;
+}
+
 function Header() {
   const view = useStore(s => s.view);
   const ds = useStore(s => s.dataset);
-  // Content is only offered when there is message text to measure.
-  const noText = !!ds && !hasText(ds);
+  const notes = useNavNotes(ds);
   const open = useStore(s => !!s.ui?.menuOpen);
   const btn = useRef(null);
   const nav = useRef(null);
@@ -85,6 +113,10 @@ function Header() {
     return () => window.removeEventListener('scroll', set);
   }, []);
   const go = (e, id) => { e.preventDefault(); store.actions.setView(id); };
+  // Grouped in workflow order. On desktop the groups are separated by thin
+  // rules and each link's description is its title; the phone menu shows the
+  // group names as small mono labels and the descriptions under each link.
+  const groups = NAV_GROUPS.map(g => ({ ...g, views: VIEWS.filter(v => v.group === g.id) }));
   return html`<header class="app-header" data-scrolled=${String(scrolled || open)}>
     <div class="app-header__inner">
       <a class="brand" href="#data" onClick=${e => go(e, 'data')}>
@@ -98,7 +130,14 @@ function Header() {
       </button>
       <nav class="app-nav" id="appNav" ref=${nav} aria-label="Views" data-open=${String(open)}>
         <ul>
-          ${VIEWS.map(v => html`${v.sep && html`<li class="sep" aria-hidden="true"></li>`}<li><a href=${`#${v.id}`} aria-current=${view === v.id ? 'page' : undefined} aria-disabled=${v.id === 'content' && noText ? 'true' : undefined} title=${v.id === 'content' && noText ? 'This data has no message text' : undefined} onClick=${e => go(e, v.id)}>${v.label}</a></li>`)}
+          ${groups.map((g, gi) => html`${gi > 0 && html`<li class="sep" aria-hidden="true"></li>`}<li class="nav-group__label" aria-hidden="true">${g.label}</li>${g.views.map(v => {
+            const note = notes[v.id];
+            return html`<li><a href=${`#${v.id}`} aria-current=${view === v.id ? 'page' : undefined}
+              title=${note ? `${v.desc}. ${NOTE_TITLE[note]}.` : v.desc}
+              aria-describedby=${`nav-d-${v.id}`} data-note=${note || undefined}
+              onClick=${e => go(e, v.id)}><span class="nav-link__label">${v.label}${note && html`<span class="nav-link__note">${note}</span>`}</span><span class="nav-link__desc" id=${`nav-d-${v.id}`}>${v.desc}${note ? ` (${NOTE_TITLE[note].toLowerCase()})` : ''}</span></a></li>`;
+          })}`)}
+          <li class="nav-explain"><${ExplainSwitch} /></li>
         </ul>
       </nav>
       </div>
@@ -143,29 +182,66 @@ function stickyBottomOffset() {
   return h;
 }
 
+// They also keep off the network map and anything marked
+// [data-notice-avoid] (C14): on a phone the map fills the screen width, so a
+// notice at the bottom covered its people. When the stack would overlap such
+// an area, it moves above the area if there is room on screen, else below
+// it, else it collapses to one short line (tap to expand).
+function avoidPlacement(stack, lift) {
+  const vh = window.innerHeight;
+  const st = stack.getBoundingClientRect();
+  const h = stack.scrollHeight || st.height;
+  if (!h) return { lift, compact: false };
+  const header = document.querySelector('.app-header')?.getBoundingClientRect().bottom || 0;
+  const bottomEdge = vh - Math.max(lift, 0) - 16;
+  const overlaps = (r, top, bottom) => r.top < bottom && r.bottom > top && r.left < st.right && r.right > st.left;
+  for (const el of document.querySelectorAll('.net, [data-notice-avoid]')) {
+    const r = el.getBoundingClientRect();
+    if (!r.height || r.bottom <= header || r.top >= vh) continue;
+    if (!overlaps(r, bottomEdge - h, bottomEdge)) continue;
+    // Room between the area's bottom and the window's bottom (scrolled up)?
+    if (vh - r.bottom >= h + 16 + Math.max(lift, 0)) return { lift, compact: false };
+    // Room above the area, below the header?
+    if (r.top - header >= h + 16) return { lift: vh - r.top + 8, compact: false };
+    return { lift, compact: true };
+  }
+  return { lift, compact: false };
+}
+
 function Notices() {
   const notices = useStore(s => s.notices || []);
   const view = useStore(s => s.view);
   const a = store.actions;
   const ref = useRef(null);
+  const [compact, setCompact] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
-    if (!notices.length) return;
-    const place = () => { if (ref.current) ref.current.style.setProperty('--notice-lift', `${stickyBottomOffset()}px`); };
+    if (!notices.length) { setExpanded(false); return; }
+    const place = () => {
+      const el = ref.current;
+      if (!el) return;
+      const lift = stickyBottomOffset();
+      el.style.setProperty('--notice-lift', `${lift}px`);
+      const p = avoidPlacement(el, lift);
+      el.style.setProperty('--notice-lift', `${p.lift}px`);
+      setCompact(p.compact);
+    };
     place();
     const t = setInterval(place, 500);
     window.addEventListener('scroll', place, { passive: true });
     window.addEventListener('resize', place);
     return () => { clearInterval(t); window.removeEventListener('scroll', place); window.removeEventListener('resize', place); };
   }, [notices.length, view]);
-  return html`<div class="notices" ref=${ref} aria-live="polite" aria-relevant="additions"
+  const short = compact && !expanded;
+  return html`<div class=${`notices${short ? ' notices--compact' : ''}`} ref=${ref} aria-live="polite" aria-relevant="additions"
     onMouseEnter=${() => a.pauseNotices()} onMouseLeave=${e => { if (!e.currentTarget.contains(document.activeElement)) a.resumeNotices(); }}
     onFocusIn=${() => a.pauseNotices()} onFocusOut=${e => { if (!e.currentTarget.contains(e.relatedTarget)) a.resumeNotices(); }}>
     ${notices.map(n => html`<div class=${`notice notice--${n.level}`} key=${n.id} data-notice=${n.id} role=${n.level === 'error' ? 'alert' : 'status'}>
       <span class=${`flag flag--${n.level === 'warn' ? 'caution' : n.level === 'error' ? 'error' : 'ok'}`}>${n.level === 'warn' ? Icon.caution : n.level === 'error' ? Icon.error : Icon.info}</span>
       <div class="grow notice__body">
-        <span>${n.text}</span>
-        ${n.detail && html`<ul class="notice__list">${n.detail.map(d => html`<li>${d}</li>`)}</ul>`}
-        ${n.action && html`<span><button type="button" class="tlink" onClick=${() => { n.action.onClick(); a.dismiss(n.id); }}>${n.action.label}</button></span>`}
+        ${short ? html`<button type="button" class="notice__more" aria-expanded="false" onClick=${() => setExpanded(true)}>${n.text}</button>` : html`<span>${n.text}</span>`}
+        ${!short && n.detail && html`<ul class="notice__list">${n.detail.map(d => html`<li>${d}</li>`)}</ul>`}
+        ${!short && n.action && html`<span><button type="button" class="tlink" onClick=${() => { n.action.onClick(); a.dismiss(n.id); }}>${n.action.label}</button></span>`}
       </div>
       <button type="button" class="btn btn--quiet btn--sm" aria-label="Dismiss notice" onClick=${() => a.dismiss(n.id)}>${Icon.close}</button>
     </div>`)}
@@ -263,13 +339,15 @@ async function boot() {
     return;
   }
   registerActions();
-  const fromHash = location.hash.slice(1).split('?')[0];
-  store.set({ view: VIEWS.some(v => v.id === fromHash) ? fromHash : 'data', notices: [], ui: { drawer: false, menuOpen: false } });
+  const fromHash = parseHash(location.hash);
+  store.set({ view: fromHash.view || 'data', learnKey: fromHash.key, notices: [], ui: { drawer: false, menuOpen: false } });
   window.addEventListener('hashchange', () => {
     // A survey link pasted into this tab: open it as a respondent would.
     if (RESPOND.test(location.hash)) { location.reload(); return; }
-    const v = location.hash.slice(1).split('?')[0];
-    if (v && v !== store.get().view) store.actions.setView(v);
+    const h = parseHash(location.hash);
+    const st = store.get();
+    if (!h.view) return;
+    if (h.view !== st.view || (h.view === 'learn' && h.key !== st.learnKey)) store.actions.setView(h.view === 'learn' && h.key ? `learn/${h.key}` : h.view);
   });
   // Under ?mock the offline demo LLM provider is the default, so nothing is
   // ever sent to a real provider while developing or testing.

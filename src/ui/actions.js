@@ -12,26 +12,66 @@
 //   announce(text)          screen-reader announcement through the shell's permanent live region
 //   focus(target, { fallback })    move focus after an action (selector or element), once the view has rendered
 //   runJob(label, fn)       fn(signal, progress) with a status-bar entry and cancel
-//   startOver()             clear everything loaded in this tab and return to Data
+//   startOver()             clear everything loaded in this tab and return to Data (masthead: "Clear loaded data")
+//   setExplain(on)          the Explanations switch (kept as the one localStorage preference)
+//   loadSample()            load the sample organization; stays on the view it was asked from
 //   openDrawer() / closeDrawer()   construction settings drawer
 
-import { store } from './store.js';
+import { store, writeExplainPref } from './store.js';
 import { engine, engineStatus } from './services/engine.js';
 import { mergeDatasets, importReport } from './services/pipeline.js';
 import { NODE_METRICS } from './services/glossary.js';
 
-export const VIEWS = [
-  { id: 'data', label: 'Data' },
-  { id: 'network', label: 'Network' },
-  { id: 'people', label: 'People' },
-  { id: 'groups', label: 'Groups' },
-  { id: 'content', label: 'Content' },
-  { id: 'time', label: 'Time' },
-  { id: 'generate', label: 'Generate', sep: true },
-  { id: 'build', label: 'Build' },
-  { id: 'ask', label: 'Ask', sep: true },
-  { id: 'methods', label: 'Methods & Export' },
+// Navigation in workflow order (decision 2): get a network, explore it,
+// report on it, and Learn. `desc` is the one line shown under the label in
+// the phone menu and as the link's title on desktop; `purpose` and `shows`
+// feed the purposeful empty state (NeedsData) and the view intros, so a
+// student can tell what a view is for before anything is loaded.
+export const NAV_GROUPS = [
+  { id: 'get', label: 'Get a network' },
+  { id: 'explore', label: 'Explore' },
+  { id: 'report', label: 'Report' },
+  { id: 'learn', label: 'Learn' },
 ];
+
+export const VIEWS = [
+  { id: 'data', label: 'Data', group: 'get', desc: 'Import your exports or open a saved project' },
+  { id: 'build', label: 'Build', group: 'get', desc: 'Draw, paste or survey a small network' },
+  { id: 'generate', label: 'Generate', group: 'get', desc: 'Synthetic organizations with known answers' },
+  { id: 'network', label: 'Network', group: 'explore', sep: true, desc: 'The map and whole-network numbers',
+    purpose: 'What does the whole network look like, and is it different from chance?',
+    shows: ['The map of who is tied to whom, colored by group or community', 'Whole-network numbers such as density and clustering, compared with random networks', 'Who stands out: most contacts, most often between others, closest to everyone'] },
+  { id: 'people', label: 'People', group: 'explore', desc: 'Every person\u2019s measures, ranked',
+    purpose: 'Who has the most ties, who connects groups, and who is close to everyone?',
+    shows: ['Every person\u2019s measures in one table you can sort', 'How settled each ranking is when the data is resampled', 'A profile for each person with their contacts'] },
+  { id: 'groups', label: 'Groups', group: 'explore', desc: 'Do ties stay inside groups?',
+    purpose: 'Do ties stay inside departments, teams or communities, or cross them?',
+    shows: ['How many ties run within and between each pair of groups', 'The E-I index and assortativity, compared with chance', 'Each group\u2019s size and how tied together it is'] },
+  { id: 'content', label: 'Content', group: 'explore', desc: 'What people wrote about, and in what tone',
+    purpose: 'What did people write about, and in what tone?',
+    shows: ['The tone of messages by person, group or week', 'Distinctive words and recurring topics', 'Whether new words spread along ties'] },
+  { id: 'time', label: 'Time', group: 'explore', desc: 'How the network changed',
+    purpose: 'How did the network change over time?',
+    shows: ['Measures week by week (or day, or month)', 'Weeks that stand out from the ones before them', 'A before and after comparison around a date you choose'] },
+  { id: 'methods', label: 'Methods & Export', group: 'report', sep: true, desc: 'Methods appendix, network files and projects' },
+  { id: 'ask', label: 'Ask', group: 'report', desc: 'Questions in plain language (optional AI)' },
+  { id: 'learn', label: 'Learn', group: 'learn', sep: true, desc: 'The ideas, the terms and worked examples' },
+];
+
+export const viewInfo = id => VIEWS.find(v => v.id === id) || null;
+
+// The URL hash names the view, optionally with a Learn concept
+// (#learn/betweenness) or parameters after "?" that the view reads itself
+// (#build?example=two-cliques-broker, see docs/api/ui-core.md).
+export function parseHash(hash) {
+  const raw = String(hash || '').replace(/^#/, '');
+  const path = raw.split('?')[0];
+  const [head, ...rest] = path.split('/');
+  const view = VIEWS.some(v => v.id === head) ? head : null;
+  let key = null;
+  if (view === 'learn' && rest.length) { try { key = decodeURIComponent(rest.join('/')) || null; } catch { key = null; } }
+  return { view, key };
+}
 
 // Short display name for what is loaded: the dataset name without its
 // parenthetical detail ("Synthetic workplace (slack, ...)" -> "Synthetic workplace").
@@ -130,6 +170,9 @@ function resumeNotices() {
 
 // notify(level, text, { timeout, detail: [lines], action: { label, onClick } })
 function notify(level, text, { timeout, detail, action } = {}) {
+  // The same notice twice (a download announced by the shared helper and by
+  // its view) shows once: the older copy goes.
+  for (const o of store.get().notices || []) if (o.level === level && o.text === String(text)) dismiss(o.id);
   const id = ++noticeSeq;
   const n = { id, level, text: String(text), detail: detail?.length ? detail.map(String) : null, action: action || null };
   store.set(s => ({ notice: n, notices: [...(s.notices || []).slice(-3), n] }));
@@ -173,10 +216,44 @@ export function focusTarget(target, { fallback = true, scroll = true } = {}) {
 }
 
 function setView(view, { focus = true } = {}) {
+  // 'learn/<key>' opens Learn at that concept.
+  let key = null;
+  if (typeof view === 'string' && view.startsWith('learn/')) ({ view, key } = parseHash(view));
   if (!VIEWS.some(v => v.id === view)) view = 'data';
-  if (location.hash.slice(1).split('?')[0] !== view) history.replaceState(null, '', `${location.pathname}${location.search}#${view}`);
-  store.set({ view, __focusOnView: focus, ui: { ...(store.get().ui || {}), menuOpen: false } });
-  if (focus) window.scrollTo({ top: 0 });
+  if (hasDOM) {
+    const cur = parseHash(location.hash);
+    // Keep any "?..." parameters when the view is unchanged (the view reads them).
+    if (cur.view !== view || (view === 'learn' && cur.key !== key)) {
+      const target = view === 'learn' && key ? `learn/${encodeURIComponent(key)}` : view;
+      history.replaceState(null, '', `${location.pathname}${location.search}#${target}`);
+    }
+  }
+  store.set({ view, learnKey: view === 'learn' ? key : store.get().learnKey, __focusOnView: focus && !key, ui: { ...(store.get().ui || {}), menuOpen: false } });
+  if (focus && hasDOM) window.scrollTo({ top: 0 });
+}
+
+// The Explanations switch: store field plus the one localStorage preference.
+function setExplain(on) {
+  store.set({ explain: !!on });
+  writeExplainPref(!!on);
+  announce(on ? 'Explanations on.' : 'Explanations off.');
+}
+
+// The sample organization (the Data view's preset of Generate), loadable from
+// any empty state. The generator hands off to Network; return to the view
+// the reader asked from, so "explore the sample" fills the page they are on.
+async function loadSample() {
+  const back = store.get().view;
+  try {
+    const [{ SAMPLE_SPEC }, { generateAndAnalyze }] = await Promise.all([import('./views/data.js'), import('./generate/index.js')]);
+    await generateAndAnalyze(SAMPLE_SPEC);
+  } catch (e) {
+    notify('error', `Could not load the sample: ${e.message}`);
+    return false;
+  }
+  const ok = !!store.get().dataset;
+  if (ok && !['data', 'generate', 'build'].includes(back) && store.get().view !== back) setView(back);
+  return ok;
 }
 
 function select(nodes) {
@@ -361,7 +438,7 @@ function startOver() {
 
 export function registerActions() {
   Object.assign(store.actions, {
-    loadDataset, rebuild, setView, select, notify, dismiss, runJob, startOver, announce, pauseNotices, resumeNotices,
+    loadDataset, rebuild, setView, select, notify, dismiss, runJob, startOver, announce, pauseNotices, resumeNotices, setExplain, loadSample,
     focus: (target, opts) => focusTarget(target, opts),
     openDrawer: () => store.set({ ui: { ...(store.get().ui || {}), drawer: true } }),
     closeDrawer: () => store.set({ ui: { ...(store.get().ui || {}), drawer: false } }),

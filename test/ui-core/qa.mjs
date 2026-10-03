@@ -120,8 +120,10 @@ for (const width of [1440, 390]) {
   await overflow(p, `${tag} groups`); await shot(p, `${tag}-groups`);
 
   await go(p, 'content');
-  for (const t of ['Affect', 'Keywords', 'Topics', 'Diffusion']) {
-    await clickText(p, '.tabs button', t); await idle(p, 500);
+  for (const t of ['Tone', 'Keywords', 'Topics', 'Diffusion']) {
+    // The tone tab was called Affect before round 2 (decision 4).
+    const tab = t === 'Tone' && !(await p.evaluate(() => [...document.querySelectorAll('.tabs button')].some(b => b.textContent.trim().startsWith('Tone')))) ? 'Affect' : t;
+    await clickText(p, '.tabs button', tab); await idle(p, 500);
     if (t === 'Diffusion') { await p.type('input[placeholder^="for example"]', 'roadmap'); await clickText(p, 'button', 'Trace'); await idle(p, 800); }
     await overflow(p, `${tag} content ${t}`); await shot(p, `${tag}-content-${t.toLowerCase()}`);
   }
@@ -155,11 +157,37 @@ for (const width of [1440, 390]) {
   await go(p, 'generate'); await idle(p, 1000);
   await overflow(p, `${tag} generate`); await shot(p, `${tag}-generate`);
 
+  // Learn: a concept anchor, a Term popover that opens on click and closes
+  // on Escape, and the Explanations switch (round 2, decision 1).
+  await go(p, 'learn/betweenness'); await idle(p, 800);
+  await overflow(p, `${tag} learn`); await shot(p, `${tag}-learn`);
+  const atConcept = await p.evaluate(() => { const r = document.getElementById('learn-betweenness')?.getBoundingClientRect(); return !!r && r.top >= 0 && r.top < window.innerHeight / 2; });
+  if (!atConcept) problems.push(`${tag}: #learn/betweenness did not scroll to the concept`);
+  await p.evaluate(() => { const t = document.querySelector('.pop-trigger.term'); t?.scrollIntoView({ block: 'center' }); t?.click(); });
+  await sleep(300);
+  if (!(await p.evaluate(() => !!document.querySelector('.pop .pop__more')))) problems.push(`${tag}: Term popover did not open on click`);
+  await shot(p, `${tag}-learn-term`);
+  await p.keyboard.press('Escape'); await sleep(200);
+  if (await p.evaluate(() => !!document.querySelector('.pop'))) problems.push(`${tag}: Term popover did not close on Escape`);
+  const before = await p.evaluate(() => document.querySelector('.explain-switch__v')?.textContent);
+  await p.evaluate(() => document.querySelector('.learn__explain button')?.click()); await sleep(200);
+  const after = await p.evaluate(() => document.querySelector('.explain-switch__v')?.textContent);
+  if (!before || before === after) problems.push(`${tag}: Explanations switch did not change (${before} -> ${after})`);
+  await p.evaluate(() => document.querySelector('.learn__explain button')?.click()); await sleep(200);
+
   if (width < 600) {
     await p.evaluate(() => window.scrollTo(0, 0));
     await p.click('.menu-btn'); await sleep(300); await shot(p, `${tag}-menu`);
+    const descs = await p.evaluate(() => [...document.querySelectorAll('.app-nav .nav-link__desc')].filter(e => e.offsetHeight > 0).length);
+    if (descs < 10) problems.push(`${tag}: phone menu shows ${descs} view descriptions`);
     await p.keyboard.press('Escape');
   }
+  // Purposeful empty state: the view's question and the sample link.
+  await p.goto(`${BASE}/index.html?mock&empty#groups`, { waitUntil: 'load' });
+  await idle(p, 500);
+  const needs = await p.evaluate(() => ({ q: document.querySelector('.view__intro')?.textContent || '', sample: [...document.querySelectorAll('.needs button')].some(b => /sample/i.test(b.textContent)) }));
+  if (!/\?/.test(needs.q) || !needs.sample) problems.push(`${tag}: Groups empty state lacks its question or the sample link`);
+  await overflow(p, `${tag} groups-empty`); await shot(p, `${tag}-groups-empty`);
   // Keyboard: Tab from a fresh load reaches the skip link first.
   await p.goto(`${BASE}/index.html?mock&empty#data`, { waitUntil: 'load' });
   await idle(p, 300);

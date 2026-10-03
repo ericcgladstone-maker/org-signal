@@ -30,7 +30,8 @@ test('contacts count each neighbor once; degree on a directed network counts a t
   assert.equal(Object.keys(w)[0], 'contacts');
   assert.equal(withContacts(m, true), w);
   assert.equal(metricLabel('degree', true), 'Total ties (in + out)');
-  assert.equal(metricLabel('degree', false), 'Degree');
+  // Decision 4: never a bare "Degree" without its qualifier.
+  assert.equal(metricLabel('degree', false), 'Contacts (degree)');
 });
 
 test('ranks show ties instead of hiding them', () => {

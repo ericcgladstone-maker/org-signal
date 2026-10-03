@@ -8,8 +8,25 @@
 
 import { useState, useEffect } from '../../vendor/preact.js';
 
+// The Explanations switch (decision 1): "How to read this" blocks and inline
+// glosses. On for a first visit; the reader's choice is the one preference
+// kept in localStorage. Storage can be missing or throw (private windows,
+// blocked site data, Node tests), so every access is guarded.
+const EXPLAIN_KEY = 'orgsignal.explain';
+export function readExplainPref() {
+  try {
+    const v = globalThis.localStorage?.getItem(EXPLAIN_KEY);
+    return v === 'off' ? false : true;
+  } catch { return true; }
+}
+export function writeExplainPref(on) {
+  try { globalThis.localStorage?.setItem(EXPLAIN_KEY, on ? 'on' : 'off'); } catch { /* not kept; the switch still works for this tab */ }
+}
+
 const initial = {
-  view: 'data',          // data | network | people | groups | content | time | generate | build | ask | methods
+  view: 'data',          // data | build | generate | network | people | groups | content | time | methods | ask | learn
+  learnKey: null,        // concept open in Learn (#learn/<key>), or null
+  explain: readExplainPref(), // Explanations switch: true shows "How to read this" blocks and glosses
   datasets: [],          // every Dataset loaded this session (before merging)
   dataset: null,         // the active, merged Dataset
   settings: null,        // ConstructionSettings for the active network
