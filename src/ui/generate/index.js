@@ -64,8 +64,15 @@ export async function runRecoveryCheck() {
   }
 }
 
-async function generateRun(form, output) {
-  const spec = toSpec(form, { output });
+// Generate a world from a finished spec, load it, record it as the generated
+// dataset and run the recovery check. Shared by the Generate form and the Data
+// view's sample-organization shortcut, so both behave the same.
+export async function generateAndAnalyze(spec) {
+  return generateRun(null, 'dataset', spec);
+}
+
+async function generateRun(form, output, specIn = null) {
+  const spec = specIn ? { ...specIn, output } : toSpec(form, { output });
   const { promise, cancel, runId } = startGenerate(spec, { onProgress: (fraction, message) => setRun(r => ({ job: r.job ? { ...r.job, fraction, message } : r.job })) });
   setRun({ job: { output, fraction: 0, message: 'Starting', cancel }, err: null });
   try {

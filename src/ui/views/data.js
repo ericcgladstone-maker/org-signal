@@ -182,12 +182,13 @@ function actionNote({ detecting, toImport, toJoin, skipped, hasData, mode }) {
   return parts.join(' ');
 }
 
+// A preset of Generate: same engine, same recovery check and banner.
+export const SAMPLE_SPEC = { context: 'workplace', medium: 'slack', structure: 'bridge-dependent', size: 96, seed: 1, content: 'light' };
 async function loadDemo() {
   try {
-    const { demoDataset } = await import('../app.js');
-    await store.actions.loadDataset(await demoDataset(), { mode: 'replace' });
-    store.actions.notify('info', 'Loaded the synthetic demo organization (fake names, generated messages).');
-  } catch (e) { store.actions.notify('error', `Could not load the demo: ${e.message}`); }
+    const { generateAndAnalyze } = await import('../generate/index.js');
+    await generateAndAnalyze(SAMPLE_SPEC);
+  } catch (e) { store.actions.notify('error', `Could not load the sample: ${e.message}`); }
 }
 
 const HOWTO = [
@@ -209,7 +210,7 @@ function EmptyState({ onFiles }) {
     <details class="disclose dv-howto"><summary>How to get your export</summary>
       <dl class="dv-howto__list">${HOWTO.map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>
     </details>
-    <p class="small text2 dv-demo">No data at hand? <button type="button" class="tlink" onClick=${loadDemo}>Load a small synthetic organization</button> to try every view.</p>
+    <p class="small text2 dv-demo">No data at hand? <button type="button" class="tlink" onClick=${loadDemo}>Load a sample organization</button> (a 96-person preset of Generate, with its recovery check) to try every view.</p>
     <div class="ways">
       <div><h3>Build by hand</h3><p>Draw a network, run an ego-network interview, record a roster, or collect perceived networks from several informants.</p><button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView('build')}>Build a network</button></div>
       <div><h3>Generate</h3><p>Create a synthetic organization or community with planted structure, to learn the tool or to test what the measures recover.</p><button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView('generate')}>Generate a network</button></div>
