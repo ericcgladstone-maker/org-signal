@@ -164,11 +164,13 @@ function classMajors() {
   ];
   const nodes = [];
   majors.forEach(([gid, , people], g) => {
-    const cx = [-260, 260, 0][g], cy = [-110, -110, 190][g];
-    people.forEach(([id, label], i) => nodes.push(node(id, label, cx + [-60, 60, -60, 60][i], cy + [-55, -55, 55, 55][i], gid)));
+    // Spaced so names never collide at the zoom a laptop canvas allows.
+    const cx = [-340, 340, 0][g], cy = [-120, -120, 170][g];
+    people.forEach(([id, label], i) => nodes.push(node(id, label, cx + [-90, 90, -90, 90][i], cy + [-55, -55, 55, 55][i], gid)));
   });
-  // An isolate: a Sociology transfer student with no friendships in the class yet.
-  nodes.push(node('nora', 'Nora Quinn', 300, 245, 'soc'));
+  // An isolate: a Sociology transfer student with no friendships in the class yet,
+  // beside her major's group.
+  nodes.push(node('nora', 'Nora Quinn', 250, 225, 'soc'));
   return {
     groupKey: 'major',
     groups: majors.map(([id, name]) => ({ id, name })),
