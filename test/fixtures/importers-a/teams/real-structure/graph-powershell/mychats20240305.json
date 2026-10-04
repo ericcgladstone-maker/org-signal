@@ -1,0 +1,219 @@
+[
+  {
+    "Attachments": [],
+    "Body": {
+      "Content": "<p>Thanks <at id=\"0\">Ben Okafor</at></p>",
+      "ContentType": "html",
+      "AdditionalProperties": {}
+    },
+    "ChannelIdentity": null,
+    "ChatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+    "CreatedDateTime": "2024-03-04T11:20:34.567Z",
+    "DeletedDateTime": null,
+    "Etag": "1709551234567",
+    "EventDetail": {
+      "AdditionalProperties": {}
+    },
+    "From": {
+      "Application": null,
+      "Device": null,
+      "User": {
+        "DisplayName": "Ana Ruiz",
+        "Id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+        "UserIdentityType": "aadUser",
+        "AdditionalProperties": {
+          "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+        }
+      },
+      "AdditionalProperties": {}
+    },
+    "HostedContents": null,
+    "Id": "1709551234567",
+    "Importance": "normal",
+    "LastEditedDateTime": null,
+    "LastModifiedDateTime": "2024-03-04T11:20:34.567Z",
+    "Locale": "en-us",
+    "Mentions": [
+      {
+        "Id": 0,
+        "MentionText": "Ben Okafor",
+        "Mentioned": {
+          "Application": null,
+          "Conversation": null,
+          "Device": null,
+          "Tag": null,
+          "User": {
+            "DisplayName": "Ben Okafor",
+            "Id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+            "UserIdentityType": "aadUser",
+            "AdditionalProperties": {}
+          },
+          "AdditionalProperties": {}
+        },
+        "AdditionalProperties": {}
+      }
+    ],
+    "MessageHistory": [],
+    "MessageType": "message",
+    "OnBehalfOf": null,
+    "PolicyViolation": null,
+    "Reactions": [
+      {
+        "CreatedDateTime": "2024-03-04T11:25:02.1Z",
+        "DisplayName": "Like",
+        "ReactionContentUrl": null,
+        "ReactionType": "like",
+        "User": {
+          "Application": null,
+          "Device": null,
+          "User": {
+            "DisplayName": null,
+            "Id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+            "UserIdentityType": "aadUser",
+            "AdditionalProperties": {}
+          },
+          "AdditionalProperties": {}
+        },
+        "AdditionalProperties": {}
+      }
+    ],
+    "Replies": null,
+    "ReplyToId": null,
+    "Subject": null,
+    "Summary": null,
+    "WebUrl": null,
+    "AdditionalProperties": {}
+  },
+  {
+    "Attachments": [],
+    "Body": {
+      "Content": "<p>Merged</p>",
+      "ContentType": "html",
+      "AdditionalProperties": {}
+    },
+    "ChannelIdentity": null,
+    "ChatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+    "CreatedDateTime": "2024-03-04T11:00:00Z",
+    "DeletedDateTime": null,
+    "Etag": "1709550000000",
+    "EventDetail": {
+      "AdditionalProperties": {}
+    },
+    "From": {
+      "Application": null,
+      "Device": null,
+      "User": {
+        "DisplayName": "Ben Okafor",
+        "Id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+        "UserIdentityType": "aadUser",
+        "AdditionalProperties": {
+          "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+        }
+      },
+      "AdditionalProperties": {}
+    },
+    "HostedContents": null,
+    "Id": "1709550000000",
+    "Importance": "normal",
+    "LastEditedDateTime": null,
+    "LastModifiedDateTime": "2024-03-04T11:00:00Z",
+    "Locale": "en-us",
+    "Mentions": [],
+    "MessageHistory": [],
+    "MessageType": "message",
+    "OnBehalfOf": null,
+    "PolicyViolation": null,
+    "Reactions": [],
+    "Replies": null,
+    "ReplyToId": null,
+    "Subject": null,
+    "Summary": null,
+    "WebUrl": null,
+    "AdditionalProperties": {}
+  },
+  {
+    "Attachments": [],
+    "Body": {
+      "Content": "<p>Morning!</p>",
+      "ContentType": "html",
+      "AdditionalProperties": {}
+    },
+    "ChannelIdentity": null,
+    "ChatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+    "CreatedDateTime": "2024-03-04T10:00:00Z",
+    "DeletedDateTime": null,
+    "Etag": "1709546400000",
+    "EventDetail": {
+      "AdditionalProperties": {}
+    },
+    "From": {
+      "Application": null,
+      "Device": null,
+      "User": {
+        "DisplayName": "Chen Li",
+        "Id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "UserIdentityType": "aadUser",
+        "AdditionalProperties": {
+          "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+        }
+      },
+      "AdditionalProperties": {}
+    },
+    "HostedContents": null,
+    "Id": "1709546400000",
+    "Importance": "normal",
+    "LastEditedDateTime": null,
+    "LastModifiedDateTime": "2024-03-04T10:00:00Z",
+    "Locale": "en-us",
+    "Mentions": [],
+    "MessageHistory": [],
+    "MessageType": "message",
+    "OnBehalfOf": null,
+    "PolicyViolation": null,
+    "Reactions": [],
+    "Replies": null,
+    "ReplyToId": null,
+    "Subject": null,
+    "Summary": null,
+    "WebUrl": null,
+    "AdditionalProperties": {}
+  },
+  {
+    "Attachments": [],
+    "Body": {
+      "Content": "<systemEventMessage/>",
+      "ContentType": "html",
+      "AdditionalProperties": {}
+    },
+    "ChannelIdentity": null,
+    "ChatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+    "CreatedDateTime": "2024-03-02T09:00:00Z",
+    "DeletedDateTime": null,
+    "Etag": "1709370000000",
+    "EventDetail": {
+      "AdditionalProperties": {
+        "@odata.type": "#microsoft.graph.chatRenamedEventMessageDetail",
+        "chatDisplayName": "Launch crew"
+      }
+    },
+    "From": null,
+    "HostedContents": null,
+    "Id": "1709370000000",
+    "Importance": "normal",
+    "LastEditedDateTime": null,
+    "LastModifiedDateTime": "2024-03-02T09:00:00Z",
+    "Locale": "en-us",
+    "Mentions": [],
+    "MessageHistory": [],
+    "MessageType": "systemEventMessage",
+    "OnBehalfOf": null,
+    "PolicyViolation": null,
+    "Reactions": [],
+    "Replies": null,
+    "ReplyToId": null,
+    "Subject": null,
+    "Summary": null,
+    "WebUrl": null,
+    "AdditionalProperties": {}
+  }
+]

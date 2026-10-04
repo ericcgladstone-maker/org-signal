@@ -1,0 +1,33 @@
+{
+    "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#chats('19%3Ameeting_ZmljdGlvbmFsLW1lZXRpbmctMDAwMS1hYmNkZWY0NTY3ODk%40thread.v2')/messages",
+    "value": [
+        {
+            "id": "1709733900000",
+            "createdDateTime": "2024-03-06T14:05:00Z",
+            "from": {
+                "user": {
+                    "id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                    "displayName": "Ben Okafor"
+                }
+            },
+            "body": {
+                "contentType": "html",
+                "content": "<p>Hello team, just checking in!</p>"
+            }
+        },
+        {
+            "id": "1709734500000",
+            "createdDateTime": "2024-03-06T14:15:00Z",
+            "from": {
+                "user": {
+                    "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                    "displayName": "Ana Ruiz"
+                }
+            },
+            "body": {
+                "contentType": "html",
+                "content": "<p>Meeting at 3 PM today.</p>"
+            }
+        }
+    ]
+}

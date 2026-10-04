@@ -1,0 +1,196 @@
+{
+    "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#Collection(microsoft.graph.chatMessage)",
+    "@odata.deltaLink": "https://graph.microsoft.com/v1.0/chats/19:meeting_ZmljdGlvbmFsLW1lZXRpbmctMDAwMS1hYmNkZWY0NTY3ODk@thread.v2/messages/delta?$deltatoken=ZmljdGlvbmFsLWRlbHRh",
+    "value": [
+        {
+            "id": "1709733300000",
+            "replyToId": null,
+            "etag": "1709733300000",
+            "messageType": "systemEventMessage",
+            "createdDateTime": "2024-03-06T13:55:00Z",
+            "lastModifiedDateTime": "2024-03-06T13:55:00Z",
+            "lastEditedDateTime": null,
+            "deletedDateTime": null,
+            "subject": null,
+            "summary": null,
+            "chatId": "19:meeting_ZmljdGlvbmFsLW1lZXRpbmctMDAwMS1hYmNkZWY0NTY3ODk@thread.v2",
+            "importance": "normal",
+            "locale": "en-us",
+            "webUrl": null,
+            "channelIdentity": null,
+            "policyViolation": null,
+            "eventDetail": {
+                "@odata.type": "#microsoft.graph.callStartedEventMessageDetail",
+                "callId": "f1e2d3c4-b5a6-4978-8a9b-0c1d2e3f4a5b",
+                "callEventType": "meeting",
+                "initiator": {
+                    "application": null,
+                    "device": null,
+                    "user": {
+                        "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                        "displayName": null,
+                        "userIdentityType": "aadUser"
+                    }
+                }
+            },
+            "from": null,
+            "body": {
+                "contentType": "html",
+                "content": "<systemEventMessage/>"
+            },
+            "attachments": [],
+            "mentions": [],
+            "reactions": [],
+            "messageHistory": []
+        },
+        {
+            "id": "1709733600000",
+            "replyToId": null,
+            "etag": "1709733600000",
+            "messageType": "message",
+            "createdDateTime": "2024-03-06T14:00:00Z",
+            "lastModifiedDateTime": "2024-03-06T14:00:00Z",
+            "lastEditedDateTime": null,
+            "deletedDateTime": null,
+            "subject": null,
+            "summary": null,
+            "chatId": "19:meeting_ZmljdGlvbmFsLW1lZXRpbmctMDAwMS1hYmNkZWY0NTY3ODk@thread.v2",
+            "importance": "normal",
+            "locale": "en-us",
+            "webUrl": null,
+            "channelIdentity": null,
+            "policyViolation": null,
+            "eventDetail": null,
+            "from": {
+                "application": null,
+                "device": null,
+                "user": {
+                    "id": "5f4e3d2c1b0a99887766554433221100",
+                    "displayName": "Alex (Guest)",
+                    "userIdentityType": "anonymousGuest"
+                }
+            },
+            "body": {
+                "contentType": "text",
+                "content": "Hello from the lobby"
+            },
+            "attachments": [],
+            "mentions": [],
+            "reactions": [],
+            "messageHistory": []
+        },
+        {
+            "id": "1709733900000",
+            "replyToId": null,
+            "etag": "1709733900000",
+            "messageType": "message",
+            "createdDateTime": "2024-03-06T14:05:00Z",
+            "lastModifiedDateTime": "2024-03-06T14:05:00Z",
+            "lastEditedDateTime": null,
+            "deletedDateTime": null,
+            "subject": null,
+            "summary": null,
+            "chatId": "19:meeting_ZmljdGlvbmFsLW1lZXRpbmctMDAwMS1hYmNkZWY0NTY3ODk@thread.v2",
+            "importance": "normal",
+            "locale": "en-us",
+            "webUrl": null,
+            "channelIdentity": null,
+            "policyViolation": null,
+            "eventDetail": null,
+            "from": {
+                "application": null,
+                "device": null,
+                "user": {
+                    "id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                    "displayName": "Ben Okafor",
+                    "userIdentityType": "aadUser"
+                }
+            },
+            "body": {
+                "contentType": "html",
+                "content": "<p>Notes: <a href=\"https://contoso.sharepoint.com/notes\">here</a></p>"
+            },
+            "attachments": [],
+            "mentions": [],
+            "reactions": [],
+            "messageHistory": []
+        },
+        {
+            "id": "1709737260000",
+            "replyToId": null,
+            "etag": "1709737260000",
+            "messageType": "systemEventMessage",
+            "createdDateTime": "2024-03-06T15:01:00Z",
+            "lastModifiedDateTime": "2024-03-06T15:01:00Z",
+            "lastEditedDateTime": null,
+            "deletedDateTime": null,
+            "subject": null,
+            "summary": null,
+            "chatId": "19:meeting_ZmljdGlvbmFsLW1lZXRpbmctMDAwMS1hYmNkZWY0NTY3ODk@thread.v2",
+            "importance": "normal",
+            "locale": "en-us",
+            "webUrl": null,
+            "channelIdentity": null,
+            "policyViolation": null,
+            "eventDetail": {
+                "@odata.type": "#microsoft.graph.callEndedEventMessageDetail",
+                "callId": "f1e2d3c4-b5a6-4978-8a9b-0c1d2e3f4a5b",
+                "callDuration": "PT1H6M",
+                "callEventType": "meeting",
+                "callParticipants": [
+                    {
+                        "participant": {
+                            "application": null,
+                            "device": null,
+                            "user": {
+                                "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                                "displayName": null,
+                                "userIdentityType": "aadUser"
+                            }
+                        }
+                    },
+                    {
+                        "participant": {
+                            "application": null,
+                            "device": null,
+                            "user": {
+                                "id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                                "displayName": null,
+                                "userIdentityType": "aadUser"
+                            }
+                        }
+                    },
+                    {
+                        "participant": {
+                            "application": null,
+                            "device": null,
+                            "user": {
+                                "id": "5f4e3d2c1b0a99887766554433221100",
+                                "displayName": "Alex (Guest)",
+                                "userIdentityType": "anonymousGuest"
+                            }
+                        }
+                    }
+                ],
+                "initiator": {
+                    "application": null,
+                    "device": null,
+                    "user": {
+                        "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                        "displayName": null,
+                        "userIdentityType": "aadUser"
+                    }
+                }
+            },
+            "from": null,
+            "body": {
+                "contentType": "html",
+                "content": "<systemEventMessage/>"
+            },
+            "attachments": [],
+            "mentions": [],
+            "reactions": [],
+            "messageHistory": []
+        }
+    ]
+}

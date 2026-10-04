@@ -60,9 +60,11 @@ test('teams: Graph JSON in every container shape', async () => {
   assert.equal(node(ds, ANA).attrs.email, 'ana.ruiz@example.org'); // from the members file
   assert.equal(node(ds, CHEN).attrs.external, true);                // federatedUser
 
-  // 1:1 chat without a members file: members inferred from senders.
+  // 1:1 chat without a members file: members read from its id (19:<user>_<user>@unq.gbl.spaces);
+  // the meeting chat's members are inferred from senders.
   assert.deepEqual(byKey(`${ONE}:1709552000000`).targets, [[BEN, 'dm']]);
-  assert.equal(warning(source, 'teams-members-inferred').count, 2);
+  assert.equal(source.counts['members-from-chat-id'], 1);
+  assert.equal(warning(source, 'teams-members-inferred').count, 1);
 
   // Channel replies: replyToId -> parent and reply target; absent root -> no target.
   const root = byKey(`${CHAN}:1709560000000`);

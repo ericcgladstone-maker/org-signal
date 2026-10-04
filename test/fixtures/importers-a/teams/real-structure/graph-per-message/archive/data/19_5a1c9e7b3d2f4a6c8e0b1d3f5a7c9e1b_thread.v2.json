@@ -1,0 +1,73 @@
+{
+    "id": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+    "topic": "Launch crew",
+    "createdDateTime": "2024-03-02T09:00:00.120Z",
+    "lastUpdatedDateTime": "2024-03-04T11:20:34.567Z",
+    "chatType": "group",
+    "webUrl": null,
+    "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff",
+    "onlineMeetingInfo": null,
+    "viewpoint": {
+        "isHidden": false,
+        "lastMessageReadDateTime": "2024-03-04T11:20:34.567Z"
+    },
+    "isHiddenForAllMembers": false,
+    "members": [
+        {
+            "@odata.type": "#microsoft.graph.aadUserConversationMember",
+            "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6NWExYzllN2IzZDJmNGE2YzhlMGIxZDNmNWE3YzllMWJAdGhyZWFkLnYyIzNjOWYxYTJlLTViN2QtNGU4YS05YzFmLTJkM2U0ZjVhNmI3Yw==",
+            "roles": [
+                "owner"
+            ],
+            "displayName": "Ana Ruiz",
+            "visibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+            "userId": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+            "email": "ana.ruiz@contoso.example",
+            "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+        },
+        {
+            "@odata.type": "#microsoft.graph.aadUserConversationMember",
+            "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6NWExYzllN2IzZDJmNGE2YzhlMGIxZDNmNWE3YzllMWJAdGhyZWFkLnYyIzdkMmU0ZjZhLThiMWMtNGQzZS1hNWY3LTliMGMxZDJlM2Y0YQ==",
+            "roles": [
+                "owner"
+            ],
+            "displayName": "Ben Okafor",
+            "visibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+            "userId": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+            "email": "ben.okafor@contoso.example",
+            "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+        },
+        {
+            "@odata.type": "#microsoft.graph.aadUserConversationMember",
+            "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6NWExYzllN2IzZDJmNGE2YzhlMGIxZDNmNWE3YzllMWJAdGhyZWFkLnYyI2ExYjJjM2Q0LWU1ZjYtNGE3Yi04YzlkLTBlMWYyYTNiNGM1ZA==",
+            "roles": [
+                "owner"
+            ],
+            "displayName": "Chen Li",
+            "visibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+            "userId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+            "email": "chen.li@contoso.example",
+            "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+        }
+    ],
+    "lastMessagePreview": {
+        "id": "1709551234567",
+        "createdDateTime": "2024-03-04T11:20:34.567Z",
+        "isDeleted": false,
+        "messageType": "message",
+        "eventDetail": null,
+        "body": {
+            "contentType": "text",
+            "content": "Thanks Ben"
+        },
+        "from": {
+            "application": null,
+            "device": null,
+            "user": {
+                "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                "displayName": "Ana Ruiz",
+                "userIdentityType": "aadUser"
+            }
+        }
+    }
+}

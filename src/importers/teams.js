@@ -152,9 +152,18 @@ export async function* tarEntries(stream, want = () => true) {
 
 // ---- detection ------------------------------------------------------------------
 
+// Graph JSON as the REST API returns it (camelCase), or as Microsoft Graph
+// PowerShell writes SDK objects with ConvertTo-Json (PascalCase).
 const looksGraph = s => /"messageType"\s*:/.test(s) && /"createdDateTime"\s*:/.test(s) && /"from"\s*:/.test(s)
-  || /"@odata\.context"\s*:\s*"[^"]*(\/messages|getAllMessages)/.test(s);
-const looksChats = s => /"chatType"\s*:/.test(s);
+  || /"MessageType"\s*:/.test(s) && /"CreatedDateTime"\s*:/.test(s) && /"From"\s*:/.test(s)
+  || /"@odata\.context"\s*:\s*"[^"]*(\/messages|getAllMessages|#Collection\((microsoft\.graph\.)?chatMessage\))/.test(s);
+const looksChats = s => /"[cC]hatType"\s*:/.test(s);
+// The channel list response (GET /teams/{id}/channels) has no @odata.context in
+// Microsoft's examples; membershipType is what marks it.
+const looksChannels = s => /"membershipType"\s*:/.test(s);
+// Purview items report: CamelCase names (review set docs) or display names
+// with spaces (the new eDiscovery experience): "Conversation ID", "Participants".
+const purviewHeader = first => { const h = first.toLowerCase().replace(/["\s_]/g, ''); return /conversationid/.test(h) && /participants/.test(h); };
 const looksMembers = s => /conversationMember|"@odata\.context"\s*:\s*"[^"]*\/members/.test(s) || (/"userId"\s*:/.test(s) && /"roles"\s*:/.test(s));
 const looksFree = s => /"userId"\s*:/.test(s) && /"exportDate"\s*:/.test(s) || /"MessageList"\s*:/.test(s);
 
@@ -163,6 +172,8 @@ async function detect(fs) {
   const reasons = new Set();
   let score = 0;
   let checked = 0;
+  const unchecked = [], graphDirs = new Set();
+  const dirOf = rel => rel.slice(0, rel.lastIndexOf('/') + 1);
   for (const e of fs.entries) {
     const rel = e.rel;
     if (/\.tar$/i.test(rel)) {
@@ -174,18 +185,30 @@ async function detect(fs) {
     if (/(^|\/)items(_[^/]*)?\.csv$/i.test(rel)) {
       const head = await peek(e, 4096);
       const first = head.replace(/^﻿/, '').split(/\r?\n/)[0];
-      if (/ConversationId/i.test(first) && /Participants/i.test(first)) { files.push(rel); score = Math.max(score, 0.8); reasons.add('Purview eDiscovery Items.csv (Teams)'); }
+      if (purviewHeader(first)) { files.push(rel); score = Math.max(score, 0.8); reasons.add('Purview eDiscovery Items.csv (Teams)'); }
       continue;
     }
     if (!/\.(json|ndjson|jsonl)$/i.test(rel)) continue;
     if (/\/\d{4}-\d{2}-\d{2}\.json$/.test(rel)) continue; // Slack day files: never Teams, and there can be thousands
-    if (checked++ > 400) continue; // keep detection cheap on huge drops
+    // Keep detection cheap on huge drops: only the first 400 JSON files are
+    // opened. One-file-per-message dumps (archive/data/<chat>/msg_<id>.json)
+    // easily exceed that, so the rest are claimed below when they sit in a
+    // folder where Graph messages were found.
+    if (checked++ > 400) { unchecked.push(e); continue; }
     const head = await peek(e, 4096);
     if (/(^|\/)messages\.json$/i.test(rel) && looksFree(head)) { files.push(rel); score = Math.max(score, 0.85); reasons.add('Teams Free export (messages.json)'); }
-    else if (looksGraph(head)) { files.push(rel); score = Math.max(score, 0.9); reasons.add('Microsoft Graph Teams messages'); }
-    else if (looksChats(head) || (/(^|\/)members\//i.test(rel) && looksMembers(head))) files.push(rel);
+    else if (looksGraph(head)) { files.push(rel); graphDirs.add(dirOf(rel)); score = Math.max(score, 0.9); reasons.add('Microsoft Graph Teams messages'); }
+    else if (looksChats(head) || looksChannels(head) || (/(^|\/)members\//i.test(rel) && looksMembers(head))) files.push(rel);
   }
   if (!score) return { score: 0, reason: '' };
+  // Past the cap: one file is opened per folder not seen yet.
+  const dirLooks = new Map();
+  for (const e of unchecked) {
+    const d = dirOf(e.rel);
+    if (/(^|\/)messages\.json$/i.test(e.rel)) continue;
+    if (!graphDirs.has(d) && !dirLooks.has(d)) dirLooks.set(d, dirLooks.size < 2000 && looksGraph(await peek(e, 4096)));
+    if (graphDirs.has(d) || dirLooks.get(d)) files.push(e.rel);
+  }
   return { score, reason: [...reasons].join('; '), files };
 }
 
@@ -193,27 +216,84 @@ async function detect(fs) {
 
 async function readJsonish(entry) {
   const text = await entry.text();
-  try { return { data: JSON.parse(text), ndjson: false }; }
+  try { return { data: normalizeKeys(JSON.parse(text)), ndjson: false }; }
   catch {
     const out = [];
     for (const line of text.split(/\r?\n/)) { const l = line.trim(); if (!l) continue; try { out.push(JSON.parse(l)); } catch { return { data: null }; } }
-    return { data: out, ndjson: true };
+    return { data: normalizeKeys(out), ndjson: true };
   }
 }
 
-// Flatten the accepted container shapes into a list of items plus any
-// @odata.context strings seen (they name the chat for members pages).
+// Microsoft Graph PowerShell (Get-MgChatMessage ... | ConvertTo-Json) writes the
+// SDK's objects: PascalCase names, derived-type fields (userId, email of a
+// member) in an AdditionalProperties bag, and depending on the PowerShell
+// version, enums as numbers and dates as "/Date(ms)/". [UNVERIFIED against a
+// real dump; derived from the SDK's model shape.] Converted back to the REST shape.
+const ENUMS = {
+  messageType: ['message', 'chatEvent', 'typing', 'unknownFutureValue', 'systemEventMessage'],
+  chatType: ['oneOnOne', 'group', 'meeting', 'unknownFutureValue'],
+  membershipType: ['standard', 'private', 'unknownFutureValue', 'shared'],
+  userIdentityType: ['aadUser', 'onPremiseAadUser', 'anonymousGuest', 'federatedUser', 'personalMicrosoftAccountUser', 'skypeUser', 'phoneUser', 'unknownFutureValue', 'emailUser', 'azureCommunicationServicesUser'],
+};
+function isPascal(x, depth = 0) {
+  if (Array.isArray(x)) return x.length > 0 && depth < 3 && isPascal(x[0], depth + 1);
+  return !!x && typeof x === 'object' && 'Id' in x && ('MessageType' in x || 'ChatType' in x || 'ChatId' in x || 'MembershipType' in x);
+}
+function camelize(x, key) {
+  if (Array.isArray(x)) return x.map(v => camelize(v));
+  if (x && typeof x === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(x)) {
+      if (k === 'AdditionalProperties') continue;
+      const ck = k[0] === '@' ? k : k[0].toLowerCase() + k.slice(1);
+      out[ck] = camelize(v, ck);
+    }
+    const extra = x.AdditionalProperties;
+    if (extra && typeof extra === 'object') for (const [k, v] of Object.entries(extra)) if (out[k] == null) out[k] = camelize(v, k);
+    return out;
+  }
+  if (typeof x === 'number' && ENUMS[key]) return ENUMS[key][x] ?? String(x);
+  if (typeof x === 'number' && key === 'contentType') return x === 1 ? 'html' : 'text';
+  if (typeof x === 'string') { const m = /^\/Date\((-?\d+)(?:[+-]\d{4})?\)\/$/.exec(x); if (m) return new Date(+m[1]).toISOString(); }
+  return x;
+}
+function normalizeKeys(data) { return isPascal(data) ? camelize(data) : data; }
+
+// Flatten the accepted container shapes into items, each with the
+// @odata.context of the page it came from (a trimmed or $select-ed message may
+// name its chat or channel only there), plus every context seen (they name the
+// chat for members pages). Channel roots fetched with $expand=replies carry
+// their replies nested in `replies`; those are items too.
 function flatten(data) {
   const items = [], contexts = [];
-  const visit = (x, depth) => {
-    if (!x || typeof x !== 'object' || depth > 3) return;
-    if (Array.isArray(x)) { for (const y of x) visit(y, depth + 1); return; }
-    if (typeof x['@odata.context'] === 'string') contexts.push(x['@odata.context']);
-    if (Array.isArray(x.value)) { for (const y of x.value) items.push(y); return; }
-    items.push(x);
+  const push = (it, ctx) => {
+    if (!it || typeof it !== 'object' || Array.isArray(it)) return;
+    items.push({ it, ctx });
+    if (Array.isArray(it.replies)) for (const r of it.replies) push(r, ctx);
   };
-  visit(data, 0);
-  return { items: items.filter(x => x && typeof x === 'object'), contexts };
+  const visit = (x, depth, ctx) => {
+    if (!x || typeof x !== 'object' || depth > 3) return;
+    if (Array.isArray(x)) { for (const y of x) visit(y, depth + 1, ctx); return; }
+    const c = typeof x['@odata.context'] === 'string' ? x['@odata.context'] : ctx;
+    if (c && c !== ctx) contexts.push(c);
+    if (Array.isArray(x.value)) { for (const y of x.value) push(y, c); return; }
+    push(x, c);
+  };
+  visit(data, 0, null);
+  return { items, contexts };
+}
+
+// Conversation named by a messages page's @odata.context:
+//   ...$metadata#chats('19%3A...%40thread.v2')/messages
+//   ...$metadata#teams('<team>')/channels('19%3A...%40thread.tacv2')/messages('<root>')/replies
+function conversationFromContext(ctx) {
+  if (!ctx) return null;
+  const dec = s => { try { return decodeURIComponent(s); } catch { return s; } };
+  let m = /chats\('([^']+)'\)\/messages/.exec(ctx);
+  if (m) return { chatId: dec(m[1]) };
+  m = /teams\('([^']+)'\)\/channels\('([^']+)'\)\/messages(?:\('([^']+)'\)\/replies)?/.exec(ctx);
+  if (m) return { channelIdentity: { teamId: dec(m[1]), channelId: dec(m[2]) }, replyToId: m[3] ? dec(m[3]) : null };
+  return null;
 }
 
 function chatIdFromContext(ctxs) {
@@ -230,7 +310,7 @@ async function importGraph(fs, entries, { builder, options, progress, signal }) 
   const members = new Map();   // chatId -> [{ userId, displayName, email }]
   const channels = new Map();  // teamId/channelId -> { membershipType, displayName }
   let odataAll = false;
-  let n = 0;
+  let n = 0, unusedFiles = 0;
   for (const e of entries) {
     aborted(signal);
     progress(0.1 + 0.4 * (n++ / entries.length), `Teams: reading ${e.rel}`);
@@ -240,18 +320,26 @@ async function importGraph(fs, entries, { builder, options, progress, signal }) 
     if (contexts.some(c => /getAllMessages/.test(c))) odataAll = true;
     const memberChat = chatIdFromContext(contexts.filter(c => /\/members/.test(c)))
       ?? (/(^|\/)members\/([^/]+)\.json$/i.exec(e.rel) ? decodeURIComponent(/(^|\/)members\/([^/]+)\.json$/i.exec(e.rel)[2]) : null);
-    for (const it of items) {
-      if ('messageType' in it || ('createdDateTime' in it && 'from' in it && 'body' in it)) messages.push(it);
-      else if ('chatType' in it) {
-        chats.set(it.id, it);
+    let used = 0;
+    for (const { it, ctx } of items) {
+      if ('messageType' in it || ('createdDateTime' in it && 'from' in it && 'body' in it)) {
+        if (!it.chatId && !it.channelIdentity) {
+          const conv = conversationFromContext(ctx);
+          if (conv) { Object.assign(it, conv.chatId ? { chatId: conv.chatId } : { channelIdentity: conv.channelIdentity }); if (conv.replyToId && !it.replyToId) it.replyToId = conv.replyToId; builder.stat('conversation-from-page-context'); }
+        }
+        messages.push(it); used++;
+      } else if ('chatType' in it) {
+        chats.set(it.id, it); used++;
         if (Array.isArray(it.members)) members.set(it.id, it.members); // $expand=members
-      } else if ('membershipType' in it && it.id) channels.set(it.id, it);
+      } else if ('membershipType' in it && it.id) { channels.set(it.id, it); used++; }
       else if (('userId' in it || /conversationMember/.test(it['@odata.type'] || '')) && memberChat) {
         if (!members.has(memberChat)) members.set(memberChat, []);
-        members.get(memberChat).push(it);
+        members.get(memberChat).push(it); used++;
       }
     }
+    if (!used) unusedFiles++;
   }
+  if (unusedFiles) builder.warn('teams-file-not-recognised', 'Some JSON files next to the Teams data hold no messages, chats, members or channels (image lists, settings, other tools\' metadata) and were not used.', unusedFiles);
 
   const chatOnly = messages.every(m => !m.channelIdentity);
   // A delegated /me/chats dump is one person's chats (ego view); the admin
@@ -313,6 +401,9 @@ async function importGraph(fs, entries, { builder, options, progress, signal }) 
     if (m.chatId) {
       const chat = chats.get(m.chatId);
       let mem = memberIdx.get(m.chatId);
+      // A 1:1 chat id names both members: 19:<userId>_<userId>@unq.gbl.spaces.
+      const pair = /^19:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})@unq\.gbl\.spaces$/i.exec(m.chatId);
+      if (!mem && pair) { mem = [userNode({ id: pair[1] }), userNode({ id: pair[2] })]; memberIdx.set(m.chatId, mem); builder.stat('members-from-chat-id'); }
       if (!mem) { mem = [...(sendersSeen.get(m.chatId) || [])]; inferredMembers++; }
       let type = chat?.chatType;
       if (!type) {
@@ -352,6 +443,21 @@ async function importGraph(fs, entries, { builder, options, progress, signal }) 
       const pa = author.get(x.cid + '|' + m.replyToId);
       if (pa !== undefined && pa !== x.actor) add(pa, 'reply');
       else builder.warn('teams-reply-parent-absent', 'Some channel replies point to a root post that is not in the data, so no reply tie was drawn for them (Graph replies do not name the root author).');
+    }
+    // Chats have no replyToId; a reply is a quote: an attachment of type
+    // messageReference whose content (a JSON string) names the quoted message
+    // and its sender. In a 1:1 chat the reply only repeats the dm tie.
+    for (const a of m.attachments || []) {
+      if (a?.contentType !== 'messageReference') continue;
+      let ref = null;
+      try { ref = typeof a.content === 'string' ? JSON.parse(a.content) : a.content; } catch { ref = null; }
+      const qid = ref?.messageId || a.id;
+      if (!qid) continue;
+      builder.stat('quoted-replies');
+      if (!parentKey) parentKey = `teams:${x.cid}:${qid}`;
+      const su = ref?.messageSender?.user;
+      const pa = author.get(x.cid + '|' + qid) ?? (su?.id ? userNode(su) : undefined);
+      if (pa !== undefined && !oneOnOne) add(pa, 'reply');
     }
     for (const mn of m.mentions || []) {
       const t = mn?.mentioned;
@@ -398,27 +504,42 @@ function mri(s) {
   return i >= 0 && /^https?:/i.test(s) ? s.slice(i + 1) : s;
 }
 
+// properties.emotions: an array, or the same array as a JSON string, of
+// { key: 'like' | 'heart' | ..., users: [{ mri, time (epoch ms), value }] }.
+function freeEmotions(props) {
+  let e = props?.emotions;
+  if (typeof e === 'string') { try { e = JSON.parse(e); } catch { e = null; } }
+  return Array.isArray(e) ? e.filter(x => x && Array.isArray(x.users)) : [];
+}
+
 function importFree(doc, { builder }) {
   const owner = mri(doc.userId);
   const ownerIdx = owner ? builder.node('teams:' + owner, { platformIds: { teams: owner }, attrs: { is_ego: true } }) : -1;
-  let inferred = 0;
+  let inferred = 0, special = 0;
   const seen = new Set();
   for (const conv of doc.conversations || []) {
     const id = conv.id;
     if (!id) continue;
-    const direct = /^8:/.test(id);
-    // threadProperties.members is a JSON string, not an array.
+    const list = conv.MessageList || [];
+    // 48: ids are the account's own lists (48:calllogs, 48:notes, 48:drafts...),
+    // not conversations with anyone.
+    if (/^48:/.test(id)) { special += list.length; builder.stat('special-lists-skipped'); continue; }
+    // 1:1 conversations are keyed by the partner's MRI: 8: people, 28: bots.
+    const direct = /^(8|28):/.test(id);
+    // threadProperties.members is a JSON string, not an array; some exports
+    // have an array of { MemberMri } objects instead.
     let memberIds = [];
     const tm = conv.threadProperties?.members;
     if (typeof tm === 'string') { try { memberIds = JSON.parse(tm); } catch { memberIds = []; } }
     else if (Array.isArray(tm)) memberIds = tm;
+    memberIds = memberIds.map(x => (x && typeof x === 'object' ? x.MemberMri ?? x.mri ?? x.id : x));
     if (direct) memberIds = [owner, id]; // a 1:1 conversation id is the partner's MRI
-    const list = conv.MessageList || [];
-    if (!memberIds.length) {
+    if (!memberIds.filter(Boolean).length) {
       memberIds = [...new Set([owner, ...list.map(m => mri(m.from))].filter(Boolean))];
       inferred++;
     }
-    const memIdx = [...new Set(memberIds.map(mri).filter(Boolean))].map(k => builder.node('teams:' + k, { platformIds: { teams: k } }));
+    const nodeFor = (k, name) => builder.node('teams:' + k, { label: name || undefined, platformIds: { teams: k }, isBot: /^28:/.test(k) || undefined, attrs: { name: name || undefined } });
+    const memIdx = [...new Set(memberIds.map(mri).filter(Boolean))].map(k => nodeFor(k, k === id && direct ? conv.displayName : null));
     const ci = builder.context('teams:' + id, { name: conv.displayName || conv.threadProperties?.topic || (direct ? 'Teams 1:1 chat' : 'Teams group chat'), kind: direct ? 'dm' : 'group_dm', visibility: direct ? 'direct' : 'group', medium: 'teams', members: memIdx });
     for (const m of list) {
       const k = id + '|' + m.id;
@@ -428,13 +549,43 @@ function importFree(doc, { builder }) {
       if (!/^(RichText|Text)/.test(type)) { builder.stat('system-events-skipped'); continue; }
       const from = mri(m.from);
       if (!from) continue;
-      const actor = builder.node('teams:' + from, { label: m.displayName || undefined, platformIds: { teams: from }, attrs: { name: m.displayName || undefined } });
-      const targets = memIdx.filter(n => n !== actor).map(n => [n, 'dm']);
-      builder.event({ type: 'message', t: parseGraphTime(m.originalarrivaltime), actor, targets, context: ci, key: `teams:${id}:${m.id}`, text: /^RichText\/(Media|UriObject)/.test(type) ? null : htmlToText(m.content) || null });
+      const actor = nodeFor(from, m.displayName);
+      const used = new Set();
+      const targets = [];
+      const add = (n, r) => { if (n === actor || used.has(n + r)) return; used.add(n + r); targets.push([n, r]); };
+      for (const n of memIdx) add(n, 'dm');
+      const content = String(m.content ?? '');
+      // <quote author="8:x" messageid="..."> is a reply; <at id="8:x">Name</at> a
+      // mention. In a 1:1 chat both only repeat the dm tie.
+      let parentKey = null;
+      const qm = /<quote\b[^>]*>/i.exec(content);
+      if (qm) {
+        const qa = /\bauthor="([^"]+)"/.exec(qm[0])?.[1], qid = /\bmessageid="([^"]+)"/.exec(qm[0])?.[1];
+        if (qid) parentKey = `teams:${id}:${qid}`;
+        if (qa && !direct) add(nodeFor(qa, /\bauthorname="([^"]*)"/.exec(qm[0])?.[1]), 'reply');
+        builder.stat('quoted-replies');
+      }
+      if (!direct) for (const [, who] of content.matchAll(/<at\b[^>]*\bid="(\d+:[^"]+)"/gi)) add(nodeFor(who), 'mention');
+      if (m.properties?.deletetime) builder.stat('deleted-messages');
+      const key = `teams:${id}:${m.id}`;
+      // Quoted text repeats the earlier message; leave it out of this one's text.
+      const own = content.replace(/<quote\b[\s\S]*?<\/quote>/gi, ' ');
+      const t = parseGraphTime(m.originalarrivaltime);
+      builder.event({ type: 'message', t, actor, targets, context: ci, key, parentKey, text: /^RichText\/(Media|UriObject)/.test(type) ? null : htmlToText(own) || null });
       builder.stat('messages');
+      for (const em of freeEmotions(m.properties)) {
+        for (const u of em.users) {
+          const who = mri(u?.mri);
+          if (!who) continue;
+          const rt = Number(u.time);
+          builder.event({ type: 'reaction', t: Number.isFinite(rt) && rt > 0 ? rt : t, actor: nodeFor(who), targets: [[actor, 'subject']], context: ci, parentKey: key, text: em.key || null });
+          builder.stat('reactions');
+        }
+      }
     }
   }
   if (inferred) builder.warn('teams-members-inferred', 'Some group chats had no member list, so their members were inferred from who posted. People who only read are missing.', inferred);
+  if (special) builder.warn('teams-free-special-lists', 'The call log, notes and other lists of the account itself (conversation ids starting 48:) are not conversations with anyone and were left out.', special);
   return ownerIdx >= 0 ? 'teams:' + owner : null;
 }
 
@@ -462,15 +613,21 @@ const normName = s => s.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().
 
 async function importPurview(entry, { builder, options }) {
   const { records, headers } = rowsToObjects(parseCSV(await entryText(entry)).rows);
-  const col = (name) => headers.find(h => h.toLowerCase() === name.toLowerCase());
+  // Field names come as CamelCase (ConversationId, FileClass) or as display
+  // names (Conversation ID, File class, Item class): compare without case,
+  // spaces or underscores, and accept the documented aliases.
+  const squash = h => h.toLowerCase().replace(/[\s_]/g, '');
+  const col = (...names) => { for (const n of names) { const h = headers.find(x => squash(x) === squash(n)); if (h) return h; } return undefined; };
   const cConv = col('ConversationId'), cPart = col('Participants'), cDate = col('Date'), cType = col('ConversationType'),
-    cName = col('Conversation name'), cClass = col('FileClass'), cKind = col('MessageKind'), cChan = col('TeamsChannelName');
+    cName = col('Conversation name'), cClass = col('FileClass'), cKind = col('MessageKind'), cChan = col('TeamsChannelName', 'Channel Name', 'Teams channel'),
+    cItem = col('Item class', 'ItemClass', 'Message class');
   const seen = new Set();
   let nameOnly = 0, badDate = 0;
   for (const r of records) {
     // Items.csv also lists emails and documents; keep Teams conversations only.
     if (cClass && r[cClass] && !/conversation/i.test(r[cClass])) { builder.stat('non-teams-items-skipped'); continue; }
     if (cKind && r[cKind] && !/teams/i.test(r[cKind])) { builder.stat('non-teams-items-skipped'); continue; }
+    if (cItem && r[cItem] && !/SkypeTeams/i.test(r[cItem])) { builder.stat('non-teams-items-skipped'); continue; }
     const ppl = parseParticipants(r[cPart]);
     if (ppl.length < 1) { builder.stat('rows-without-participants'); continue; }
     const t = parseTimestamp(r[cDate], 'iso', 'UTC');

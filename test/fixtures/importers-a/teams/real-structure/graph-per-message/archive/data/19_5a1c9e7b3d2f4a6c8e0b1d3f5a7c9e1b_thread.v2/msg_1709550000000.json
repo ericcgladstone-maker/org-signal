@@ -1,0 +1,36 @@
+{
+    "id": "1709550000000",
+    "replyToId": null,
+    "etag": "1709550000000",
+    "messageType": "message",
+    "createdDateTime": "2024-03-04T11:00:00Z",
+    "lastModifiedDateTime": "2024-03-04T11:00:00Z",
+    "lastEditedDateTime": null,
+    "deletedDateTime": null,
+    "subject": null,
+    "summary": null,
+    "chatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+    "importance": "normal",
+    "locale": "en-us",
+    "webUrl": null,
+    "channelIdentity": null,
+    "policyViolation": null,
+    "eventDetail": null,
+    "from": {
+        "application": null,
+        "device": null,
+        "user": {
+            "id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+            "displayName": "Ben Okafor",
+            "userIdentityType": "aadUser"
+        }
+    },
+    "body": {
+        "contentType": "html",
+        "content": "<p><img src=\"https://graph.microsoft.com/v1.0/chats/19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2/messages/1709550000000/hostedContents/aWQ9ZmljdGlvbmFs/$value\"></p>"
+    },
+    "attachments": [],
+    "mentions": [],
+    "reactions": [],
+    "messageHistory": []
+}

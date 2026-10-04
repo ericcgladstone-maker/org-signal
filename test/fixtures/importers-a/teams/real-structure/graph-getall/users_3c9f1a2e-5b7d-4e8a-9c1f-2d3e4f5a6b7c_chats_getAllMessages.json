@@ -1,0 +1,80 @@
+{
+    "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#Collection(chatMessage)",
+    "@odata.count": 2,
+    "value": [
+        {
+            "@odata.type": "#microsoft.graph.chatMessage",
+            "id": "1710000000000",
+            "replyToId": null,
+            "etag": "1710000000000",
+            "messageType": "message",
+            "createdDateTime": "2024-03-09T16:00:00Z",
+            "lastModifiedDateTime": "2024-03-09T16:00:00Z",
+            "lastEditedDateTime": null,
+            "deletedDateTime": null,
+            "subject": null,
+            "summary": null,
+            "chatId": "19:3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c_7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a@unq.gbl.spaces",
+            "importance": "normal",
+            "locale": "en-us",
+            "webUrl": null,
+            "channelIdentity": null,
+            "policyViolation": null,
+            "eventDetail": null,
+            "from": {
+                "application": null,
+                "device": null,
+                "user": {
+                    "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                    "displayName": "Ana Ruiz",
+                    "userIdentityType": "aadUser"
+                }
+            },
+            "body": {
+                "contentType": "text",
+                "content": "Draft is ready"
+            },
+            "attachments": [],
+            "mentions": [],
+            "reactions": [],
+            "messageHistory": []
+        },
+        {
+            "@odata.type": "#microsoft.graph.chatMessage",
+            "id": "1710000060000",
+            "replyToId": null,
+            "etag": "1710000060000",
+            "messageType": "message",
+            "createdDateTime": "2024-03-09T16:01:00Z",
+            "lastModifiedDateTime": "2024-03-09T16:01:00Z",
+            "lastEditedDateTime": null,
+            "deletedDateTime": null,
+            "subject": null,
+            "summary": null,
+            "chatId": "19:3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c_7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a@unq.gbl.spaces",
+            "importance": "normal",
+            "locale": "en-us",
+            "webUrl": null,
+            "channelIdentity": null,
+            "policyViolation": null,
+            "eventDetail": null,
+            "from": {
+                "application": null,
+                "device": null,
+                "user": {
+                    "id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                    "displayName": "Ben Okafor",
+                    "userIdentityType": "aadUser"
+                }
+            },
+            "body": {
+                "contentType": "text",
+                "content": "Reading now"
+            },
+            "attachments": [],
+            "mentions": [],
+            "reactions": [],
+            "messageHistory": []
+        }
+    ]
+}

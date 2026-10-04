@@ -1,6 +1,6 @@
 # Microsoft Teams export formats
 
-Status: researched 2026-10-02. Confidence: **high** for the Graph `chatMessage` JSON schema and for which Purview export options exist (official docs). **Medium** for the Teams Free `messages.json` (inferred from the Skype export format, which shares a viewer). **Low/unverified** for Purview HTML transcript markup and the internal PST item layout.
+Status: researched 2026-10-02; **fixtures rebuilt from Microsoft's published example responses and from open-source exporters' output layouts on 2026-10-04** (see "Real structure" at the end). Confidence: **high** for the Graph `chatMessage` JSON schema and for which Purview export options exist (official docs). **Medium** for the Teams Free `messages.json` (inferred from the Skype export format, which shares a viewer). **Low/unverified** for Purview HTML transcript markup and the internal PST item layout.
 
 **Bottom line for a browser tool:**
 
@@ -31,7 +31,7 @@ graph-dump/
 └── messages/<chatId>.json     # either raw paged responses {"@odata.context", "@odata.nextLink", "value":[...]}
                                # or a flat array of chatMessage objects
 ```
-The importer should accept: (a) a single page `{ "value": [chatMessage…] }`, (b) an array of pages, (c) a flat array, (d) NDJSON. Third-party dumpers vary **[UNVERIFIED: no dominant third-party schema found]**.
+The importer should accept: (a) a single page `{ "value": [chatMessage…] }`, (b) an array of pages, (c) a flat array, (d) NDJSON, (e) one message object per file, and (f) PowerShell SDK output (PascalCase). Third-party dumpers vary; the layouts found are listed under "Real structure" below.
 
 ### chatMessage schema (v1.0)
 
@@ -45,7 +45,7 @@ The importer should accept: (a) a single page `{ "value": [chatMessage…] }`, (
 | `lastModifiedDateTime` | ISO UTC | changes on edits **and reactions** |
 | `lastEditedDateTime` | ISO UTC\|null | edit time |
 | `deletedDateTime` | ISO UTC\|null | soft delete |
-| `chatId` | string\|null | set for chat messages, e.g. `19:…@thread.v2`. 1:1 chats look like `19:<guid>_<guid>@unq.gbl.spaces` **[UNVERIFIED pattern]**. |
+| `chatId` | string\|null | set for chat messages: group `19:<hex32>@thread.v2`, 1:1 `19:<userId>_<userId>@unq.gbl.spaces` (both members' Entra ids, verified in the docs' examples), meeting `19:meeting_<base64>@thread.v2`. |
 | `channelIdentity` | `{teamId, channelId}`\|null | set for channel messages |
 | `from` | `{application, device, user}` | `user` = `{id (Entra object GUID), displayName, userIdentityType ("aadUser", "federatedUser", "anonymousGuest", …), tenantId?}`. `application` = `{id, displayName, applicationIdentityType}` for bots. `null` for system events. |
 | `body` | `{contentType: "text"\|"html", content}` | **always HTML if mentions are present** |
@@ -103,7 +103,7 @@ chat resource (for context type): `id`, `chatType` (`oneOnOne` \| `group` \| `me
 | timestamp | `createdDateTime` (UTC, ms precision) |
 | conversation id | `chatId`, or `channelIdentity.teamId + "/" + channelIdentity.channelId` |
 | context type | `chat.chatType`: `oneOnOne`→direct, `group`→group, `meeting`→group (meeting chat), channel→public/private **[channel membershipType (standard/private/shared) needs the channel resource]** |
-| thread | channels: `replyToId` (root ID). Chats: none. Quoted replies sit in `attachments` (`contentType: "messageReference"` **[UNVERIFIED]**). |
+| thread | channels: `replyToId` (root ID). Chats: none; a reply is a quote: an attachment with `contentType: "messageReference"` whose `content` is a JSON **string** `{messageId, messagePreview, messageSender:{user:{id,displayName,…}}}` (verified, chatmessage-replywithquote), with `<attachment id="<messageId>"></attachment>` in the body. |
 | text | strip HTML from `body.content`. Replace `<at id>` with `mentionText`. |
 | node attrs | `displayName`, `userIdentityType` (federated = external), `tenantId` |
 
@@ -259,3 +259,83 @@ Network use: `Items.csv` alone gives **transcript-level co-participation** (Part
 | https://github.com/v-bulynkin/skype-export-parser | community |
 | https://office365itpros.com/2020/05/19/teams-compliance-records/ | reputable community (TeamsMessagesData, item classes) |
 | WebSearch result snippets on TeamsMessagesData (Veritas, office365itpros 2020/10) | community, snippet only |
+
+---
+
+## Real structure (checked 2026-10-04)
+
+Fixtures in `test/fixtures/importers-a/teams/real-structure/` reproduce each shape below with fictional content. Their README lists the sources per folder.
+
+### Graph, from Microsoft's own examples (microsoft-graph-docs-contrib, v1.0)
+- Page envelope: `@odata.context`, optional `@odata.count`, and `@odata.nextLink` or (delta) `@odata.deltaLink`. Contexts:
+  - `#chats('<urlencoded id>')/messages`
+  - `#teams('<team>')/channels('<urlencoded id>')/messages`, and `.../messages('<id>')/replies`
+  - `#Collection(chatMessage)` (getAllMessages; there is no "getAllMessages" in the context string)
+  - `#Collection(microsoft.graph.chatMessage)` (delta)
+  - `#chats(members())`
+- Channel lists (`GET /teams/{id}/channels`) have **no** `@odata.context` in the examples. `membershipType` is `standard`, `private` or `shared`.
+- `$expand=replies` nests replies in the root: `replies@odata.count`, `replies: [...]`.
+- System events: `from: null`, body `<systemEventMessage/>`. `messageType` is `systemEventMessage` only with `Prefer: include-unknown-enum-members`; otherwise it is `unknownFutureValue`.
+- `eventDetail` types include `membersAdded`, `membersDeleted`, `membersJoined`, `membersLeft`, `chatRenamed`, `callStarted`, `callEnded` (with `callParticipants`), `callRecording`, `callTranscript`, `messagePinned`, `teamsAppInstalled`, and channel/team events.
+- `from.user` may carry `@odata.type: #microsoft.graph.teamworkUserIdentity` and `tenantId`. `userIdentityType` also takes `anonymousGuest` (32-hex id), `personalMicrosoftAccountUser`, `emailUser` and others, so ids are not always GUIDs. `displayName` is often `null` in reactions and eventDetail.
+- Bots: `from.application` with `applicationIdentityType` `bot`, `tenantBot`, `office365Connector`, `outgoingWebhook` or `aadApplication`.
+- Mentions: `mentioned.conversation` with `conversationIdentityType` `chat` (everyone), `channel` or `team`, and (beta) `mentioned.tag`.
+- Reactions: `reactionType` is a Unicode emoji or a legacy name (`like`, `heart`, …), or `custom` with a `reactionContentUrl`.
+- Body markup: `<emoji id alt title>`, `<customemoji>`, `<codeblock>`, hosted-content `<img>`, and `<attachment id>` placeholders.
+- Attachment types: `reference` (file), `messageReference` (quote), `forwardedMessageReference` (content JSON with `originalSentDateTime` in `+00:00` form), `meetingReference`, `tabReference`, adaptive cards and Loop cards.
+- Deleted messages: `deletedDateTime` set, body `{contentType:"text", content:""}` (from a test checked against live Graph in osodevops/ms-teams-cli; the docs show no example). DLP-blocked messages: empty body and `policyViolation`.
+- Message `id` and `etag` are epoch-millisecond strings; `etag` changes on edit.
+
+### Exporter layouts
+| Tool | Layout |
+|---|---|
+| codeforkjeff/teams-chats-export | `archive/data/<chatId with : @ → _>.json` (chat, `$expand=members,lastMessagePreview`) + `archive/data/<chat>/msg_<id>.json` (one raw message per file) + images + `archive/html/` |
+| edgraaff/teams-chat-backup | `out/<chat name>/messages-00000.json …` (raw `value` arrays, newest page first) + `images.json` + `index.html` |
+| jbelanger/export-teams-conversations | one raw page; its sample has only `id`, `createdDateTime`, `from.user`, `body`, with the chat named only in `@odata.context` |
+| kkgthb/powershell-ms-teams-chat-backup | `teamschatsYYYYMMDD.json` / `mychatsYYYYMMDD.json` via `ConvertTo-Json -Depth 100` of Microsoft Graph PowerShell objects: PascalCase, `AdditionalProperties` bag **[serialised shape inferred, not seen]**; Windows PowerShell 5.1 writes UTF-16 and `/Date(ms)/` |
+| xprtyg33k/teams-chat-extract, gediz/teams-web-chat-exporter | transformed schemas (`body_text`, `author`, …), **not read** by the Teams importer |
+
+### Teams Free / Skype `messages.json` (Skyperious source, parsers, a public structure sample)
+- `exportDate` is written without seconds (`2026-07-06T20:55`).
+- `messages: null` sits beside `MessageList`.
+- `threadProperties` is `null` for 1:1 chats. `members` is a JSON string, sometimes `[{MemberMri}]`.
+- Conversation ids:
+  - `8:` 1:1, including `8:live:…` and `8:orgid:<guid>`
+  - `19:…@thread.skype`, `@thread.v2`, `@p2p.thread.skype` (threads)
+  - `28:` bots
+  - `48:calllogs`, `48:notes`, `48:drafts` (the account's own lists)
+- Message types include `RichText`, `Text`, `RichText/Html`, `RichText/Media_*`, `RichText/UriObject`, `Event/Call` (`<partlist>`), `ThreadActivity/*` (XML, or JSON for MemberJoined/Left), `Poll`, `Notice` and `PopCard`.
+- `properties.edittime` and `deletetime` are epoch-ms strings; a deleted message has empty content. `properties.emotions` is an array (or a JSON string) of `{key, users:[{mri,time,value}]}`.
+- Quotes use `<quote author authorname timestamp messageid><legacyquote>…</legacyquote>…</quote>`. Mentions use `<at id="8:…">`.
+
+### Purview
+The field names come from the docs: `Conversation ID`, `Conversation type`, `Conversation name`, `Participants`, `Item class`, `Message kind`, `File class`, `Channel Name`, and others. The review-set page spells some in CamelCase (`ConversationId`, `FileClass`, `TeamsChannelName`). The **exact header row and column order of `Items_<timestamp>.csv` are not published**, and no public sample was found.
+
+Value formats: `Name <smtp>`; `Conversation name` joins participants with a comma and no space (1:1/group) or reads `<Team>,<Channel>`; `Conversation type` is `Group` or `Channel`; Teams `Item class` is `IPM.SkypeTeams.Message`.
+
+### Importer changes from this check (`src/importers/teams.js`)
+- Detection:
+  - More than 400 JSON files are no longer silently left out. Past the cap, one file is peeked per new folder, and folders holding Graph messages are claimed whole (one-file-per-message dumps).
+  - Channel lists without `@odata.context` are claimed.
+  - PascalCase PowerShell output is recognised.
+  - Purview headers are matched without case or spaces; before this, the new-experience header went to the edge-list reader.
+- Graph:
+  - Nested `replies` are read; before this, every reply fetched with `$expand=replies` was dropped.
+  - A message without `chatId`/`channelIdentity` takes its conversation from the page's `@odata.context`; before this, such pages were dropped.
+  - 1:1 chat members are read from the chat id when there is no member list.
+  - A `messageReference` quote gives a reply tie (outside 1:1 chats) and a parent link.
+  - JSON files that hold no messages, chats, members or channels are reported (`teams-file-not-recognised`).
+- Teams Free:
+  - `48:` lists are left out and reported. Before this, the call log and notes were read as group chats.
+  - `28:` conversations are 1:1 chats with a bot.
+  - `[{MemberMri}]` member lists are read.
+  - `properties.emotions` become reactions.
+  - `<at id>` mentions and `<quote>` replies give ties in group chats.
+  - Quoted text is not repeated in the replying message's text, and deleted messages are counted.
+- Purview: `Item class` other than `IPM.SkypeTeams.*` is skipped as non-Teams.
+
+Still unverifiable without real data:
+- The exact Purview `Items_*.csv` header and date format.
+- The real serialisation of Microsoft Graph PowerShell objects.
+- Whether Teams Free exports differ from Skype exports in any field.
+- How Graph returns deleted messages in each API.

@@ -1,0 +1,64 @@
+[
+  {
+    "ChatType": "group",
+    "CreatedDateTime": "2024-03-02T09:00:00.12Z",
+    "Id": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+    "InstalledApps": null,
+    "LastMessagePreview": null,
+    "LastUpdatedDateTime": "2024-03-04T11:20:34.567Z",
+    "Members": [
+      {
+        "DisplayName": "Ana Ruiz",
+        "Id": "M2M5ZjFhMmUtNWI3ZC00ZThhLTljMWYtMmQzZTRmNWE2Yjdj",
+        "Roles": [
+          "owner"
+        ],
+        "VisibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+        "AdditionalProperties": {
+          "@odata.type": "#microsoft.graph.aadUserConversationMember",
+          "userId": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+          "email": "ana.ruiz@contoso.example",
+          "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+        }
+      },
+      {
+        "DisplayName": "Ben Okafor",
+        "Id": "N2QyZTRmNmEtOGIxYy00ZDNlLWE1ZjctOWIwYzFkMmUzZjRh",
+        "Roles": [
+          "owner"
+        ],
+        "VisibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+        "AdditionalProperties": {
+          "@odata.type": "#microsoft.graph.aadUserConversationMember",
+          "userId": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+          "email": "ben.okafor@contoso.example",
+          "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+        }
+      },
+      {
+        "DisplayName": "Chen Li",
+        "Id": "YTFiMmMzZDQtZTVmNi00YTdiLThjOWQtMGUxZjJhM2I0YzVk",
+        "Roles": [
+          "owner"
+        ],
+        "VisibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+        "AdditionalProperties": {
+          "@odata.type": "#microsoft.graph.aadUserConversationMember",
+          "userId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+          "email": "chen.li@contoso.example",
+          "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+        }
+      }
+    ],
+    "Messages": null,
+    "OnlineMeetingInfo": null,
+    "Topic": "Launch crew",
+    "Viewpoint": {
+      "IsHidden": false,
+      "LastMessageReadDateTime": "2024-03-04T11:20:34.567Z",
+      "AdditionalProperties": {}
+    },
+    "WebUrl": null,
+    "AdditionalProperties": {}
+  }
+]

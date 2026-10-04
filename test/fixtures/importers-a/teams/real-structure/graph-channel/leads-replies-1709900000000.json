@@ -1,0 +1,45 @@
+{
+    "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#teams('c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f')/channels('19%3A9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b%40thread.tacv2')/messages('1709900000000')/replies",
+    "@odata.count": 1,
+    "value": [
+        {
+            "id": "1709900300000",
+            "replyToId": "1709900000000",
+            "etag": "1709900300000",
+            "messageType": "message",
+            "createdDateTime": "2024-03-08T12:31:40Z",
+            "lastModifiedDateTime": "2024-03-08T12:31:40Z",
+            "lastEditedDateTime": null,
+            "deletedDateTime": null,
+            "subject": null,
+            "summary": null,
+            "chatId": null,
+            "importance": "normal",
+            "locale": "en-us",
+            "webUrl": "https://teams.microsoft.com/l/message/19%3A9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b%40thread.tacv2/1709900300000?groupId=c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f&tenantId=f0e1d2c3-b4a5-4697-8899-aabbccddeeff&createdTime=1709900300000&parentMessageId=1709900000000",
+            "channelIdentity": {
+                "teamId": "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+                "channelId": "19:9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b@thread.tacv2"
+            },
+            "policyViolation": null,
+            "eventDetail": null,
+            "from": {
+                "application": null,
+                "device": null,
+                "user": {
+                    "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                    "displayName": "Ana Ruiz",
+                    "userIdentityType": "aadUser"
+                }
+            },
+            "body": {
+                "contentType": "text",
+                "content": "Great news"
+            },
+            "attachments": [],
+            "mentions": [],
+            "reactions": [],
+            "messageHistory": []
+        }
+    ]
+}

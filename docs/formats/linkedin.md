@@ -1,6 +1,6 @@
 # LinkedIn data export ("Download your data")
 
-Status: researched 2026-10-02. Confidence: **high** for the column headers of `Connections.csv`, `messages.csv` and `Invitations.csv` and for the 3-line preamble (from a Rust crate that deserializes real exports with `deny_unknown_fields`, corroborated by 3+ other parsers). **Medium** for `Positions`, `Education`, `Profile` and `Endorsement_*` columns (several community parsers agree). **Low/unverified** for some date formats and for multi-recipient delimiters in `messages.csv` (see §7).
+Status: researched 2026-10-02; **checked against the structure of about 30 real exports from 2020 to 2026 on 2026-10-04** (§10). Confidence: **high** for the headers of every era of `Connections.csv`, `messages.csv`, `Invitations.csv` and `Endorsement_*`, the preamble, the date formats and the multi-recipient delimiters. **Medium** for `Positions`, `Education` and `Profile` columns, and for when exactly the optional draft and attachment columns appear. Nothing here was taken from a real person's content: only header lines and value shapes were measured.
 
 ---
 
@@ -16,7 +16,7 @@ Two options (official wording): "If you select a specific type of data, we'll em
 | When | minutes (help page lists Profile, Positions, Education, Endorsements, Invitations, Skills… as "within 10 minutes") | ≤ 24 h (help page lists **Connections, Messages**, Contacts, Comments, Reactions… as "within 48 hours") |
 | Notes | If the user requests the large archive they get **two emails**: a partial archive first, then the complete one (espirian.co.uk) | Contains everything in Basic plus the slow categories |
 
-> ⚠️ The help page currently places **Connections and Messages in the slow group**, but many users report getting `Connections.csv` and `messages.csv` quickly by selecting them individually. Treat either zip as valid input and detect by file contents.
+> ⚠️ The help page currently places **Connections and Messages in the slow group**, but real Basic archives from 2021 to 2026 contain `Connections.csv`, `messages.csv` and `Invitations.csv` (§10). Treat either zip as valid input and detect by file contents.
 
 ### Container tree (full archive, subset relevant to us)
 
@@ -66,6 +66,8 @@ Tomás,Reyes,https://www.linkedin.com/in/tomasreyes,tomas.reyes@example.org,Cont
 | Company / Position | string | their **current** headline employer/title at export time, not at connection time |
 | Connected On | date | observed `DD Mon YYYY` (`08 Feb 2026`). Parse defensively (also accept ISO and `MM/DD/YYYY`). The English month abbreviation is presumably locale-dependent (unverified) |
 
+**History (verified, §10):** the preamble appeared between mid-2021 and Sep 2022, and its text has been byte-identical since then. The `URL` column was added in mid-2023; before that the header is `First Name,Last Name,Email Address,Company,Position,Connected On`. Rows for members who hid or closed their profile carry only the date (`,,,,,,07 Jun 2026`, from 4 to 181 per file). The file usually has no newline after the last row.
+
 **Robust parsing:** don't hard-skip 3 lines. Scan for the first row whose cells include `First Name` and `Connected On` (several parsers do this). Older exports may lack the preamble, and some tools put the preamble into a `Notes:` column. Use an RFC-4180 CSV parser (quoted commas and newlines occur in Company/Position). Strip a UTF-8 BOM. The official note says CSV "doesn't support all characters", so non-Latin names may be degraded.
 
 ### 2.2 `messages.csv`
@@ -90,7 +92,9 @@ CONVERSATION ID,CONVERSATION TITLE,FROM,SENDER PROFILE URL,TO,RECIPIENT PROFILE 
 | ATTACHMENTS | string | attachment URLs/names (format unverified) |
 | IS MESSAGE DRAFT / IS CONVERSATION DRAFT | string | Yes/No-like flag (exact literal unverified). **Drop drafts** |
 
-Older exports may lack the last 3–4 columns, and very old ones lack `RECIPIENT PROFILE URLS`. Map headers by name (case-insensitive, trimmed), not by position.
+The header changed often (§10): 9 columns up to early 2023 (no `RECIPIENT PROFILE URLS`), 10 from mid-2023, then `ATTACHMENTS`, `IS MESSAGE DRAFT` and `IS CONVERSATION DRAFT` come and go in 2024–2025. Since Mar 2026 **every field is quoted, the header too**, and `CONTENT` holds real line breaks. Map headers by name (case-insensitive, trimmed, quotes removed), not by position.
+
+Verified values: `FOLDER` is `INBOX`, `ARCHIVE`, `SPAM` or empty, and sent messages are in `INBOX`. Draft flags are `Yes`/`No`. `RECIPIENT PROFILE URLS` and `ATTACHMENTS` are comma-joined with no space. `TO` is joined with `", "`, and names themselves may contain `", "` (`Jane Doe, Ph.D.`). Sponsored messages and InMail campaigns have an empty sender URL and `CONTENT` starting `<p class="spinmail-quill-editor__spin-break">`, often with an unfilled `%FIRSTNAME%`. `LinkedIn Member` senders never have a URL.
 
 ### 2.3 `Invitations.csv`
 
@@ -101,10 +105,10 @@ Jordan Pike,Ines Okafor-Lindqvist,"1/29/26, 2:37 PM",,OUTGOING,https://www.linke
 | Column | Notes |
 |---|---|
 | From / To | display names |
-| Sent At | `M/D/YY, h:mm AM` (US-style, 12h, **no tz**; assume UTC or local, unverified) |
+| Sent At | `M/D/YY, h:mm AM` (US-style, 12h, **no tz**). The space before AM/PM is a plain space in every export checked through Oct 2026 (no U+202F) |
 | Message | optional note, mostly empty |
 | Direction | `INCOMING` \| `OUTGOING` |
-| inviterProfileUrl / inviteeProfileUrl | camelCase headers (sic) |
+| inviterProfileUrl / inviteeProfileUrl | camelCase headers (sic). **Added in late 2023**; before that the header is `From,To,Sent At,Message,Direction` |
 
 Usefulness: OUTGOING with invitee in Connections means an accepted invite. INCOMING with inviter not in Connections means pending or ignored. Usually only recent or pending invitations are present (community observation).
 
@@ -121,7 +125,7 @@ Usefulness: OUTGOING with invitee in Connections means an accepted invite. INCOM
 | `Skills.csv` | `Name` |
 | `Contacts.csv` | `Source, FirstName, LastName, Companies, Title, Emails, PhoneNumbers, CreatedAt, Addresses, Sites, InstantMessageHandles, FullName, Birthday, Location, BookmarkedAt, Profiles` |
 
-Endorsement Date format: not verified (one source suggests `YYYY/MM/DD HH:MM:SS UTC`, the same style as `SearchQueries.csv`).
+Endorsement Date is `YYYY/MM/DD HH:MM:SS UTC` (verified). `Endor*er Public Url` has no scheme (`www.linkedin.com/in/<slug>`) and was added in mid-2023; 2022 exports lack it. Endorsement Status is `ACCEPTED`, `PENDING` or `HIDDEN`.
 
 ---
 
@@ -139,7 +143,7 @@ Endorsement Date format: not verified (one source suggests `YYYY/MM/DD HH:MM:SS 
 | text | CONTENT (strip HTML) | — | Message / Skill Name |
 | node attrs | name, profile URL | Company, Position, Email, Connected On | Profile/Positions/Education → **ego node only** |
 
-Ego identification: ego = the `Profile.csv` name. Ego's own URL usually does not appear in Profile.csv, so infer it as the URL that occurs as sender or recipient in nearly every conversation in messages.csv.
+Ego identification: ego = the `Profile.csv` name. Ego's own URL is not in Profile.csv. Take it from Invitations.csv (OUTGOING inviter, INCOMING invitee) when it has URL columns. Otherwise use messages.csv: the URL that sends under the Profile.csv name, or the URL present in nearly every conversation. Before mid-2023 recipients have no URLs, so the owner's URL appears only where they wrote, and the coverage rule alone fails.
 
 ## 4. Observation note (ego view)
 
@@ -164,7 +168,7 @@ Ego identification: ego = the `Profile.csv` name. Ego's own URL usually does not
 ## 7. Quirks and pitfalls
 
 - **Mixed date formats across files**: `08 Feb 2026` (Connections), `2025-06-01 14:03:22 UTC` (messages), `1/29/26, 2:37 PM` (Invitations), `2024/02/01 15:02:55 UTC` (SearchQueries), `2026-02-09 01:21:47` (Shares). Write a per-file parser and never auto-guess.
-- **Multiple recipients**: the delimiter inside `TO` / `RECIPIENT PROFILE URLS` is **unverified** (likely comma-separated inside a quoted cell). Split URLs with a regex on `https://www.linkedin.com/in/[^,\s]+` rather than on a delimiter.
+- **Multiple recipients** (verified): `RECIPIENT PROFILE URLS` is comma-joined with no space. `TO` is joined with `", "`, but names contain `", "` too, so the TO count often differs from the URL count. Split URLs by URL shape. Split TO only into names known elsewhere in the export.
 - The preamble breaks naive `header:true` CSV parsing. In PapaParse this produces a `Notes:` column and `__parsed_extra` (one community parser has a workaround for this).
 - CONTENT may contain unescaped-looking HTML and very long text. Use a streaming CSV parser.
 - Size: Connections usually < 1 MB (hundreds to ~30k rows). messages.csv can reach tens of MB (one reported export had 12,468 rows).
@@ -190,3 +194,36 @@ Easy. Use `fflate`/`JSZip` to read entries and **PapaParse** (`header:false`, th
 | https://jennyqueenofswords.github.io/linkedin-exposed/ (file inventory and date formats from a 2026 export) | community writeup |
 | https://espirian.co.uk/linkedin-data-archive/ (Basic_/Complete_ zip names, two emails) | writeup |
 | https://ampliflow.in/learn/linkedin-csv-export (claims ISO `Connected On`, which **conflicts** with other evidence and was disregarded) | writeup |
+| https://github.com/ssuvorin/theblock (`parse.py`: draft flags, preamble, Sent At formats) | community |
+| https://github.com/saberistic-team/agent-web/issues/268 (2026 preamble text) | community |
+| https://github.com/Sohum-Kapoor/cirql/pull/137 (preamble description) | community |
+| ~30 public repositories with committed exports, structure only (list in `test/fixtures/importers-b/linkedin/real-structure/README.md`) | real exports, shapes only |
+
+## 10. Real structure by era (checked 2026-10-04)
+
+We checked about 30 real exports that people committed to public GitHub repositories (Nov 2021 to Oct 2026, plus three raw 2020–2021 files). Only header lines, column counts, value shapes (`99 Mon 9999`), delimiters, quoting, BOMs, line ends and trailing newlines were measured. No values were kept. Files that had been opened and re-saved in Excel were left out: a BOM, CRLF in the header only, `4-Apr-21` dates, or dropped columns. The fixtures in `test/fixtures/importers-b/linkedin/real-structure/` reproduce each era with fictional content. Their README lists every repository.
+
+| File | Up to mid-2021 | mid-2021 – mid-2023 | mid-2023 – 2025 | 2026 |
+|---|---|---|---|---|
+| Connections.csv | no preamble; `First Name,Last Name,Email Address,Company,Position,Connected On` | + 3-line `Notes:` preamble | + `URL` after Last Name | same (no trailing newline) |
+| messages.csv | 9 columns, ends at `FOLDER` | 9 columns | + `RECIPIENT PROFILE URLS` (10); later + `ATTACHMENTS` / draft columns in varying combinations | 11 columns, **every field quoted**, multi-line `CONTENT` |
+| Invitations.csv | `From,To,Sent At,Message,Direction` | same | + `inviterProfileUrl,inviteeProfileUrl` (late 2023) | same |
+| Endorsement_*_Info.csv | — | no `Public Url` | + `Endor*er Public Url` (no scheme) | same |
+
+Also observed:
+- Zip names `Basic_LinkedInDataExport_MM-DD-YYYY.zip` / `Complete_...`, files at the zip root, UTF-8 without BOM, LF line ends.
+- Header-only `guide_messages.csv`, `learning_coach_messages.csv`, `learning_role_play_messages.csv` and `coach_messages.csv`. `LearningCoachMessages.csv` contains `No conversations found`.
+- In 2026 Complete archives, numbered names such as `Comments_<n>.csv`.
+- `Notes.csv` (2026): `Connection First Name,Connection Last Name,Connection Profile URL,Note,Created On,Edited On`.
+
+What the importer does with this (`src/importers/linkedin.js`):
+- Detection accepts every era's header: with or without preamble or URL, with quoted headers, and Invitations without URL columns. A 2026 `messages.csv` dropped alone was previously taken by the edge-list reader.
+- Names are joined to profile URLs from every file before anything is keyed. A pre-2023 connection gets the URL its messages, invitations or endorsements give for the same full name (warning `connection-url-by-name`), so one person is one node. Before this fix, one person could appear as up to four nodes and the owner was never identified.
+- The owner's URL is accepted when it sends under the Profile.csv name, even in few conversations.
+- `TO` without URLs is split into known names, keeping `", Ph.D."`-style suffixes with their name.
+- Date-only rows for hidden profiles are counted (`hidden-connections`), not turned into people.
+- `SPAM` folder messages are left out by default (`spam-excluded`, with an option to keep them).
+- Campaign-editor (spinmail) messages from non-connections are flagged `possible-sponsored`.
+- CRLF inside `CONTENT` becomes LF.
+
+Still unverified without a real export in hand: non-English month names in `Connected On`, `IS CONVERSATION DRAFT` values (never seen as `Yes`), exports before 2020, and the UTF-16, tab-separated `Endorsement Received Info.csv` seen once in 2022 (possibly an Excel re-save).

@@ -1,0 +1,336 @@
+{
+ "userId": "8:live:.cid.0123456789abcdef",
+ "exportDate": "2026-07-06T20:55",
+ "conversations": [
+  {
+   "id": "8:live:.cid.b0b1b2b3b4b5b6b7",
+   "displayName": "Bea Stone",
+   "version": 1783000000000,
+   "properties": {
+    "conversationblocked": false,
+    "lastimreceivedtime": "2026-07-01T11:16:16.634Z",
+    "consumptionhorizon": "1783000000000;1783000000001;2130221778977763996",
+    "conversationstatus": null
+   },
+   "threadProperties": null,
+   "messages": null,
+   "MessageList": [
+    {
+     "id": "1782900000000",
+     "conversationid": "8:live:.cid.b0b1b2b3b4b5b6b7",
+     "displayName": "Bea Stone",
+     "messagetype": "RichText",
+     "content": "Are we still on for <b>Saturday</b>? <ss type=\"smile\">:)</ss>",
+     "from": "8:live:.cid.b0b1b2b3b4b5b6b7",
+     "originalarrivaltime": "2026-07-01T10:00:00.000Z",
+     "version": 1782900000000,
+     "properties": null,
+     "amsreferences": null
+    },
+    {
+     "id": "1782900060000",
+     "conversationid": "8:live:.cid.b0b1b2b3b4b5b6b7",
+     "displayName": null,
+     "messagetype": "RichText",
+     "content": "Yes! <quote author=\"8:live:.cid.b0b1b2b3b4b5b6b7\" authorname=\"Bea Stone\" timestamp=\"1782900000\" conversation=\"8:live:.cid.b0b1b2b3b4b5b6b7\" messageid=\"1782900000000\"><legacyquote>[30/06/2026 09:20] Bea Stone: </legacyquote>Are we still on for Saturday?<legacyquote>\n\n&lt;&lt;&lt; </legacyquote></quote>Of course",
+     "from": "https://azwcus1-client-s.gateway.messenger.live.com/v1/users/ME/contacts/8:live:.cid.0123456789abcdef",
+     "originalarrivaltime": "2026-07-01T10:01:00.000Z",
+     "version": 1782900060000,
+     "properties": {
+      "edittime": "1782900120000"
+     },
+     "amsreferences": null
+    },
+    {
+     "id": "1782900180000",
+     "conversationid": "8:live:.cid.b0b1b2b3b4b5b6b7",
+     "displayName": "",
+     "messagetype": "RichText",
+     "content": "",
+     "from": "8:live:.cid.0123456789abcdef",
+     "originalarrivaltime": "2026-07-01T10:03:00.000Z",
+     "version": 1782900180000,
+     "properties": {
+      "deletetime": "1782900200000"
+     },
+     "amsreferences": null
+    },
+    {
+     "id": "1782900300000",
+     "conversationid": "8:live:.cid.b0b1b2b3b4b5b6b7",
+     "displayName": "Bea Stone",
+     "messagetype": "RichText/Media_GenericFile",
+     "content": "<URIObject uri=\"https://api.asm.skype.com/v1/objects/0-weu-d3-fictional\" url_thumbnail=\"https://api.asm.skype.com/v1/objects/0-weu-d3-fictional/views/thumbnail\" type=\"File.1\" doc_id=\"0-weu-d3-fictional\">To view this file, go to: <a href=\"https://login.skype.com/login/sso?go=webclient.xmm&amp;docid=0-weu-d3-fictional\">https://login.skype.com/login/sso?go=webclient.xmm&amp;docid=0-weu-d3-fictional</a><OriginalName v=\"menu.pdf\"></OriginalName><FileSize v=\"44712\"></FileSize></URIObject>",
+     "from": "8:live:.cid.b0b1b2b3b4b5b6b7",
+     "originalarrivaltime": "2026-07-01T10:05:00.000Z",
+     "version": 1782900300000,
+     "properties": null,
+     "amsreferences": [
+      "0-weu-d3-fictional"
+     ]
+    },
+    {
+     "id": "1782900400000",
+     "conversationid": "8:live:.cid.b0b1b2b3b4b5b6b7",
+     "displayName": null,
+     "messagetype": "Event/Call",
+     "content": "<partlist type=\"ended\" alt=\"\" callId=\"1782900400000\"><part identity=\"8:live:.cid.0123456789abcdef\"><name>Sam Vale</name><duration>84.82</duration></part><part identity=\"8:live:.cid.b0b1b2b3b4b5b6b7\"><name>Bea Stone</name><duration>84.82</duration></part></partlist>",
+     "from": "8:live:.cid.0123456789abcdef",
+     "originalarrivaltime": "2026-07-01T10:06:40.000Z",
+     "version": 1782900400000,
+     "properties": null,
+     "amsreferences": null
+    },
+    {
+     "id": "1782900500000",
+     "conversationid": "8:live:.cid.b0b1b2b3b4b5b6b7",
+     "displayName": "Bea Stone",
+     "messagetype": "RichText/Html",
+     "content": "<p>See you <i>then</i></p>",
+     "from": "8:live:.cid.b0b1b2b3b4b5b6b7",
+     "originalarrivaltime": "2026-07-01T10:08:20.000Z",
+     "version": 1782900500000,
+     "properties": {
+      "emotions": [
+       {
+        "key": "heart",
+        "users": [
+         {
+          "mri": "8:live:.cid.0123456789abcdef",
+          "time": 1782900510000,
+          "value": "1782900510000"
+         }
+        ]
+       }
+      ]
+     },
+     "amsreferences": null
+    }
+   ]
+  },
+  {
+   "id": "19:3c1f0e2d4a5b6c7d8e9f0a1b2c3d4e5f@thread.skype",
+   "displayName": "Book club",
+   "version": 1783100000000,
+   "properties": {
+    "conversationblocked": false,
+    "lastimreceivedtime": "2026-07-02T18:00:00.000Z",
+    "consumptionhorizon": null,
+    "conversationstatus": null
+   },
+   "threadProperties": {
+    "membercount": 4,
+    "topic": "Book club",
+    "members": "[\"8:live:.cid.0123456789abcdef\",\"8:live:.cid.b0b1b2b3b4b5b6b7\",\"8:live:cal.morgan\",\"8:live:.cid.d0d1d2d3d4d5d6d7\"]",
+    "picture": null,
+    "description": null
+   },
+   "messages": null,
+   "MessageList": [
+    {
+     "id": "1783000000000",
+     "conversationid": "19:3c1f0e2d4a5b6c7d8e9f0a1b2c3d4e5f@thread.skype",
+     "displayName": null,
+     "messagetype": "ThreadActivity/AddMember",
+     "content": "<addmember><eventtime>1783000000000</eventtime><initiator>8:live:.cid.0123456789abcdef</initiator><target>8:live:.cid.d0d1d2d3d4d5d6d7</target></addmember>",
+     "from": "8:live:.cid.0123456789abcdef",
+     "originalarrivaltime": "2026-07-02T13:46:40.000Z",
+     "version": 1783000000000,
+     "properties": null,
+     "amsreferences": null
+    },
+    {
+     "id": "1783000060000",
+     "conversationid": "19:3c1f0e2d4a5b6c7d8e9f0a1b2c3d4e5f@thread.skype",
+     "displayName": "Cal Morgan",
+     "messagetype": "RichText",
+     "content": "Chapter 3 by Friday? <at id=\"8:live:.cid.d0d1d2d3d4d5d6d7\">Dev Rao</at> you in?",
+     "from": "8:live:cal.morgan",
+     "originalarrivaltime": "2026-07-02T13:47:40.000Z",
+     "version": 1783000060000,
+     "properties": null,
+     "amsreferences": null
+    },
+    {
+     "id": "1783000120000",
+     "conversationid": "19:3c1f0e2d4a5b6c7d8e9f0a1b2c3d4e5f@thread.skype",
+     "displayName": "Dev Rao",
+     "messagetype": "Text",
+     "content": "I am in",
+     "from": "8:live:.cid.d0d1d2d3d4d5d6d7",
+     "originalarrivaltime": "2026-07-02T13:48:40.000Z",
+     "version": 1783000120000,
+     "properties": {
+      "emotions": "[{\"key\":\"like\",\"users\":[{\"mri\":\"8:live:cal.morgan\",\"time\":1783000130000,\"value\":\"1783000130000\"},{\"mri\":\"8:live:.cid.0123456789abcdef\",\"time\":1783000140000,\"value\":\"1783000140000\"}]}]"
+     },
+     "amsreferences": null
+    },
+    {
+     "id": "1783000180000",
+     "conversationid": "19:3c1f0e2d4a5b6c7d8e9f0a1b2c3d4e5f@thread.skype",
+     "displayName": "",
+     "messagetype": "ThreadActivity/TopicUpdate",
+     "content": "<topicupdate><eventtime>1783000180000</eventtime><initiator>8:live:.cid.0123456789abcdef</initiator><value>Book club</value></topicupdate>",
+     "from": "8:live:.cid.0123456789abcdef",
+     "originalarrivaltime": "2026-07-02T13:49:40.000Z",
+     "version": 1783000180000,
+     "properties": null,
+     "amsreferences": null
+    },
+    {
+     "id": "1783000240000",
+     "conversationid": "19:3c1f0e2d4a5b6c7d8e9f0a1b2c3d4e5f@thread.skype",
+     "displayName": "",
+     "messagetype": "Poll",
+     "content": "<URIObject type=\"Poll\" optionsEncoded=\"Fri|Sat\"></URIObject>",
+     "from": "8:live:.cid.0123456789abcdef",
+     "originalarrivaltime": "2026-07-02T13:50:40.000Z",
+     "version": 1783000240000,
+     "properties": null,
+     "amsreferences": null
+    }
+   ]
+  },
+  {
+   "id": "19:7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d@thread.v2",
+   "displayName": "Trip planning",
+   "version": 1783200000000,
+   "properties": {
+    "conversationblocked": false,
+    "lastimreceivedtime": "2026-07-03T10:00:00.000Z",
+    "consumptionhorizon": null,
+    "conversationstatus": null
+   },
+   "threadProperties": {
+    "membercount": 3,
+    "topic": "Trip planning",
+    "members": [
+     {
+      "MemberMri": "8:live:.cid.0123456789abcdef"
+     },
+     {
+      "MemberMri": "8:live:.cid.b0b1b2b3b4b5b6b7"
+     },
+     {
+      "MemberMri": "8:live:cal.morgan"
+     }
+    ]
+   },
+   "messages": null,
+   "MessageList": [
+    {
+     "id": "1783100000000",
+     "conversationid": "19:7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d@thread.v2",
+     "displayName": "Cal Morgan",
+     "messagetype": "RichText",
+     "content": "Flights booked",
+     "from": "8:live:cal.morgan",
+     "originalarrivaltime": "2026-07-03T17:33:20.000Z",
+     "version": 1783100000000,
+     "properties": null,
+     "amsreferences": null
+    },
+    {
+     "id": "1783100060000",
+     "conversationid": "19:7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d@thread.v2",
+     "displayName": null,
+     "messagetype": "ThreadActivity/MemberJoined",
+     "content": "{\"initiator\":\"8:live:.cid.0123456789abcdef\",\"members\":[{\"id\":\"8:live:.cid.b0b1b2b3b4b5b6b7\"}]}",
+     "from": "19:7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d@thread.v2",
+     "originalarrivaltime": "2026-07-03T17:34:20.000Z",
+     "version": 1783100060000,
+     "properties": null,
+     "amsreferences": null
+    }
+   ]
+  },
+  {
+   "id": "28:0d5d6cea-3e5f-4c7b-8a2e-1f2e3d4c5b6a",
+   "displayName": "Copilot",
+   "version": 1783300000000,
+   "properties": {
+    "conversationblocked": false,
+    "lastimreceivedtime": null,
+    "consumptionhorizon": null,
+    "conversationstatus": null
+   },
+   "threadProperties": null,
+   "messages": null,
+   "MessageList": [
+    {
+     "id": "1783200000000",
+     "conversationid": "28:0d5d6cea-3e5f-4c7b-8a2e-1f2e3d4c5b6a",
+     "displayName": "",
+     "messagetype": "RichText",
+     "content": "What is on my calendar?",
+     "from": "8:live:.cid.0123456789abcdef",
+     "originalarrivaltime": "2026-07-04T21:20:00.000Z",
+     "version": 1783200000000,
+     "properties": null,
+     "amsreferences": null
+    },
+    {
+     "id": "1783200005000",
+     "conversationid": "28:0d5d6cea-3e5f-4c7b-8a2e-1f2e3d4c5b6a",
+     "displayName": "Copilot",
+     "messagetype": "RichText/Html",
+     "content": "<p>You have nothing scheduled.</p>",
+     "from": "28:0d5d6cea-3e5f-4c7b-8a2e-1f2e3d4c5b6a",
+     "originalarrivaltime": "2026-07-04T21:20:05.000Z",
+     "version": 1783200005000,
+     "properties": null,
+     "amsreferences": null
+    }
+   ]
+  },
+  {
+   "id": "48:calllogs",
+   "displayName": null,
+   "version": 1783400000000,
+   "properties": {
+    "conversationblocked": false,
+    "lastimreceivedtime": null,
+    "consumptionhorizon": null,
+    "conversationstatus": null
+   },
+   "threadProperties": null,
+   "messages": null,
+   "MessageList": [
+    {
+     "id": "1782900400001",
+     "conversationid": "48:calllogs",
+     "displayName": null,
+     "messagetype": "Text",
+     "content": "{\"callId\":\"1782900400000\",\"callDirection\":\"incoming\",\"callState\":\"accepted\",\"originatorParticipant\":{\"id\":\"8:live:.cid.b0b1b2b3b4b5b6b7\"},\"targetParticipant\":{\"id\":\"8:live:.cid.0123456789abcdef\"}}",
+     "from": "8:live:.cid.b0b1b2b3b4b5b6b7",
+     "originalarrivaltime": "2026-07-01T10:06:40.001Z",
+     "version": 1782900400001,
+     "properties": null,
+     "amsreferences": null
+    }
+   ]
+  },
+  {
+   "id": "48:notes",
+   "displayName": null,
+   "version": 1783400000001,
+   "properties": null,
+   "threadProperties": null,
+   "messages": null,
+   "MessageList": [
+    {
+     "id": "1783250000000",
+     "conversationid": "48:notes",
+     "displayName": null,
+     "messagetype": "RichText",
+     "content": "remember passport",
+     "from": "8:live:.cid.0123456789abcdef",
+     "originalarrivaltime": "2026-07-05T11:13:20.000Z",
+     "version": 1783250000000,
+     "properties": null,
+     "amsreferences": null
+    }
+   ]
+  }
+ ]
+}

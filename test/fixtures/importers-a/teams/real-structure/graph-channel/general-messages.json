@@ -1,0 +1,280 @@
+{
+    "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#teams('c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f')/channels('19%3A0f1e2d3c4b5a69788796a5b4c3d2e1f0%40thread.tacv2')/messages(replies())",
+    "@odata.count": 3,
+    "value": [
+        {
+            "id": "1709800000000",
+            "replyToId": null,
+            "etag": "1709800000000",
+            "messageType": "message",
+            "createdDateTime": "2024-03-07T08:26:40Z",
+            "lastModifiedDateTime": "2024-03-07T08:26:40Z",
+            "lastEditedDateTime": null,
+            "deletedDateTime": null,
+            "subject": "",
+            "summary": null,
+            "chatId": null,
+            "importance": "normal",
+            "locale": "en-us",
+            "webUrl": "https://teams.microsoft.com/l/message/19%3A0f1e2d3c4b5a69788796a5b4c3d2e1f0%40thread.tacv2/1709800000000?groupId=c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f&tenantId=f0e1d2c3-b4a5-4697-8899-aabbccddeeff&createdTime=1709800000000&parentMessageId=1709800000000",
+            "channelIdentity": {
+                "teamId": "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+                "channelId": "19:0f1e2d3c4b5a69788796a5b4c3d2e1f0@thread.tacv2"
+            },
+            "policyViolation": null,
+            "eventDetail": null,
+            "from": {
+                "application": null,
+                "device": null,
+                "user": {
+                    "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                    "displayName": "Ana Ruiz",
+                    "userIdentityType": "aadUser"
+                }
+            },
+            "body": {
+                "contentType": "html",
+                "content": "<div><at id=\"0\">General</at> release notes are up.</div>"
+            },
+            "attachments": [],
+            "mentions": [
+                {
+                    "id": 0,
+                    "mentionText": "General",
+                    "mentioned": {
+                        "application": null,
+                        "device": null,
+                        "user": null,
+                        "tag": null,
+                        "conversation": {
+                            "id": "19:0f1e2d3c4b5a69788796a5b4c3d2e1f0@thread.tacv2",
+                            "displayName": "General",
+                            "conversationIdentityType": "channel"
+                        }
+                    }
+                }
+            ],
+            "reactions": [],
+            "messageHistory": [],
+            "replies@odata.count": 2,
+            "replies": [
+                {
+                    "id": "1709800100000",
+                    "replyToId": "1709800000000",
+                    "etag": "1709800100000",
+                    "messageType": "message",
+                    "createdDateTime": "2024-03-07T08:28:20Z",
+                    "lastModifiedDateTime": "2024-03-07T08:28:20Z",
+                    "lastEditedDateTime": null,
+                    "deletedDateTime": null,
+                    "subject": null,
+                    "summary": null,
+                    "chatId": null,
+                    "importance": "normal",
+                    "locale": "en-us",
+                    "webUrl": "https://teams.microsoft.com/l/message/19%3A0f1e2d3c4b5a69788796a5b4c3d2e1f0%40thread.tacv2/1709800100000?groupId=c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f&tenantId=f0e1d2c3-b4a5-4697-8899-aabbccddeeff&createdTime=1709800100000&parentMessageId=1709800000000",
+                    "channelIdentity": {
+                        "teamId": "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+                        "channelId": "19:0f1e2d3c4b5a69788796a5b4c3d2e1f0@thread.tacv2"
+                    },
+                    "policyViolation": null,
+                    "eventDetail": null,
+                    "from": {
+                        "application": null,
+                        "device": null,
+                        "user": {
+                            "id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                            "displayName": "Ben Okafor",
+                            "userIdentityType": "aadUser"
+                        }
+                    },
+                    "body": {
+                        "contentType": "text",
+                        "content": "Thanks!"
+                    },
+                    "attachments": [],
+                    "mentions": [],
+                    "reactions": [
+                        {
+                            "reactionType": "heart",
+                            "displayName": "Heart",
+                            "reactionContentUrl": null,
+                            "createdDateTime": "2024-03-07T08:30:00Z",
+                            "user": {
+                                "application": null,
+                                "device": null,
+                                "user": {
+                                    "@odata.type": "#microsoft.graph.teamworkUserIdentity",
+                                    "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                                    "displayName": null,
+                                    "userIdentityType": "aadUser"
+                                }
+                            }
+                        }
+                    ],
+                    "messageHistory": []
+                },
+                {
+                    "id": "1709800200000",
+                    "replyToId": "1709800000000",
+                    "etag": "1709800200000",
+                    "messageType": "message",
+                    "createdDateTime": "2024-03-07T08:30:00Z",
+                    "lastModifiedDateTime": "2024-03-07T08:30:00Z",
+                    "lastEditedDateTime": null,
+                    "deletedDateTime": null,
+                    "subject": null,
+                    "summary": null,
+                    "chatId": null,
+                    "importance": "normal",
+                    "locale": "en-us",
+                    "webUrl": "https://teams.microsoft.com/l/message/19%3A0f1e2d3c4b5a69788796a5b4c3d2e1f0%40thread.tacv2/1709800200000?groupId=c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f&tenantId=f0e1d2c3-b4a5-4697-8899-aabbccddeeff&createdTime=1709800200000&parentMessageId=1709800000000",
+                    "channelIdentity": {
+                        "teamId": "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+                        "channelId": "19:0f1e2d3c4b5a69788796a5b4c3d2e1f0@thread.tacv2"
+                    },
+                    "policyViolation": null,
+                    "eventDetail": null,
+                    "from": {
+                        "application": null,
+                        "device": null,
+                        "user": {
+                            "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+                            "displayName": "Chen Li",
+                            "userIdentityType": "aadUser"
+                        }
+                    },
+                    "body": {
+                        "contentType": "html",
+                        "content": "<p><at id=\"0\">Ana Ruiz</at> one typo in section 2</p>"
+                    },
+                    "attachments": [],
+                    "mentions": [
+                        {
+                            "id": 0,
+                            "mentionText": "Ana Ruiz",
+                            "mentioned": {
+                                "application": null,
+                                "device": null,
+                                "conversation": null,
+                                "tag": null,
+                                "user": {
+                                    "@odata.type": "#microsoft.graph.teamworkUserIdentity",
+                                    "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                                    "displayName": "Ana Ruiz",
+                                    "userIdentityType": "aadUser",
+                                    "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                                }
+                            }
+                        }
+                    ],
+                    "reactions": [],
+                    "messageHistory": []
+                }
+            ]
+        },
+        {
+            "id": "1709810000000",
+            "replyToId": null,
+            "etag": "1709810000000",
+            "messageType": "message",
+            "createdDateTime": "2024-03-07T11:13:20Z",
+            "lastModifiedDateTime": "2024-03-07T11:13:20Z",
+            "lastEditedDateTime": null,
+            "deletedDateTime": null,
+            "subject": "Offsite",
+            "summary": null,
+            "chatId": null,
+            "importance": "normal",
+            "locale": "en-us",
+            "webUrl": "https://teams.microsoft.com/l/message/19%3A0f1e2d3c4b5a69788796a5b4c3d2e1f0%40thread.tacv2/1709810000000?groupId=c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f&tenantId=f0e1d2c3-b4a5-4697-8899-aabbccddeeff&createdTime=1709810000000&parentMessageId=1709810000000",
+            "channelIdentity": {
+                "teamId": "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+                "channelId": "19:0f1e2d3c4b5a69788796a5b4c3d2e1f0@thread.tacv2"
+            },
+            "policyViolation": null,
+            "eventDetail": null,
+            "from": {
+                "application": null,
+                "device": null,
+                "user": {
+                    "id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                    "displayName": "Ben Okafor",
+                    "userIdentityType": "aadUser"
+                }
+            },
+            "body": {
+                "contentType": "html",
+                "content": "<p><at id=\"0\">Contoso Launch</at> offsite is booked.</p>"
+            },
+            "attachments": [],
+            "mentions": [
+                {
+                    "id": 0,
+                    "mentionText": "Contoso Launch",
+                    "mentioned": {
+                        "application": null,
+                        "device": null,
+                        "user": null,
+                        "tag": null,
+                        "conversation": {
+                            "id": "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+                            "displayName": "Contoso Launch",
+                            "conversationIdentityType": "team"
+                        }
+                    }
+                }
+            ],
+            "reactions": [],
+            "messageHistory": [],
+            "replies@odata.count": 0,
+            "replies": []
+        },
+        {
+            "id": "1709820000000",
+            "replyToId": null,
+            "etag": "1709820000000",
+            "messageType": "systemEventMessage",
+            "createdDateTime": "2024-03-07T14:00:00Z",
+            "lastModifiedDateTime": "2024-03-07T14:00:00Z",
+            "lastEditedDateTime": null,
+            "deletedDateTime": null,
+            "subject": null,
+            "summary": null,
+            "chatId": null,
+            "importance": "normal",
+            "locale": "en-us",
+            "webUrl": "https://teams.microsoft.com/l/message/19%3A0f1e2d3c4b5a69788796a5b4c3d2e1f0%40thread.tacv2/1709820000000?groupId=c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f&tenantId=f0e1d2c3-b4a5-4697-8899-aabbccddeeff&createdTime=1709820000000&parentMessageId=1709820000000",
+            "channelIdentity": {
+                "teamId": "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+                "channelId": "19:0f1e2d3c4b5a69788796a5b4c3d2e1f0@thread.tacv2"
+            },
+            "policyViolation": null,
+            "eventDetail": {
+                "@odata.type": "#microsoft.graph.channelDescriptionUpdatedEventMessageDetail",
+                "channelId": "19:0f1e2d3c4b5a69788796a5b4c3d2e1f0@thread.tacv2",
+                "channelDescription": "Team-wide",
+                "initiator": {
+                    "application": null,
+                    "device": null,
+                    "user": {
+                        "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                        "displayName": null,
+                        "userIdentityType": "aadUser"
+                    }
+                }
+            },
+            "from": null,
+            "body": {
+                "contentType": "html",
+                "content": "<systemEventMessage/>"
+            },
+            "attachments": [],
+            "mentions": [],
+            "reactions": [],
+            "messageHistory": [],
+            "replies@odata.count": 0,
+            "replies": []
+        }
+    ]
+}

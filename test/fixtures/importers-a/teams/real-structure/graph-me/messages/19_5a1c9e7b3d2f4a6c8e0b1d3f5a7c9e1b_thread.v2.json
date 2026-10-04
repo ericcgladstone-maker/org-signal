@@ -1,0 +1,443 @@
+[
+    {
+        "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#chats('19%3A5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b%40thread.v2')/messages",
+        "@odata.count": 4,
+        "@odata.nextLink": "https://graph.microsoft.com/v1.0/chats/19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2/messages?$top=4&$skiptoken=ZmljdGlvbmFsLXNraXB0b2tlbg%3d%3d",
+        "value": [
+            {
+                "id": "1709568000000",
+                "replyToId": null,
+                "etag": "1709568000000",
+                "messageType": "message",
+                "createdDateTime": "2024-03-04T16:00:00Z",
+                "lastModifiedDateTime": "2024-03-04T16:02:11.48Z",
+                "lastEditedDateTime": null,
+                "deletedDateTime": "2024-03-04T16:02:11.48Z",
+                "subject": null,
+                "summary": null,
+                "chatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+                "importance": "normal",
+                "locale": "en-us",
+                "webUrl": null,
+                "channelIdentity": null,
+                "policyViolation": null,
+                "eventDetail": null,
+                "from": {
+                    "application": null,
+                    "device": null,
+                    "user": {
+                        "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+                        "displayName": "Chen Li",
+                        "userIdentityType": "aadUser"
+                    }
+                },
+                "body": {
+                    "contentType": "text",
+                    "content": ""
+                },
+                "attachments": [],
+                "mentions": [],
+                "reactions": [],
+                "messageHistory": []
+            },
+            {
+                "id": "1709560800000",
+                "replyToId": null,
+                "etag": "1709560800000",
+                "messageType": "message",
+                "createdDateTime": "2024-03-04T14:00:00Z",
+                "lastModifiedDateTime": "2024-03-04T14:00:00Z",
+                "lastEditedDateTime": null,
+                "deletedDateTime": null,
+                "subject": null,
+                "summary": null,
+                "chatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+                "importance": "normal",
+                "locale": "en-us",
+                "webUrl": null,
+                "channelIdentity": null,
+                "policyViolation": null,
+                "eventDetail": null,
+                "from": {
+                    "application": null,
+                    "device": null,
+                    "user": {
+                        "@odata.type": "#microsoft.graph.teamworkUserIdentity",
+                        "id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                        "displayName": "Ben Okafor",
+                        "userIdentityType": "aadUser",
+                        "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                    }
+                },
+                "body": {
+                    "contentType": "html",
+                    "content": "<p></p>\n<attachment id=\"1709551234567\"></attachment>\n<p>Agreed, shipping Friday.</p>\n<p></p>"
+                },
+                "attachments": [
+                    {
+                        "id": "1709551234567",
+                        "contentType": "messageReference",
+                        "contentUrl": null,
+                        "content": "{\"messageId\":\"1709551234567\",\"messagePreview\":\"Thanks Ben Okafor, merging now\",\"messageSender\":{\"application\":null,\"device\":null,\"user\":{\"userIdentityType\":\"aadUser\",\"tenantId\":\"f0e1d2c3-b4a5-4697-8899-aabbccddeeff\",\"id\":\"3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c\",\"displayName\":\"Ana Ruiz\"}}}",
+                        "name": null,
+                        "thumbnailUrl": null,
+                        "teamsAppId": null
+                    }
+                ],
+                "mentions": [],
+                "reactions": [],
+                "messageHistory": []
+            },
+            {
+                "id": "1709557200000",
+                "replyToId": null,
+                "etag": "1709557200000",
+                "messageType": "message",
+                "createdDateTime": "2024-03-04T13:00:00Z",
+                "lastModifiedDateTime": "2024-03-04T13:00:00Z",
+                "lastEditedDateTime": null,
+                "deletedDateTime": null,
+                "subject": null,
+                "summary": null,
+                "chatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+                "importance": "normal",
+                "locale": "en-us",
+                "webUrl": null,
+                "channelIdentity": null,
+                "policyViolation": null,
+                "eventDetail": null,
+                "from": {
+                    "application": null,
+                    "device": null,
+                    "user": {
+                        "@odata.type": "#microsoft.graph.teamworkUserIdentity",
+                        "id": "e9f8a7b6-c5d4-4e3f-a2b1-c0d9e8f7a6b5",
+                        "displayName": "Dana Park",
+                        "userIdentityType": "federatedUser",
+                        "tenantId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                    }
+                },
+                "body": {
+                    "contentType": "html",
+                    "content": "<p>Hi all &#8212; glad to help&nbsp;from Fabrikam.</p>"
+                },
+                "attachments": [],
+                "mentions": [],
+                "reactions": [],
+                "messageHistory": []
+            },
+            {
+                "id": "1709553600000",
+                "replyToId": null,
+                "etag": "1709553600000",
+                "messageType": "systemEventMessage",
+                "createdDateTime": "2024-03-04T12:00:00Z",
+                "lastModifiedDateTime": "2024-03-04T12:00:00Z",
+                "lastEditedDateTime": null,
+                "deletedDateTime": null,
+                "subject": null,
+                "summary": null,
+                "chatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+                "importance": "normal",
+                "locale": "en-us",
+                "webUrl": null,
+                "channelIdentity": null,
+                "policyViolation": null,
+                "eventDetail": {
+                    "@odata.type": "#microsoft.graph.membersAddedEventMessageDetail",
+                    "visibleHistoryStartDateTime": "2024-03-03T10:00:00Z",
+                    "members": [
+                        {
+                            "id": "e9f8a7b6-c5d4-4e3f-a2b1-c0d9e8f7a6b5",
+                            "displayName": null,
+                            "userIdentityType": "federatedUser",
+                            "tenantId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                        }
+                    ],
+                    "initiator": {
+                        "application": null,
+                        "device": null,
+                        "user": {
+                            "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                            "displayName": null,
+                            "userIdentityType": "aadUser"
+                        }
+                    }
+                },
+                "from": null,
+                "body": {
+                    "contentType": "html",
+                    "content": "<systemEventMessage/>"
+                },
+                "attachments": [],
+                "mentions": [],
+                "reactions": [],
+                "messageHistory": []
+            }
+        ]
+    },
+    {
+        "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#chats('19%3A5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b%40thread.v2')/messages",
+        "value": [
+            {
+                "id": "1709551234567",
+                "replyToId": null,
+                "etag": "1709551502100",
+                "messageType": "message",
+                "createdDateTime": "2024-03-04T11:20:34.567Z",
+                "lastModifiedDateTime": "2024-03-04T11:25:02.1Z",
+                "lastEditedDateTime": "2024-03-04T11:21:00.9Z",
+                "deletedDateTime": null,
+                "subject": null,
+                "summary": null,
+                "chatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+                "importance": "normal",
+                "locale": "en-us",
+                "webUrl": null,
+                "channelIdentity": null,
+                "policyViolation": null,
+                "eventDetail": null,
+                "from": {
+                    "application": null,
+                    "device": null,
+                    "user": {
+                        "@odata.type": "#microsoft.graph.teamworkUserIdentity",
+                        "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                        "displayName": "Ana Ruiz",
+                        "userIdentityType": "aadUser",
+                        "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                    }
+                },
+                "body": {
+                    "contentType": "html",
+                    "content": "<div><div>Thanks <at id=\"0\">Ben Okafor</at>, merging now &amp; <at id=\"1\">Launch crew</at> please review <emoji id=\"1f440_eyes\" alt=\"👀\" title=\"Eyes\"></emoji></div><attachment id=\"9F1C2B3A-4D5E-4F60-8A7B-1C2D3E4F5A6B\"></attachment></div>"
+                },
+                "attachments": [
+                    {
+                        "id": "9F1C2B3A-4D5E-4F60-8A7B-1C2D3E4F5A6B",
+                        "contentType": "reference",
+                        "contentUrl": "https://contoso.sharepoint.com/sites/launch/Shared%20Documents/plan.docx",
+                        "content": null,
+                        "name": "plan.docx",
+                        "thumbnailUrl": null,
+                        "teamsAppId": null
+                    }
+                ],
+                "mentions": [
+                    {
+                        "id": 0,
+                        "mentionText": "Ben Okafor",
+                        "mentioned": {
+                            "application": null,
+                            "device": null,
+                            "conversation": null,
+                            "tag": null,
+                            "user": {
+                                "@odata.type": "#microsoft.graph.teamworkUserIdentity",
+                                "id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                                "displayName": "Ben Okafor",
+                                "userIdentityType": "aadUser",
+                                "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                            }
+                        }
+                    },
+                    {
+                        "id": 1,
+                        "mentionText": "Launch crew",
+                        "mentioned": {
+                            "application": null,
+                            "device": null,
+                            "user": null,
+                            "tag": null,
+                            "conversation": {
+                                "id": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+                                "displayName": "Launch crew",
+                                "conversationIdentityType": "chat"
+                            }
+                        }
+                    }
+                ],
+                "reactions": [
+                    {
+                        "reactionType": "💯",
+                        "displayName": "Hundred points",
+                        "reactionContentUrl": null,
+                        "createdDateTime": "2024-03-04T11:25:02.1Z",
+                        "user": {
+                            "application": null,
+                            "device": null,
+                            "user": {
+                                "@odata.type": "#microsoft.graph.teamworkUserIdentity",
+                                "id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                                "displayName": null,
+                                "userIdentityType": "aadUser"
+                            }
+                        }
+                    },
+                    {
+                        "reactionType": "like",
+                        "displayName": "Like",
+                        "reactionContentUrl": null,
+                        "createdDateTime": "2024-03-04T11:24:00Z",
+                        "user": {
+                            "application": null,
+                            "device": null,
+                            "user": {
+                                "@odata.type": "#microsoft.graph.teamworkUserIdentity",
+                                "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+                                "displayName": null,
+                                "userIdentityType": "aadUser"
+                            }
+                        }
+                    }
+                ],
+                "messageHistory": [
+                    {
+                        "modifiedDateTime": "2024-03-04T11:25:02.1Z",
+                        "actions": "reactionAdded",
+                        "reaction": {
+                            "reactionType": "💯",
+                            "displayName": "Hundred points",
+                            "reactionContentUrl": null,
+                            "createdDateTime": "2024-03-04T11:25:02.1Z",
+                            "user": {
+                                "application": null,
+                                "device": null,
+                                "user": {
+                                    "@odata.type": "#microsoft.graph.teamworkUserIdentity",
+                                    "id": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                                    "displayName": null,
+                                    "userIdentityType": "aadUser"
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            {
+                "id": "1709550000000",
+                "replyToId": null,
+                "etag": "1709550000000",
+                "messageType": "message",
+                "createdDateTime": "2024-03-04T11:00:00Z",
+                "lastModifiedDateTime": "2024-03-04T11:00:00Z",
+                "lastEditedDateTime": null,
+                "deletedDateTime": null,
+                "subject": null,
+                "summary": null,
+                "chatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+                "importance": "normal",
+                "locale": "en-us",
+                "webUrl": null,
+                "channelIdentity": null,
+                "policyViolation": null,
+                "eventDetail": null,
+                "from": {
+                    "application": {
+                        "@odata.type": "#microsoft.graph.teamworkApplicationIdentity",
+                        "id": "28b7c6d5-e4f3-4a2b-9c1d-0e9f8a7b6c5d",
+                        "displayName": "Workflows",
+                        "applicationIdentityType": "bot"
+                    },
+                    "device": null,
+                    "user": null
+                },
+                "body": {
+                    "contentType": "html",
+                    "content": "<attachment id=\"b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5\"></attachment>"
+                },
+                "attachments": [
+                    {
+                        "id": "b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5",
+                        "contentType": "application/vnd.microsoft.card.adaptive",
+                        "contentUrl": null,
+                        "content": "{\"type\":\"AdaptiveCard\",\"body\":[{\"type\":\"TextBlock\",\"text\":\"Build 412 passed\"}],\"version\":\"1.4\"}",
+                        "name": null,
+                        "thumbnailUrl": null,
+                        "teamsAppId": "c3a1996d-db0f-4857-a6ea-7aabf0266b00"
+                    }
+                ],
+                "mentions": [],
+                "reactions": [],
+                "messageHistory": []
+            },
+            {
+                "id": "1709546400000",
+                "replyToId": null,
+                "etag": "1709546400000",
+                "messageType": "message",
+                "createdDateTime": "2024-03-04T10:00:00Z",
+                "lastModifiedDateTime": "2024-03-04T10:00:00Z",
+                "lastEditedDateTime": null,
+                "deletedDateTime": null,
+                "subject": null,
+                "summary": null,
+                "chatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+                "importance": "normal",
+                "locale": "en-us",
+                "webUrl": null,
+                "channelIdentity": null,
+                "policyViolation": null,
+                "eventDetail": null,
+                "from": {
+                    "application": null,
+                    "device": null,
+                    "user": {
+                        "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+                        "displayName": "Chen Li",
+                        "userIdentityType": "aadUser"
+                    }
+                },
+                "body": {
+                    "contentType": "text",
+                    "content": "Morning! Starting the release checklist."
+                },
+                "attachments": [],
+                "mentions": [],
+                "reactions": [],
+                "messageHistory": []
+            },
+            {
+                "id": "1709370000000",
+                "replyToId": null,
+                "etag": "1709370000000",
+                "messageType": "unknownFutureValue",
+                "createdDateTime": "2024-03-02T09:00:00Z",
+                "lastModifiedDateTime": "2024-03-02T09:00:00Z",
+                "lastEditedDateTime": null,
+                "deletedDateTime": null,
+                "subject": null,
+                "summary": null,
+                "chatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+                "importance": "normal",
+                "locale": "en-us",
+                "webUrl": null,
+                "channelIdentity": null,
+                "policyViolation": null,
+                "eventDetail": {
+                    "@odata.type": "#microsoft.graph.chatRenamedEventMessageDetail",
+                    "chatId": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+                    "chatDisplayName": "Launch crew",
+                    "initiator": {
+                        "application": null,
+                        "device": null,
+                        "user": {
+                            "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                            "displayName": null,
+                            "userIdentityType": "aadUser"
+                        }
+                    }
+                },
+                "from": null,
+                "body": {
+                    "contentType": "html",
+                    "content": "<systemEventMessage/>"
+                },
+                "attachments": [],
+                "mentions": [],
+                "reactions": [],
+                "messageHistory": []
+            }
+        ]
+    }
+]

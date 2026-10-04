@@ -87,6 +87,33 @@ export function parseInvitationDate(s) {
 
 const isYes = v => /^(yes|true|1|y)$/i.test(String(v ?? '').trim());
 
+// Sponsored messages and InMail campaigns: their CONTENT is built in LinkedIn's
+// campaign editor and starts with this class (observed 2021-2026 exports).
+const SPONSORED_RE = /class="spinmail-quill-editor/i;
+
+// TO without recipient URLs (exports before mid-2023) joins names with ", ",
+// and names themselves contain ", " ("Jane Doe, Ph.D."). Split into names the
+// export knows elsewhere (longest match first); a segment that matches nothing
+// keeps any credential-like segments that follow it ("Ph.D.", "MBA", "Jr.").
+// Returns { names, unmatched } where unmatched counts names not known.
+const CREDENTIAL_RE = /^(?:[A-Z][A-Za-z]{0,4}\.?(?:[A-Z][a-z]?\.?)*|Jr\.?|Sr\.?|I{2,3}|IV)$/;
+export function splitRecipientNames(to, isKnown) {
+  const segs = String(to ?? '').split(/,\s+/).map(s => s.trim()).filter(Boolean);
+  const names = [];
+  let unmatched = 0;
+  for (let i = 0; i < segs.length;) {
+    let j = segs.length;
+    for (; j > i; j--) if (isKnown(segs.slice(i, j).join(', '))) break;
+    if (j > i) { names.push(segs.slice(i, j).join(', ')); i = j; continue; }
+    let k = i + 1;
+    while (k < segs.length && CREDENTIAL_RE.test(segs[k]) && !isKnown(segs[k])) k++;
+    names.push(segs.slice(i, k).join(', '));
+    unmatched++;
+    i = k;
+  }
+  return { names, unmatched };
+}
+
 // ---- CSV access by header name (case-insensitive, trimmed; never by position) --
 
 function rowsByName(text) {
@@ -110,17 +137,27 @@ export function parseConnections(text) {
 
 // ---- detection --------------------------------------------------------------
 
+// Header lines are compared with quotes removed: since 2026 messages.csv
+// quotes every field, the header too ("CONVERSATION ID","CONVERSATION TITLE",...).
+const unquote = s => s.replace(/"/g, '');
+
 async function sniff(fs) {
   const hits = [];
   const conn = findFile(fs, 'Connections.csv');
   if (conn) {
-    const head = await peek(conn, 2048);
-    if (/^﻿?Notes:/.test(head) || (/First Name,Last Name,URL/.test(head) && /Connected On/.test(head))) hits.push('Connections.csv');
+    const head = unquote(await peek(conn, 2048));
+    // Preamble since 2022; before mid-2023 there is no URL column
+    // ("First Name,Last Name,Email Address,...").
+    if (/^﻿?Notes:/.test(head) || (/(^|\n)First Name,Last Name,/.test(head) && /Connected On/.test(head))) hits.push('Connections.csv');
   }
   const msgs = findFile(fs, 'messages.csv');
-  if (msgs && /^CONVERSATION ID,CONVERSATION TITLE,FROM/i.test(firstLine(await peek(msgs, 1024)))) hits.push('messages.csv');
+  if (msgs && /^CONVERSATION ID,CONVERSATION TITLE,FROM/i.test(unquote(firstLine(await peek(msgs, 1024))))) hits.push('messages.csv');
   const inv = findFile(fs, 'Invitations.csv');
-  if (inv) { const l = firstLine(await peek(inv, 1024)); if (/Direction/.test(l) && /inviterProfileUrl/.test(l)) hits.push('Invitations.csv'); }
+  if (inv) {
+    // The profile URL columns were added in late 2023.
+    const l = unquote(firstLine(await peek(inv, 1024)));
+    if (/^From,To,Sent At,Message,Direction/i.test(l) || (/Direction/.test(l) && /inviterProfileUrl/.test(l))) hits.push('Invitations.csv');
+  }
   return hits;
 }
 
@@ -135,7 +172,7 @@ async function detect(fs) {
 
 // ---- import -----------------------------------------------------------------
 
-async function importLinkedIn(fs, { builder, progress, signal } = {}) {
+async function importLinkedIn(fs, { builder, options = {}, progress, signal } = {}) {
   const b = builder;
   const files = {};
   for (const n of ['Connections.csv', 'messages.csv', 'Invitations.csv', 'Profile.csv', 'Positions.csv', 'Education.csv', 'Endorsement_Received_Info.csv', 'Endorsement_Given_Info.csv']) {
@@ -160,7 +197,7 @@ async function importLinkedIn(fs, { builder, progress, signal } = {}) {
   // Ego URL is usually not in Profile.csv. Strongest evidence: invitations
   // (OUTGOING inviter / INCOMING invitee are the ego). Otherwise the URL that
   // appears in nearly every conversation of messages.csv (spec 3).
-  let egoUrlKey = null, egoHow = null;
+  let egoUrlKey = null, egoHow = null, egoMsgName = null;
   const invVotes = new Map();
   for (const r of invitations) {
     const d = (r.direction || '').toUpperCase();
@@ -179,10 +216,13 @@ async function importLinkedIn(fs, { builder, progress, signal } = {}) {
       for (const u of String(r['recipient profile urls'] ?? '').match(URL_RE) || []) add(u, null);
     }
     const ranked = [...seen].map(([k, s]) => [k, s.size]).sort((a, b) => b[1] - a[1]);
-    // Prefer a candidate whose sender name equals the Profile.csv name.
+    // Prefer a candidate whose sender name equals the Profile.csv name. Such a
+    // match is accepted on its own: before mid-2023 messages.csv has no
+    // recipient URLs, so the owner's URL appears only in conversations the
+    // owner wrote in, often far fewer than 80% of them.
     const byName = egoName && ranked.find(([k]) => nameKey(names.get(k)) === nameKey(egoName));
     let top = byName || ranked[0];
-    let found = !!top && (convIds.size === 1 ? !!byName : top[1] >= Math.max(2, 0.8 * convIds.size));
+    let found = !!top && (byName ? true : convIds.size > 1 && top[1] >= Math.max(2, 0.8 * convIds.size));
     if (!found && egoName) {
       // By elimination: a URL that sent under someone else's name is not the
       // owner's. If exactly one URL in every conversation is left (e.g. one
@@ -190,14 +230,14 @@ async function importLinkedIn(fs, { builder, progress, signal } = {}) {
       const rest = ranked.filter(([k, n]) => n === convIds.size && (!names.has(k) || nameKey(names.get(k)) === nameKey(egoName)));
       if (rest.length === 1) { top = rest[0]; found = true; }
     }
-    if (found) { egoUrlKey = top[0]; egoHow = 'messages'; }
+    if (found) { egoUrlKey = top[0]; egoHow = 'messages'; egoMsgName = names.get(top[0]) || null; }
   }
   const egoKey = egoUrlKey || 'linkedin:me';
 
   const fileNames = Object.values(files).map(e => e.rel);
   b.beginSource({ format: 'linkedin', family: 'professional', medium: 'linkedin', view: 'ego', context: 'professional', tz: 'UTC', fileNames, egoKey });
   if (!egoUrlKey) b.warn('ego-url-unknown', 'Could not tell which profile URL is yours (Profile.csv has none and no invitations or messages identified it). Your node is keyed "linkedin:me" and will not merge with your URL if it appears elsewhere.');
-  else if (egoHow === 'messages') b.warn('ego-url-inferred', 'Your profile URL was inferred as the one present in nearly every conversation of messages.csv. Check the ego node in the identity review.');
+  else if (egoHow === 'messages') b.warn('ego-url-inferred', 'Your profile URL was inferred from messages.csv (the URL that sends under your Profile.csv name, or the one present in nearly every conversation). Check the ego node in the identity review.');
 
   // Ego attributes (Profile / Positions / Education): ego node only.
   const egoAttrs = {};
@@ -208,10 +248,14 @@ async function importLinkedIn(fs, { builder, progress, signal } = {}) {
   if (current) { egoAttrs.company = current['company name']; egoAttrs.position = current.title; }
   if (positions.length) egoAttrs.positions = positions.map(p => `${p.title || '?'} @ ${p['company name'] || '?'} (${p['started on'] || '?'} - ${p['finished on'] || 'present'})`).join('; ');
   if (education.length) egoAttrs.education = education.map(e => [e['school name'], e['degree name']].filter(Boolean).join(', ')).join('; ');
-  const ego = b.node(egoKey, { label: egoName || 'Me (LinkedIn)', attrs: egoAttrs });
+  // Without Profile.csv, the name the owner's URL sends under in messages.csv.
+  const ego = b.node(egoKey, { label: egoName || egoMsgName || 'Me (LinkedIn)', attrs: egoAttrs });
   b.stat('positions', positions.length); b.stat('education', education.length);
 
   // Name -> key map for participants that lack a URL: unique full names only.
+  // Learned first from every row that pairs a name with a profile URL (all
+  // files), so that URL-less rows anywhere (Connections.csv and Invitations.csv
+  // before mid-2023, "LinkedIn Member" senders, TO names) can join them.
   const nameToKey = new Map();
   const nameAmbiguous = new Set();
   const learnName = (name, key) => {
@@ -219,16 +263,36 @@ async function importLinkedIn(fs, { builder, progress, signal } = {}) {
     if (!n || !key) return;
     if (nameToKey.has(n) && nameToKey.get(n) !== key) nameAmbiguous.add(n); else nameToKey.set(n, key);
   };
+  const egoNameKey = nameKey(egoName);
+  for (const r of connections || []) { const k = urlKey(r.url); if (k) learnName([r['first name'], r['last name']].filter(Boolean).join(' '), k); }
+  for (const r of messages) {
+    const sk = urlKey(r['sender profile url']);
+    if (sk && r.from) learnName(r.from, sk);
+    const ru = String(r['recipient profile urls'] ?? '').match(URL_RE) || [];
+    if (ru.length === 1 && r.to) learnName(r.to, urlKey(ru[0]));
+  }
+  for (const r of invitations) { learnName(r.from, urlKey(r.inviterprofileurl)); learnName(r.to, urlKey(r.inviteeprofileurl)); }
+  for (const [p, rows] of [['endorser', endRecv], ['endorsee', endGiven]]) {
+    for (const r of rows) learnName([r[p + ' first name'], r[p + ' last name']].filter(Boolean).join(' '), urlKey(r[p + ' public url']));
+  }
+  const knownName = name => { const n = nameKey(name); return !!n && (n === egoNameKey || (nameToKey.has(n) && !nameAmbiguous.has(n))); };
 
   // Connections: declared ego -> connection.
   if (files['Connections.csv'] && !connections) b.warn('connections-header-missing', 'Connections.csv has no row with "First Name" and "Connected On"; it was skipped.');
   const connected = new Set();
-  let badDates = 0, noUrl = 0;
+  let badDates = 0, noUrl = 0, connByName = 0, hidden = 0;
   for (const [i, r] of (connections || []).entries()) {
     if (signal?.aborted) signal.throwIfAborted();
     const label = [r['first name'], r['last name']].filter(Boolean).join(' ');
     let key = urlKey(r.url);
-    if (!key) { noUrl++; key = 'linkedin:name:' + (nameKey(label) || 'connection-' + i); }
+    // Rows with only a date (",,,,,,07 Jun 2026"): members who hid or closed
+    // their profile. Nothing identifies them, so they are counted, not added.
+    if (!key && !label) { hidden++; continue; }
+    if (!key) {
+      const n = nameKey(label);
+      if (nameToKey.has(n) && !nameAmbiguous.has(n) && nameToKey.get(n) !== egoKey) { key = nameToKey.get(n); connByName++; }
+      else { noUrl++; key = 'linkedin:name:' + (n || 'connection-' + i); learnName(label, key); }
+    }
     const t = parseConnectedOn(r['connected on']);
     if (Number.isNaN(t) && r['connected on']) badDates++;
     const n = b.node(key, {
@@ -236,29 +300,23 @@ async function importLinkedIn(fs, { builder, progress, signal } = {}) {
       attrs: { company: r.company, position: r.position, connected_on: Number.isNaN(t) ? undefined : new Date(t).toISOString().slice(0, 10) },
       platformIds: Object.assign({ linkedin: profileSlug(r.url) ?? undefined }, r['email address'] ? { email: r['email address'].toLowerCase() } : {}),
     });
-    learnName(label, key);
     connected.add(key);
     b.event({ type: 'declared', t, actor: ego, targets: [[n, 'declared']], key: 'linkedin:connection:' + key.slice(9) });
     b.stat('connections');
   }
   if (badDates) b.warn('unparsed-date', 'Connections.csv "Connected On" values in an unrecognised format (only English "08 Feb 2026", ISO and MM/DD/YYYY are read); those ties have no time.', badDates);
+  if (connByName) b.warn('connection-url-by-name', 'Connections.csv has no URL column (exports before mid-2023); connections were joined to the profile URL that messages or invitations give for the same full name. A name shared by two people is not joined.', connByName);
   if (noUrl) b.warn('no-profile-url', 'Connections without a profile URL; keyed by name, which may collide.', noUrl);
+  if (hidden) { b.stat('hidden-connections', hidden); b.warn('hidden-connections', 'Rows in Connections.csv with a date but no name or profile URL (members who hid or closed their profile). They are not added as people, so the network has fewer connections than the file has rows.', hidden); }
   if (connections?.length) b.warn('connection-date-only', 'Connected On is a date without time or zone; ties are placed at midnight UTC of that day.');
 
-  // Learn names of message participants that do carry a URL, so URL-less rows
-  // in older exports can be matched.
-  for (const r of messages) {
-    const sk = urlKey(r['sender profile url']);
-    if (sk && r.from) learnName(r.from, sk);
-    const ru = String(r['recipient profile urls'] ?? '').match(URL_RE) || [];
-    if (ru.length === 1 && r.to) learnName(r.to, urlKey(ru[0]));
-  }
-
   // ---- messages ----
-  let drafts = 0, byName = 0, unknownMember = 0, ambiguousTo = 0, badMsgDates = 0, sponsored = 0;
+  let drafts = 0, byName = 0, unknownMember = 0, ambiguousTo = 0, badMsgDates = 0, sponsored = 0, spam = 0;
   const convs = new Map(); // id -> rows
   for (const r of messages) {
     if (isYes(r['is message draft']) || isYes(r['is conversation draft'])) { drafts++; continue; }
+    // FOLDER is INBOX, ARCHIVE, SPAM or empty (sent messages are in INBOX).
+    if (/^spam$/i.test(r.folder || '') && !options.includeSpam) { spam++; continue; }
     const id = r['conversation id'] || '(none)';
     if (!convs.has(id)) convs.set(id, []);
     convs.get(id).push(r);
@@ -289,16 +347,18 @@ async function importLinkedIn(fs, { builder, progress, signal } = {}) {
         if (new Set(urls.map(urlKey)).size > 1) multiRecipient = true;
         for (const u of urls) rec.push(resolve(u, urls.length === 1 ? r.to : null, convId));
       } else if (r.to) {
-        // No URLs (very old exports): names only. A comma may be part of a name
-        // ("Smith, PhD"), so we never split TO on commas.
-        if (r.to.includes(',')) ambiguousTo++;
-        rec.push(resolve(null, r.to, convId));
+        // No URLs (exports before mid-2023): names only, joined with ", ".
+        // A comma may also be part of a name ("Jane Doe, Ph.D."), so split
+        // only into names known from elsewhere in the export.
+        const { names, unmatched } = r.to.includes(',') ? splitRecipientNames(r.to, knownName) : { names: [r.to], unmatched: 0 };
+        if (unmatched) ambiguousTo++;
+        for (const nm of names) rec.push(resolve(null, nm, convId));
       }
       for (const x of rec) parts.set(x.key, b.node(x.key, { label: x.label }));
       const t = parseUtcStamp(r.date);
       if (Number.isNaN(t)) badMsgDates++;
       msgs.push({ r, s, sIdx, rec, t });
-      if (r.subject && !connected.has(s.key) && s.key !== egoKey) sponsored++;
+      if ((SPONSORED_RE.test(r.content || '') || r.subject) && !connected.has(s.key) && s.key !== egoKey) sponsored++;
     }
     const isGroup = multiRecipient || parts.size > 2;
     const kind = isGroup ? 'group_dm' : 'dm';
@@ -315,7 +375,7 @@ async function importLinkedIn(fs, { builder, progress, signal } = {}) {
         for (const x of m.rec) targets.push([b.nodeIndex(x.key), 'dm']);
         if (!targets.length) for (const [k, idx] of parts) if (k !== m.s.key) targets.push([idx, 'dm']);
       }
-      b.event({ type: 'message', t: m.t, actor: m.sIdx, targets, context: ctx, key: `linkedin:msg:${convId}:${j}`, text: m.r.content ? stripHtml(m.r.content) : null });
+      b.event({ type: 'message', t: m.t, actor: m.sIdx, targets, context: ctx, key: `linkedin:msg:${convId}:${j}`, text: m.r.content ? stripHtml(m.r.content.replace(/\r\n?/g, '\n')) : null });
       b.stat('messages');
     }
     b.stat('conversations');
@@ -324,9 +384,10 @@ async function importLinkedIn(fs, { builder, progress, signal } = {}) {
   if (drafts) b.warn('drafts-skipped', 'Draft messages (IS MESSAGE DRAFT / IS CONVERSATION DRAFT) were skipped.', drafts);
   if (byName) b.warn('matched-by-name', 'Message participants without a profile URL were matched to a connection by exact full name (low confidence).', byName);
   if (unknownMember) b.warn('unknown-member', 'Message participants with no profile URL and no unique name match (deleted accounts, "LinkedIn Member"); each is a separate node per conversation.', unknownMember);
-  if (ambiguousTo) b.warn('ambiguous-recipients', 'Rows with no recipient URLs and a comma in TO; the TO value was kept as one name because the multi-recipient delimiter is not documented.', ambiguousTo);
+  if (ambiguousTo) b.warn('ambiguous-recipients', 'Rows with no recipient URLs whose TO names could not all be matched to a person known elsewhere in the export; TO was split at ", " (names such as "Jane Doe, Ph.D." were kept together where recognisable), so check these recipients.', ambiguousTo);
+  if (spam) b.warn('spam-excluded', 'Messages in the SPAM folder of messages.csv were left out. Turn on "Include messages in the SPAM folder" to keep them.', spam);
   if (badMsgDates) b.warn('unparsed-date', 'messages.csv DATE values not in "YYYY-MM-DD HH:MM:SS UTC" form; those messages have no time.', badMsgDates);
-  if (sponsored) b.warn('possible-sponsored', 'Messages with a SUBJECT from people who are not your connections (likely InMail, recruiters or sponsored). They are kept; consider excluding them.', sponsored);
+  if (sponsored) b.warn('possible-sponsored', 'Messages from people who are not your connections that carry a SUBJECT or were written in LinkedIn\'s campaign editor (InMail, recruiters, sponsored messages). They are kept; consider excluding them.', sponsored);
 
   // ---- invitations ----
   let badInv = 0;
@@ -366,6 +427,8 @@ export default {
   label: 'LinkedIn data export',
   family: 'professional',
   detect,
-  options: [],
+  options: [
+    { key: 'includeSpam', label: 'Include messages in the SPAM folder', type: 'boolean', default: false },
+  ],
   import: importLinkedIn,
 };

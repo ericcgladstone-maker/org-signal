@@ -1,0 +1,26 @@
+{
+    "value": [
+        {
+            "id": "19:0f1e2d3c4b5a69788796a5b4c3d2e1f0@thread.tacv2",
+            "createdDateTime": "2025-11-01T08:00:00.51Z",
+            "displayName": "General",
+            "description": "Team-wide",
+            "membershipType": "standard",
+            "layoutType": "post",
+            "isArchived": false,
+            "email": "",
+            "webUrl": "https://teams.microsoft.com/l/channel/19%3A0f1e2d3c4b5a69788796a5b4c3d2e1f0%40thread.tacv2/General?groupId=c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f&tenantId=f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+        },
+        {
+            "id": "19:9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b@thread.tacv2",
+            "createdDateTime": "2025-11-02T08:00:00Z",
+            "displayName": "Leads",
+            "description": null,
+            "membershipType": "private",
+            "layoutType": "post",
+            "isArchived": false,
+            "email": "",
+            "webUrl": "https://teams.microsoft.com/l/channel/19%3A9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b%40thread.tacv2/Leads?groupId=c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f&tenantId=f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+        }
+    ]
+}
