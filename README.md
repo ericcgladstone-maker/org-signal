@@ -184,4 +184,6 @@ node tools/accuracy/campaign.mjs                          # the full accuracy ca
 | `data/classic`, `tools/datasets` | Classic datasets and the scripts that build them from the public sources |
 | `docs/` | Architecture (`CONTRACTS.md`), module APIs, format specs, accuracy, datasets, user-testing reports |
 
+**Known console error, by decision (2026-10-04):** Cloudflare Web Analytics is enabled on the graystoneindustries.co zone, so Cloudflare injects its beacon (`static.cloudflareinsights.com/beacon.min.js`) into this app's pages. The Content Security Policy in `_headers` blocks it, which leaves one "violates the following Content Security Policy directive" error in the console and sends nothing. This is deliberate. Do not allow the script in `script-src` (or loosen `script-src` in a way that admits it) unless the owner decides to collect page views: it would contradict "nothing leaves the browser". Browser QA treats that one message as known.
+
 To deploy, run `tools/stage.sh`. It copies an allowlist of served files to `_deploy/`, with security headers including a Content Security Policy. Then `npx wrangler deploy` publishes it to Cloudflare Workers Static Assets.
