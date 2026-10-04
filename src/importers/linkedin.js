@@ -236,7 +236,12 @@ async function importLinkedIn(fs, { builder, options = {}, progress, signal } = 
 
   const fileNames = Object.values(files).map(e => e.rel);
   b.beginSource({ format: 'linkedin', family: 'professional', medium: 'linkedin', view: 'ego', context: 'professional', tz: 'UTC', fileNames, egoKey });
-  if (!egoUrlKey) b.warn('ego-url-unknown', 'Could not tell which profile URL is yours (Profile.csv has none and no invitations or messages identified it). Your node is keyed "linkedin:me" and will not merge with your URL if it appears elsewhere.');
+  // LinkedIn sends a large export in two parts: the first (minutes after the
+  // request) holds profile files only; connections, messages and invitations
+  // arrive in the second, about a day later (seen in a real export, 2026-10-04).
+  const profileOnly = !files['Connections.csv'] && !files['messages.csv'] && !files['Invitations.csv'];
+  if (profileOnly) b.warn('linkedin-profile-only', 'This LinkedIn export has profile files only (no Connections.csv, messages.csv or Invitations.csv), so it holds no network. LinkedIn sends a requested export in two parts: this looks like the first. Load the second file, which LinkedIn emails when it is ready (usually within a day).');
+  else if (!egoUrlKey) b.warn('ego-url-unknown', 'Could not tell which profile URL is yours (Profile.csv has none and no invitations or messages identified it). Your node is keyed "linkedin:me" and will not merge with your URL if it appears elsewhere.');
   else if (egoHow === 'messages') b.warn('ego-url-inferred', 'Your profile URL was inferred from messages.csv (the URL that sends under your Profile.csv name, or the one present in nearly every conversation). Check the ego node in the identity review.');
 
   // Ego attributes (Profile / Positions / Education): ego node only.

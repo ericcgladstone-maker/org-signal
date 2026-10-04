@@ -166,3 +166,21 @@ test('TO name splitting keeps credentials with their name', () => {
   assert.deepEqual(splitRecipientNames('Lena Vogt, Sam Roe, MBA, Maya Lindgren', isKnown), { names: ['Lena Vogt', 'Sam Roe, MBA', 'Maya Lindgren'], unmatched: 1 });
   assert.deepEqual(splitRecipientNames('Sam Roe, Kim Lee', isKnown), { names: ['Sam Roe', 'Kim Lee'], unmatched: 2 });
 });
+
+test('the first part of a LinkedIn export (profile files only) says the network is in the second part', async () => {
+  const csv = s => new TextEncoder().encode(s);
+  const zip = zipSync({
+    'Profile.csv': csv('First Name,Last Name,Maiden Name,Address,Birth Date,Headline,Summary,Industry,Zip Code,Geo Location,Twitter Handles,Websites,Instant Messengers\nAda,Example,,,,Researcher,,Research,,,,,\n'),
+    'Positions.csv': csv('Company Name,Title,Description,Location,Started On,Finished On\nContoso,Researcher,,,Jan 2020,\n'),
+    'Registration.csv': csv('Registered At,Registration Ip,Subscription Types\n1/1/10 12:00 AM,,\n'),
+  });
+  const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'li-first-'));
+  const file = path.join(dir, 'Basic_LinkedInDataExport_10-04-2026.zip.zip');
+  fs.writeFileSync(file, zip);
+  const { detections, ds, src, warn } = await pipe(file);
+  assert.equal(detections[0].id, 'linkedin');
+  assert.equal(ds.events.count, 0);
+  assert.ok(warn('linkedin-profile-only'), 'explains the two-part export');
+  assert.equal(warn('ego-url-unknown'), null);
+  assert.equal(src.view, 'ego');
+});
