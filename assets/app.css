@@ -489,26 +489,22 @@ pre.code{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);fon
 .loaded{display:flex;align-items:center;gap:.75rem;min-width:0;font-size:var(--fs-foot);color:var(--text-2);padding-left:1.25rem;border-left:1px solid var(--rule-strong)}
 .loaded__name{min-width:0;max-width:19.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .loaded__name strong{color:var(--text);font-weight:600}
-.loaded .tlink{font-size:var(--fs-foot)}
+.loaded .tlink{font-size:var(--fs-foot);flex:none;white-space:nowrap}
 .confirm{position:absolute;right:var(--pad-app);top:calc(100% + .5rem);z-index:90;width:min(24rem,calc(100vw - 2*var(--pad-app)));background:var(--bg-deep);border:1px solid var(--rule-strong);padding:1rem;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:var(--fs-small);color:var(--text-2)}
 .confirm p + p{margin-top:.5rem}
 .confirm .tlinks{margin-top:.9rem}
-/* On narrow screens the chip moves to its own row under the bar. */
-.loaded-row{display:none}
-@media (max-width:1240px){ .loaded__name{max-width:10rem} }
-/* In the one-row header the dataset name needs the room (a generated
-   scenario's name, J14): the "Analyzing:" label stays for screen readers. */
-@media (min-width:1421px) and (max-width:1560px){ .app-header__end > .loaded .loaded__label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap} }
-/* With Learn and the Explanations switch the row is full below 1420px: the
-   chip takes its own row under the bar there (and on phones). */
-@media (max-width:1420px){
-  .app-header__end > .loaded{display:none}
-  .loaded-row{display:block;border-top:1px solid var(--rule)}
-  .loaded-row .loaded{border-left:0;padding-left:0;min-height:2.5rem;justify-content:space-between}
-  .loaded-row .loaded__name{max-width:none;flex:1 1 auto}
-  :root[data-loaded='true']{--header-h:calc(var(--bar-h) + 2.5rem)}
-  .confirm{top:100%}
-}
+/* The chip always sits on its own row under the bar. With the nav, Learn and
+   the Interpretive notes switch, the one-row bar left the dataset name under
+   100px at every desktop width (the bar stops widening at the frame, about
+   1540px, while the nav's gaps keep growing), and before the button was
+   made rigid it ran into the nav (2026-10-04). The in-bar chip is therefore
+   never shown. */
+.app-header__end > .loaded{display:none}
+.loaded-row{display:block;border-top:1px solid var(--rule)}
+.loaded-row .loaded{border-left:0;padding-left:0;min-height:2.5rem;justify-content:space-between}
+.loaded-row .loaded__name{max-width:none;flex:1 1 auto}
+:root[data-loaded='true']{--header-h:calc(var(--bar-h) + 2.5rem)}
+.confirm{top:100%}
 /* Phones: the name may take two lines of the chip's row rather than lose its
    scenario to an ellipsis. */
 @media (max-width:600px){ .loaded-row .loaded__name{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3} }

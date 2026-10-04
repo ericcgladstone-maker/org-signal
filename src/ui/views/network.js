@@ -37,7 +37,7 @@ import { departures } from '../lib/departures.js';
 import { topShare, whatIf, concentrationWords, DEPENDS_SHARE } from '../lib/fragility.js';
 import { requestPeopleSort } from '../lib/viewprefs.js';
 import { ClassicFacts } from './learn/classic.js';
-import { communityScale } from '../lib/communities.js';
+import { communityScale, communityNumber } from '../lib/communities.js';
 import { orientLayout, labelBudget, overlaps, groupAnchors, hullEdgeSpots, namesFirst } from '../lib/labels.js';
 import { VISIBILITY } from '../../core/model.js';
 import { cachedRender, getRender, clearRender, tiesOf } from '../lib/render-cache.js';
@@ -1118,7 +1118,7 @@ function SelectionPanel({ ds, selection, data, metrics, onEdge }) {
     ${dep && dep.kind === 'silent' && html`<p class="small"><${Flag} level="caution">Left?</${Flag}> <span class="text2">No activity after ${fmtDateTime(dep.last).split(',')[0]} (the last ${fmtInt(dep.quietDays)} days of the data). Whole-period measures mix the time before and after.</span></p>`}
     ${v < 0 ? html`<p class="small text2">Not in the current network (filtered out or without ties).</p>` : html`
       ${kind && html`<div class="metric-row"><span>Kind</span><span class="metric-row__val">${kind}</span></div>`}
-      ${communities && html`<div class="metric-row"><span>Community</span><span class="metric-row__val"><${Swatch} color=${sc.color(String(communities.membership[v]))} /> ${communities.membership[v] + 1}</span></div>`}
+      ${communities && html`<div class="metric-row"><span>Community</span><span class="metric-row__val">${communityNumber(communities, v) == null ? html`<span class="text2">None (no ties)</span>` : html`<${Swatch} color=${sc.color(String(communities.membership[v]))} /> ${communityNumber(communities, v)}`}</span></div>`}
       ${show.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k} label=${metricLabel(k, net.directed)} note=${measureNote(k, { n: net.n, directed: net.directed, twoMode: net.twoMode })} gloss=${true} /></span><span class="metric-row__val">${measureFormat(k, metrics[k])(metrics[k][v])}</span></div>`)}
     `}
     ${v >= 0 && html`<h3 class="label" style="margin-top:1.1rem">Ties (${fmtInt(ties.length)})</h3>

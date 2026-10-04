@@ -174,3 +174,11 @@ test('stragglers and small loose ends do not add a name', () => {
   assert.deepEqual(a.filter(c => c.key === 'b').map(c => [c.part, c.m]), [[0, 6]]);
   assert.deepEqual(a.filter(c => c.key === 'c').map(c => [c.part, c.m]), [[0, 3], [1, 3]]);
 });
+
+test('a Louvain community of one (an isolate) is shown as no community, and the others keep their numbers', async () => {
+  const { communityNumber, communityLabel, NO_COMMUNITY } = await import('../../src/ui/lib/communities.js');
+  const c = { membership: [0, 0, 1, 1, 2], sizes: [2, 2, 1], count: 3 };
+  assert.deepEqual([0, 1, 2, 3, 4].map(v => communityNumber(c, v)), [1, 1, 2, 2, null]);
+  assert.equal(communityLabel(c, 4), NO_COMMUNITY);
+  assert.equal(communityLabel(c, 2), 'Community 2');
+});

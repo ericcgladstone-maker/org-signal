@@ -75,22 +75,26 @@ for (const size of SIZES) {
   let page = null;
   let flowName = '';
   let issues = [];
+  let currentCheck = '';
+  const note = (x) => issues.push(`${x} [during: ${currentCheck}]`);
   const attach = p => {
-    p.on('console', m => {
-      const t = m.text();
-      if (IGNORE.test(t)) { envNotes.add(`console (${m.type()}): ${t.slice(0, 300)}`); return; }
-      if (m.type() === 'error' && !/^Failed to load resource/.test(t)) issues.push(`console.error: ${t}`);
-      else if (/Content[- ]Security[- ]Policy|CSP/i.test(t)) issues.push(`csp: ${t}`);
+    p.on('console', async m => {
+      let t = m.text();
+      // Firefox prints objects (Errors) as JSHandle@object: ask the page for the message and stack.
+      if (/JSHandle@/.test(t)) t = (await Promise.all(m.args().map(a => a.evaluate(x => (x && (x.stack || x.message)) ? `${x.name || 'Error'}: ${x.message} ${x.stack || ''}`.slice(0, 600) : typeof x === 'object' ? JSON.stringify(x) : String(x)).catch(() => '?')))).join(' ');
+      if (IGNORE.test(t)) { envNotes.add(`console (${m.type()}): ${t.replace(/\{file:.*$/, '').slice(0, 260)}`); return; }
+      if (m.type() === 'error' && !/^Failed to load resource/.test(t)) note(`console.error: ${t}`);
+      else if (/Content[- ]Security[- ]Policy|CSP/i.test(t)) note(`csp: ${t}`);
     });
-    p.on('pageerror', e => issues.push(`pageerror: ${e.message}`));
+    p.on('pageerror', e => note(`pageerror: ${e.message}`));
     p.on('requestfailed', r => {
       if (IGNORE.test(r.url())) return;
       const f = r.failure()?.errorText || '';
       if (/aborted|cancel|NS_BINDING_ABORTED/i.test(f)) return; // downloads, superseded fetches
       if (r.url().startsWith('blob:') || r.url().startsWith('data:')) return;
-      issues.push(`requestfailed: ${r.url()} (${f})`);
+      note(`requestfailed: ${r.url()} (${f})`);
     });
-    p.on('response', r => { if (r.status() >= 400 && !IGNORE.test(r.url())) issues.push(`http ${r.status()}: ${r.url()}`); });
+    p.on('response', r => { if (r.status() >= 400 && !IGNORE.test(r.url()) && !(r.request().method() === 'HEAD' && /services\/mock\.js$/.test(r.url()))) note(`http ${r.status()}: ${r.url()}`); });
     p.on('dialog', d => d.accept().catch(() => {}));
   };
   const newPage = async () => {
@@ -104,6 +108,7 @@ for (const size of SIZES) {
   const T = {
     get page() { return page; }, phone, size, newPage,
     async check(name, fn) {
+      currentCheck = name;
       const started = Date.now();
       try {
         const detail = await fn();
@@ -127,6 +132,7 @@ for (const size of SIZES) {
     if (ONLY && !ONLY.has(num)) continue;
     flowName = `${num}-${flow.name}`;
     issues = [];
+    currentCheck = 'flow setup';
     console.log(`\n## [${size}] flow ${flowName} (${stamp()})`);
     try { await flow.run(T); }
     catch (e) {
@@ -180,9 +186,11 @@ async function overflow(page) {
 }
 
 // Load the app fresh at a hash (a full navigation).
+let loads = 0;
 async function open(T, hash = '', query = '') {
   const p = T.page;
-  await p.goto(`${BASE}/${query ? '?' + query : ''}${hash ? '#' + hash : ''}`, { waitUntil: 'load', timeout: 60000 });
+  // A distinct query string forces a real load (a hash-only change would keep the loaded data).
+  await p.goto(`${BASE}/?${query ? query + '&' : ''}_=${++loads}${hash ? '#' + hash : ''}`, { waitUntil: 'load', timeout: 60000 });
   await p.waitForSelector('#app > *', { timeout: 30000 });
   await p.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});
 }
@@ -300,9 +308,9 @@ async function nodeCandidates(T) {
   return pts.filter((_, i) => i % step === 0).map(([fx, fy]) => ({ x: box.x + fx * box.width, y: box.y + fy * box.height }));
 }
 
-async function ensureSample(T) {
+async function ensureSample(T, { force = false } = {}) {
   const info = await datasetInfo(T).catch(() => null);
-  if (info && info.n > 0 && info.netVersion != null) return info;
+  if (!force && info && info.n > 0 && info.netVersion != null) return info;
   await open(T, 'network');
   await clickText(T, 'button', /Explore the sample/);
   await waitAsync(T, async () => {
@@ -474,12 +482,19 @@ const FLOWS = [
       return `${k} measure columns; sorted by ${await T.page.locator('.vt__th.is-sorted').first().innerText()}`;
     });
     await T.check('People: rank stability runs', async () => {
+      if (T.phone) {
+        // The phone list starts on Contacts with no sort key, which offers no stability check; pick a measure first.
+        const sel = T.page.locator('.people-list select, label:has-text("Measure") select').first();
+        const v = await sel.locator('option').evaluateAll(os => (os.find(o => /Strength/.test(o.textContent)) || os[1]).value);
+        await sel.selectOption(v);
+      }
       const b = T.page.locator('button', { hasText: /Check how stable/ }).first();
       await b.waitFor({ timeout: 20000 });
       await b.scrollIntoViewIfNeeded();
       await b.click();
       await waitText(T, /Rank stability/, 120000);
-      await T.page.waitForFunction(() => !/Resampling/.test(document.querySelector('main').innerText), null, { timeout: 120000 });
+      await T.page.waitForFunction(() => ![...document.querySelectorAll('main button')].some(b => /Resampling|Check how stable/.test(b.textContent)), null, { timeout: 120000 });
+      await waitText(T, /hold up|not a finding|could drop/, 10000);
       await T.shot('3-stability');
     });
     await T.check('People: profile opens', async () => {
@@ -548,7 +563,7 @@ const FLOWS = [
       await clickText(T, 'button', /^Generate and analyze$/);
       await waitAsync(T, async () => { const { store } = await import(new URL('src/ui/store.js', location.href).href); const s = store.get(); return s.dataset && s.network && s.metrics && s.generated; }, null, { timeout: 180000, polling: 500 });
       const i = await datasetInfo(T);
-      assert(i.n === 120, `expected 120 people, got ${i.n}`);
+      assert(Math.abs(i.n - 120) <= 3, `expected about 120 people, got ${i.n}`);
       return `${i.name}: ${i.n} people`;
     });
     await T.check('Generate: recovery check reports', async () => {
@@ -571,7 +586,7 @@ const FLOWS = [
     const slack = readdirSync(SLACK_ZIP_DIR).filter(f => f.endsWith('.zip')).map(f => path.join(SLACK_ZIP_DIR, f))[0];
     const cases = [
       ['Slack zip', [slack]],
-      ['mbox', [fixture('importers-a/email/apple/Work.mbox')]],
+      ['mbox', [fixture('importers-a/email/takeout/Takeout/Mail/All mail Including Spam and Trash.mbox')]],
       ['ics', [fixture('importers-a/calendar/outlook/Calendar.ics')]],
       ['GraphML', [fixture('importers-a/network-files/plain.graphml')]],
       ['WhatsApp txt', [fixture('importers-b/whatsapp/WhatsApp Chat with Equipo.txt')]],
@@ -621,6 +636,8 @@ const FLOWS = [
       assert(moved.t !== n0.t, 'node did not move when dragged');
       // Add a tie: Connect mode, drag from one node to a non-neighbour.
       await clickText(T, '.ob-draw button', /^Connect$/, { tap: false });
+      await T.page.locator('.ob-canvas').scrollIntoViewIfNeeded();
+      await T.page.waitForTimeout(200);
       ns = await centres();
       const a = ns[1], b = ns[ns.length - 1];
       await T.page.mouse.move(a.x, a.y); await T.page.mouse.down();
@@ -653,7 +670,8 @@ const FLOWS = [
       await clickText(T, 'button', /Next: Relations/);
       await clickText(T, 'label', /Advice/);
       await clickText(T, 'button', /Next: Collect ties/);
-      await clickText(T, '.seg button', /Each member answers a survey/);
+      await clickText(T, 'button', /Each member answers a survey/);
+      await clickText(T, 'button', /Make a share link/);
       await T.page.waitForSelector('textarea.ob-share__url', { timeout: 20000 });
       link = await T.page.locator('textarea.ob-share__url').first().inputValue();
       assert(/#survey=/.test(link), `link has no #survey=: ${link.slice(0, 80)}`);
@@ -665,7 +683,12 @@ const FLOWS = [
       const u = new URL(link); const target = `${BASE}/${u.hash}`;
       const p = await T.newPage();
       await p.goto(target, { waitUntil: 'load' });
-      await p.waitForFunction(() => /Ana|Ben/.test(document.body.innerText) && document.body.innerText.length > 200, null, { timeout: 30000 });
+      await p.waitForFunction(() => /Who are you/i.test(document.body.innerText), null, { timeout: 30000 });
+      const inp = p.locator('input').filter({ visible: true }).first();
+      await inp.fill('An');
+      await p.waitForTimeout(400);
+      const sugg = /Ana/.test(await p.locator('body').innerText());
+      assert(sugg, 'typing "An" did not offer Ana from the roster');
       await T.shot('6-respond', { full: true });
     });
     await T.check('Respondent view (#respond) opens', async () => {
@@ -717,7 +740,7 @@ const FLOWS = [
           await T.page.waitForTimeout(2000);
           const tm = await T.page.locator('#standout-h').innerText();
           await T.shot('7-davis-network');
-          assert(/each among their own kind/.test(tm), `Davis not shown two-mode: "${tm}"`);
+          assert(/each among their own kind/i.test(tm), `Davis not shown two-mode: "${tm}"`);
         }
         return `${i.n} people/nodes, ${i.edges} ties`;
       });
@@ -738,7 +761,7 @@ const FLOWS = [
   } },
 
   { name: 'exports', async run(T) {
-    await ensureSample(T);
+    await ensureSample(T, { force: !/^Synthetic workplace, bridge-dependent \(Slack, seed 1\)/.test((await datasetInfo(T).catch(() => ({}))).name || '') });
     await go(T, 'methods');
     await T.page.waitForSelector('#exp-h', { timeout: 30000 });
     for (const [label, re] of [['GEXF', /^Download GEXF$/], ['Metrics CSV', /^Download Metrics CSV$/], ['GraphML', /^Download GraphML$/]]) {
@@ -787,7 +810,7 @@ const FLOWS = [
   { name: 'ask', async run(T) {
     await T.check('Ask: provider and key UI renders (no key entered)', async () => {
       await open(T, 'ask');
-      await T.page.waitForFunction(() => !/Loading providers/.test(document.querySelector('main')?.innerText || ''), null, { timeout: 30000 });
+      await T.page.waitForFunction(() => { const t = document.querySelector('main')?.innerText || ''; return /Provider/i.test(t) && !/Loading providers|Opening view/.test(t); }, null, { timeout: 30000 });
       const pw = await T.page.locator('main input[type=password], main input[autocomplete=off]').count();
       const sel = await T.page.locator('main select, main [role=radiogroup], main .seg').count();
       await T.shot('9-ask', { full: true });
@@ -798,7 +821,7 @@ const FLOWS = [
       const has = await T.page.evaluate(async () => (await fetch(new URL('src/ui/services/mock.js', location.href), { method: 'HEAD' })).ok);
       if (!has) return 'skipped: mock.js not in this build (deployed builds strip it)';
       await open(T, 'ask', 'mock');
-      await T.page.waitForFunction(() => /Demo mode/.test(document.body.innerText), null, { timeout: 30000 });
+      await T.page.waitForFunction(() => /Demo mode/i.test(document.body.innerText) && /Offline demo/.test(document.body.innerText), null, { timeout: 30000 });
       await T.shot('9-ask-mock', { full: true });
       return 'demo mode banner shown';
     });

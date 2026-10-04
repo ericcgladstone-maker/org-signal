@@ -19,7 +19,7 @@ import { preferredAttributes, isBookkeeping, numericAttributes, label as nodeLab
 import { cachedRender, getRender, tiesOf } from '../lib/render-cache.js';
 import { fmtNum, fmtInt, fmtDate, fmtPct, fmtAttr, columnFormat, humanize, plural } from '../lib/format.js';
 import { withContacts, metricLabel, rankInfo, fmtRank, RESAMPLABLE, displayKey, isDeactivated, sparkSeries, distinctMeasures, measureFormat, measureNote } from '../lib/measures.js';
-import { communityScale } from '../lib/communities.js';
+import { communityScale, communityNumber } from '../lib/communities.js';
 import { nodeColoring, getColorBy } from '../lib/coloring.js';
 import { departures, hasTimes } from '../lib/departures.js';
 import { stabilityReading, stabilitySummary, resamplingCaveat, TOP_CHOICES } from '../lib/stability.js';
@@ -155,7 +155,7 @@ function PeopleInner({ ds, net }) {
     const val = (v) => {
       const i = ids[v];
       if (key === 'name') return (ds.nodes.labels[i] || '').toLowerCase();
-      if (key === 'community') return communities?.membership[v] ?? Infinity;
+      if (key === 'community') return communityNumber(communities, v) ?? Infinity;
       if (key === 'mode') return tm?.mode ? tm.mode[v] : 0;
       if (key.startsWith('attr:')) return String(ds.nodes.attrs[i][key.slice(5)] ?? '￿');
       if (key.startsWith('num:')) { const x = Number(ds.nodes.attrs[i][key.slice(4)]); return Number.isFinite(x) ? x : -Infinity; }
@@ -190,7 +190,7 @@ function PeopleInner({ ds, net }) {
     // The name truncates, never the badges after it: a cut-off "deactivated"
     // flag is how a departed person passed for a current broker in testing.
     if (c.key === 'name') return html`<span class="vt-name">${dot(v)}<span class="vt-name__text">${nodeLabel(ds, i)}</span>${badges(i)}</span>`;
-    if (c.key === 'community') return String(communities.membership[v] + 1);
+    if (c.key === 'community') return communityNumber(communities, v) == null ? '' : String(communityNumber(communities, v));
     if (c.key === 'mode') return modeLabelOf(net, v) || '–';
     if (c.key.startsWith('attr:')) { const x = ds.nodes.attrs[i][c.key.slice(5)]; return x == null || x === '' ? html`<span class="muted">–</span>` : fmtAttr(c.key.slice(5), x); }
     if (c.key.startsWith('num:')) { const k = c.key.slice(4); const x = ds.nodes.attrs[i][k]; return x == null || x === '' ? html`<span class="muted">–</span>` : fmtAttr(k, Number.isFinite(Number(x)) && !/offset/i.test(k) ? fmtNum(Number(x)) : x); }
@@ -207,7 +207,7 @@ function PeopleInner({ ds, net }) {
       lines.push([ds.nodes.keys[i], ...columns.map(c => {
         let x;
         if (c.key === 'name') x = nodeLabel(ds, i);
-        else if (c.key === 'community') x = communities.membership[v] + 1;
+        else if (c.key === 'community') x = communityNumber(communities, v) ?? '';
         else if (c.key === 'mode') x = modeLabelOf(net, v);
         else if (c.key.startsWith('m:')) x = node[c.key.slice(2)][v];
         else if (c.key.startsWith('attr:')) x = ds.nodes.attrs[i][c.key.slice(5)];
@@ -450,7 +450,7 @@ function Profile({ ds, net, i, hidden }) {
   return html`<div>
     <h2 class="label">Profile</h2>
     <p class="profile-head" tabindex="-1" ref=${head}>${nodeLabel(ds, i)}</p>
-    <p class="meta" style="margin:.2rem 0 .6rem">${[v >= 0 ? modeLabelOf(net, v) : null, key, ds.nodes.isBot[i] ? 'bot' : null].filter(Boolean).join(' · ')}${communities && v >= 0 ? html`${key || ds.nodes.isBot[i] || modeLabelOf(net, v) ? ' · ' : ''}<${Swatch} color=${comm.color(String(communities.membership[v]))} /> Community ${communities.membership[v] + 1}` : ''}</p>
+    <p class="meta" style="margin:.2rem 0 .6rem">${[v >= 0 ? modeLabelOf(net, v) : null, key, ds.nodes.isBot[i] ? 'bot' : null].filter(Boolean).join(' · ')}${communities && v >= 0 ? html`${key || ds.nodes.isBot[i] || modeLabelOf(net, v) ? ' · ' : ''}${communityNumber(communities, v) == null ? 'No community (no ties)' : html`<${Swatch} color=${comm.color(String(communities.membership[v]))} /> Community ${communityNumber(communities, v)}`}` : ''}</p>
     ${isDeactivated(ds, i) && html`<p class="small"><${Flag} level="caution">Deactivated account</${Flag}> <span class="text2">This account was deactivated in the source; its ties end when the person left${dep?.last != null ? ` (last active ${fmtDate(dep.last)})` : ''}. Whole-period measures mix the time before and after, and rank stability cannot show that.</span></p>`}
     ${dep?.kind === 'silent' && html`<p class="small"><${Flag} level="caution">Left?</${Flag}> <span class="text2">No activity after ${fmtDate(dep.last)}: silent for the last ${fmtInt(dep.quietDays)} days of the data. Whole-period measures mix the time before and after, and rank stability cannot show that; compare before and after in Time.</span></p>`}
     ${hidden && html`<p class="small text2"><${Flag} level="info">Not in the table</${Flag}> The current search or filter hides this person.</p>`}

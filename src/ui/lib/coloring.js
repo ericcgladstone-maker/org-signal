@@ -4,6 +4,7 @@
 // reset per dataset to the default grouping.
 
 import { sequentialScale, tokens } from './palette.js';
+import { NO_COMMUNITY } from './communities.js';
 import { groupColoring } from './grouping.js';
 import { orderedValues, defaultGroupAttr, isBookkeeping } from './dsutil.js';
 import { fmtAttr, humanize } from './format.js';
@@ -53,8 +54,13 @@ export function nodeColoring({ ds, net, communities, colorBy, attrs = [], nodeMe
   if (colorBy === 'community' && communities?.membership) {
     const k = communities.count ?? 0;
     const sizes = communities.sizes || Array.from({ length: k }, (_, i) => communities.membership.filter(m => m === i).length);
-    const key = v => String(communities.membership[v]);
-    const gc = groupColoring(Array.from({ length: k }, (_, c) => ({ value: String(c), label: `Community ${c + 1}`, count: sizes[c] })));
+    // People on their own (a Louvain "community" of one) are listed together
+    // as having no community, not as communities of one (N17).
+    const alone = c => sizes[c] <= 1;
+    const key = v => (alone(communities.membership[v]) ? '' : String(communities.membership[v]));
+    const gc = groupColoring(Array.from({ length: k }, (_, c) => c).filter(c => !alone(c)).map(c => ({ value: String(c), label: `Community ${c + 1}`, count: sizes[c] })),
+      { missing: sizes.filter(x => x <= 1).reduce((a, x) => a + x, 0) });
+    gc.missingLabel = NO_COMMUNITY;
     return { kind: 'cat', community: true, gc, of: v => gc.color(key(v)), key, title: 'Community (found by Louvain)', short: 'community' };
   }
   if (colorBy?.startsWith('attr:')) {

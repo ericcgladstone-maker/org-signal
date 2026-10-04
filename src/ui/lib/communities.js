@@ -17,3 +17,20 @@ export function communityScale(communities) {
   const k = communities.count ?? 0;
   return categoricalScale(Array.from({ length: k }, (_, i) => String(i)), { hues: MAP_HUES });
 }
+
+// A person's community number (1-based), or null for someone on their own:
+// Louvain gives an isolate a "community" of one, which no view counts as a
+// community (communityWords, N17), so it is not shown as one either.
+export const NO_COMMUNITY = 'No community (no ties)';
+export function communitySize(communities, c) {
+  return communities?.sizes?.[c] ?? (communities?.membership || []).filter(m => m === c).length;
+}
+export function communityNumber(communities, v) {
+  const c = communities?.membership?.[v];
+  if (c == null || c < 0) return null;
+  return communitySize(communities, c) > 1 ? c + 1 : null;
+}
+export function communityLabel(communities, v) {
+  const n = communityNumber(communities, v);
+  return n == null ? NO_COMMUNITY : `Community ${n}`;
+}

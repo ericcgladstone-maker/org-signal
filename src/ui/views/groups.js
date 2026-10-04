@@ -22,6 +22,7 @@ import { preferredAttributes, isBookkeeping, orderedValues, defaultGroupAttr, la
 import { cachedRender } from '../lib/render-cache.js';
 import { fmtNum, fmtInt, fmtPct, fmtDate, humanize, columnFormat } from '../lib/format.js';
 import { communityWords, communityCounts } from '../lib/rebuild.js';
+import { communitySize, NO_COMMUNITY } from '../lib/communities.js';
 import { isBookkeepingAttr } from '../../analysis/groups.js';
 import { cssVar, useTimeShifts, groupShift, snapshotNote, inWindow } from './time.js';
 import { timeExtent } from '../lib/dsutil.js';
@@ -82,7 +83,8 @@ function GroupsInner({ ds, net }) {
 
   const r = res.data;
   const name = attrLabel(ds, by);
-  const labelOf = (v) => (isComm ? `Community ${Number(v) + 1}` : String(v));
+  // A Louvain community of one is a person with no ties, not a community (N17).
+  const labelOf = (v) => (isComm ? (communitySize(communities, Number(v)) > 1 ? `Community ${Number(v) + 1}` : NO_COMMUNITY) : String(v));
   // Colors as on the Network view: communities by number, attribute values
   // by size over the whole dataset (not just the people in the network), the
   // eight largest in color and the rest in the "Other groups" gray.
