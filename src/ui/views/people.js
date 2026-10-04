@@ -40,7 +40,7 @@ let prefs = { ds: null };
 export function PeopleView() {
   const ds = useStore(s => s.dataset);
   const net = useStore(s => s.network);
-  if (!ds || !net) return html`<${NeedsData} title="People" purpose="People answers: where does each person sit in the network, and how sure can we be of their place?" shows=${['every person ranked by contacts, betweenness, closeness and more', 'how stable the top of a ranking is', "a profile with each person's ties and the events behind them"]} />`;
+  if (!ds || !net) return html`<${NeedsData} title="People" />`;
   return html`<${PeopleInner} ds=${ds} net=${net} />`;
 }
 
@@ -234,7 +234,7 @@ function PeopleInner({ ds, net }) {
   const listMetric = sortMetric && node?.[sortMetric] ? sortMetric : 'contacts';
 
   return html`<div class="view">
-    <${ViewHead} title="People" intro="Each person's position in the network. Select a column name to sort by it; the (i) beside a measure says what it means and how far to trust it. Select a person for their profile."
+    <${ViewHead} title="People" intro="This view reports person-level network measures, ranks, attributes, and profiles. Sort a measure to compare positions across the network. Select a person to inspect their measures, ties, attributes, activity, and the observations underlying their relationships."
       actions=${html`<div class="tlinks"><${ConstructionButton} /><button type="button" class="tlink tlink--down" onClick=${exportCSV}>Export table</button></div>`} />
     <div class="toolbar">
       <label class="field field--grow"><span>Search</span><input class="input" type="search" placeholder="Name or id" value=${q} onInput=${e => setQ(e.currentTarget.value)} /></label>
@@ -323,8 +323,9 @@ function DotKey({ coloring }) {
     ${gc.colored.map(e => html` <span class="nowrap"><${Swatch} color=${e.color} />${e.label}</span>`)}${gc.many ? html` <span class="nowrap"><${Swatch} color=${gc.otherColor} />other groups</span>` : ''}${gc.missing ? html` <span class="nowrap"><${Swatch} color=${gc.missingColor} />not recorded</span>` : ''}</span>`;
 }
 
-// How to read the ranking (decision 1): what the sorted measure means, what
-// counts as big, the live top of the list, and the mistake to avoid.
+// Interpretation of a ranking (decision 1, copy audit 2026-10-04): what the
+// sorted measure means, how to judge its scale, the live top of the list,
+// and the caution.
 function RankingHowTo({ ds, net, node, metric, label, fmt }) {
   const arr = node?.[metric];
   if (!arr) return null;
@@ -333,11 +334,11 @@ function RankingHowTo({ ds, net, node, metric, label, fmt }) {
   const top = order[0];
   const tied = order.filter(v => fmt(arr[v]) === fmt(arr[top]));
   const who = tied.length > 1 ? `${tied.slice(0, 3).map(v => nodeLabel(ds, net.nodeIds[v])).join(', ')}${tied.length > 3 ? ` and ${tied.length - 3} more` : ''} share the top value (${fmt(arr[top])})` : `${nodeLabel(ds, net.nodeIds[top])} is first with ${fmt(arr[top])}${order[1] != null ? `, then ${nodeLabel(ds, net.nodeIds[order[1]])} with ${fmt(arr[order[1]])}` : ''}`;
-  return html`<${HowToRead} title=${`How to read the ranking by ${label}`}
+  return html`<${HowToRead} title="Interpretation of a ranking"
     means=${measureNote(metric, { n: net.n, directed: net.directed, twoMode: net.twoMode }) || gloss(metric).meaning}
-    scale="Read the order, not the size of the number: values depend on the size of the network, so 0.2 can be high in one network and low in another. A gap between neighbors in the list matters more than the value itself."
-    example=${`${who}.`}
-    mistake="Calling the person at the top the most important without checking how stable the ranking is: two people a few thousandths apart are tied for any reading." />`;
+    scale="Compare values and ranks within the same network and measure. Close values provide weak evidence for a precise ordering even when the displayed ranks differ."
+    example=${`Ranked by ${label}: ${who}.`}
+    mistake="Each measure describes a particular form of network position. A high rank on one measure should be interpreted in terms of that measure rather than as general importance." />`;
 }
 
 function ColumnChooser({ columns, cols, setCols }) {
@@ -373,7 +374,7 @@ function TopStability({ ds, metric, label, result, n, values, fmt, net, left }) 
   const gone = sum.top.filter(r => left.has(r.node));
   const tieText = g => `Ranks ${g.from} to ${g.to} have the same value at the precision shown (${g.text}): their order is not a finding.`;
   return html`<details class="stab" open>
-    <summary><h2 class="label" style="margin:0;display:inline">How stable is the top of the ${label.split(' (')[0].toLowerCase()} ranking?</h2></summary>
+    <summary><h2 class="label" style="margin:0;display:inline">Rank stability: top of the ${label.split(' (')[0].toLowerCase()} ranking</h2></summary>
     <div class="row" style="gap:.4rem 1rem;align-items:flex-end;margin-top:.4rem">
       <${Select} label="Read the top" value=${String(k)} onChange=${v => setK(Number(v))} options=${TOP_CHOICES.filter(c => c <= all.length).map(c => ({ value: String(c), label: String(c) }))} />
     </div>
@@ -389,11 +390,11 @@ function TopStability({ ds, metric, label, result, n, values, fmt, net, left }) 
       </li>`; })}
     </ol>
     <p class="basis">Rank 1 at the left, ${fmtInt(maxRank)} at the right; the line is the range of ranks in 95% of ${fmtInt(result.reps)} resamples of the events (each rebuilt with the same settings), out of ${plural(n, 'person', 'people')}. ${resamplingCaveat(metric, sum.allPoint)} The range and "In top ${result.top ?? TOP}" columns are in the table.</p>
-    <${HowToRead} title="How to read rank stability"
-      means="The app redraws the messages behind the network many times, rebuilds it each time and ranks everyone again. A place that stays put across these redraws does not depend on which messages happened to be recorded."
-      scale=${`"Settled" means the same rank every time. "In the top ${k}" means the person stays in the top ${k} but their exact place moves. "Could drop out" means that place is not a finding.`}
-      example=${sum.top.length ? `${nodeLabel(ds, sum.top[0].node)}: ${stabilityReading(sum.top[0], k).text.toLowerCase()}.` : null}
-      mistake="Reading a one-rank range as certainty. Resampling cannot remove whole ties or add missing ones, so it says nothing about people or ties the data did not record, or about someone who left halfway." />
+    <${HowToRead}
+      means="Org Signal repeatedly resamples the observed events, rebuilds the network using the same construction settings, and recalculates the ranking. The resulting intervals show how much a person’s rank changes under this form of sampling variation."
+      scale="Narrow intervals indicate that the ordering is stable across resamples. Wider intervals indicate that several rank positions are consistent with the observed events."
+      example=${sum.top.length ? `${nodeLabel(ds, sum.top[0].node)}: ${stabilityReading(sum.top[0], k).text.replace(/^Settled: /, '').toLowerCase()}.` : null}
+      mistake="These intervals address variation in the observed events. Missing actors, unobserved ties, measurement error in the source, and structural change during the observation period remain outside the resampling procedure." />
   </details>`;
 }
 

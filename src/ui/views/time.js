@@ -264,7 +264,7 @@ export function TimeView() {
   const net = useStore(s => s.network);
   if (!ds || !net) return html`<${NeedsData} title="Time" />`;
   const [t0] = timeExtent(ds);
-  if (!Number.isFinite(t0)) return html`<div class="view view--col"><${ViewHead} title="Time" /><div class="empty"><h2>No timestamps</h2><p class="lead">None of the events in this data has a time, so change over time cannot be measured. Surveys and network files usually record ties without dates.</p></div></div>`;
+  if (!Number.isFinite(t0)) return html`<div class="view view--col"><${ViewHead} title="Time" /><div class="empty"><h2>No timestamps</h2><p class="lead">These records contain no event timestamps, so the network cannot be reconstructed by time window. Surveys and standard network files commonly record ties without dates.</p></div></div>`;
   return html`<${TimeInner} ds=${ds} />`;
 }
 
@@ -296,7 +296,7 @@ function TimeInner({ ds }) {
   const multiSource = (s?.sources || []).length > 1;
 
   return html`<div class="view">
-    <${ViewHead} title="Time" intro="Each week (or day, or month) gets its own network, built with the current construction settings, so a tie in one week means the same as a tie in the whole network."
+    <${ViewHead} title="Time" intro="The network is rebuilt separately for each time window using the current construction settings. This keeps the definition of a tie constant while allowing activity, network measures, tie turnover, and group structure to be compared over time. The view can be organized by day, week, or month depending on the data. It also supports detected shifts and before-and-after comparisons around a selected date."
       actions=${html`<${ConstructionButton} />`} />
     <${RangeBar} range=${range} setRange=${setRange} dense=${dense} full=${[full0, full1]} win=${win} setWin=${setWin} meta=${s?.meta} />
     ${series.loading && html`<${Loading}>Building one network per ${unit || (win === 'auto' ? 'window' : win)}</${Loading}>`}
@@ -420,6 +420,7 @@ function Shifts({ ds, s, shifts, list, unit, xName, edges, xDomain, groupAttr })
   const groupRow = shown.some(x => x.metric === 'crossGroupShare' || x.target === 'group');
   return html`<section class="section" aria-labelledby="sh-h">
     <h2 id="sh-h" class="section__title">Detected shifts</h2>
+    <p class="small text2">Shift detection compares each period with the periods immediately before it and identifies changes that are large relative to the variability estimated from the series. Sparse periods reduce sensitivity, so the absence of a detected shift provides limited evidence of stability.</p>
     ${shifts.loading && html`<${Loading}>Scanning for shifts</${Loading}>`}<${ErrorLine} error=${shifts.error} />
     ${shifts.data && (shown.length ? html`
       <p class="tview__verdict">${verdict} Select a row for what changed.</p>
@@ -438,9 +439,11 @@ function Shifts({ ds, s, shifts, list, unit, xName, edges, xDomain, groupAttr })
           ${v && html`<div class="tview__detail-chart"><${TimeChart} series=${[{ id: 'v', label: humanize(x.metric), color: t.cat[0], values: s.windows.map((w, j) => ({ x: w.start, y: v[j] })) }]} height=${130} highlight=${{ x0: s.windows[x.window].start, x1: s.windows[Math.min(s.windows.length - 1, x.lastHeld ?? x.end ?? x.window)].end }} edges=${edges} xName=${xName} xDomain=${xDomain} compact=${true} /></div>`}
         </td></tr>`}`; })}</tbody></table></div>
       ${groupRow && groupAttr && html`<p class="small text2"><${Flag} level="caution" /> ${snapshotNote(ds, groupAttr)}</p>`}
-      <${HowToRead} means="A shift is a window whose value is far from the windows just before it. Lasted compares every later window with the level before the change: nearer the new level, or back at the old one." scale="How unusual (z) counts typical week-to-week wobbles: 3.5 or more is flagged for the whole network, 5 or more for one person." mistake="Reading the flagged run as how long the change lasted. A step that never reverses stops being flagged after a few windows, because the windows just before it now share the new level; use the Lasted column." />`
+      <${HowToRead} means="A shift is a window whose value departs from the windows immediately before it. The Lasted column compares each later window with the level before the change, showing whether the series stays near the new level or returns to the old one."
+        scale="The z statistic is scaled by the typical variation between windows: 3.5 or more is flagged for the whole network, 5 or more for an individual person."
+        mistake="The flagged run does not measure how long a change lasted. A step that persists stops being flagged after a few windows, because the preceding windows then share the new level; the Lasted column reports duration." />`
       : html`<p class="tview__verdict">No window departs from its recent level by more than the threshold.</p>`)}
-    ${meta && html`<p class="basis">Basis: each window compared with the ${meta.baseline ?? 8} windows before it (${meta.method === 'cusum' ? 'CUSUM' : 'robust z: distance from their median in units of their typical spread, the MAD'}); flagged at ${meta.threshold ?? 3.5} or more (${meta.nodeThreshold ?? 5} for single people). ${fmtInt(meta.seriesScanned)} measures were scanned, so expect some flags by chance; confirm with the before and after comparison below.${meta.weekendsSkipped ? ' Daily windows: Saturdays and Sundays carry far less activity here, so they are left out of the scan and of the baselines (and Mondays out of tie turnover), and each weekday is compared with weekdays.' : ''}${meta.sourceEdges?.length ? ` Not tested near source edges: ${meta.sourceEdges.slice(0, 4).map(e => `${e.label} ${e.kind} ${fmtDate(e.t)}`).join('; ')}${meta.sourceEdges.length > 4 ? `; and ${meta.sourceEdges.length - 4} more` : ''}.` : ''}</p>`}
+    ${meta && html`<p class="basis">Basis: each window compared with the ${meta.baseline ?? 8} windows before it (${meta.method === 'cusum' ? 'CUSUM' : 'robust z: distance from their median in units of their typical spread, the MAD'}); flagged at ${meta.threshold ?? 3.5} or more (${meta.nodeThreshold ?? 5} for single people). ${fmtInt(meta.seriesScanned)} measures were scanned, so some flags are expected by chance; the before-and-after comparison below provides a check.${meta.weekendsSkipped ? ' Daily windows: Saturdays and Sundays carry far less activity here, so they are left out of the scan and of the baselines (and Mondays out of tie turnover), and each weekday is compared with weekdays.' : ''}${meta.sourceEdges?.length ? ` Not tested near source edges: ${meta.sourceEdges.slice(0, 4).map(e => `${e.label} ${e.kind} ${fmtDate(e.t)}`).join('; ')}${meta.sourceEdges.length > 4 ? `; and ${meta.sourceEdges.length - 4} more` : ''}.` : ''}</p>`}
   </section>`;
 }
 
@@ -467,7 +470,7 @@ function BeforeAfter({ ds, range, full, netShifts, groupAttr }) {
   const gName = groupAttr ? humanize(groupAttr).toLowerCase() : 'group';
   return html`<section class="section" aria-labelledby="ba-h">
     <h2 id="ba-h" class="section__title">Before and after a date</h2>
-    <p class="small text2" style="margin-bottom:.6rem">Compares two periods of equal length either side of a date, such as a reorganization or a move to remote work. To test whether people's numbers really changed, every message in the two periods is reassigned to before or after at random, many times; a change is real when few of those random splits change things as much.</p>
+    <p class="small text2" style="margin-bottom:.6rem">The before-and-after analysis compares the same measure on either side of a selected date. The permutation test evaluates whether the observed change is larger than expected under random reassignment of the events in the two periods to before and after.</p>
     <form class="toolbar" onSubmit=${e => { e.preventDefault(); if (Number.isFinite(ms)) setRan(ms); }}>
       <label class="field"><span>Date</span><input class="input" type="date" value=${date} min=${isoDay(t0)} max=${isoDay(t1)} onInput=${e => { setTouched(true); setDate(e.currentTarget.value); }} /></label>
       <button class="btn btn--primary" type="submit">Compare</button>

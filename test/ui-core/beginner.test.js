@@ -1,5 +1,5 @@
 // Beginner support (round 2, decision 1): navigation order and descriptions,
-// #learn/<key> routing, the Explanations preference, verdict-first p wording,
+// #learn/<key> routing, the Interpretive notes preference, verdict-first p wording,
 // reliability notes filtered by context (L17), the calm small-network note
 // (M7), and the Learn content against the glossary.
 
@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { store, readExplainPref } from '../../src/ui/store.js';
 import { registerActions, VIEWS, NAV_GROUPS, parseHash } from '../../src/ui/actions.js';
-import { pAtFloor, nullInWords, pShort, chanceWords, reliabilityFor, applicabilityView, termGloss } from '../../src/ui/components/common.js';
+import { pAtFloor, nullInWords, pShort, chanceWords, reliabilityFor, applicabilityView, applicabilityReason, termGloss, SMALL_NETWORK_NOTE, HOWTO_PARTS } from '../../src/ui/components/common.js';
 import { GLOSSARY, GLOSSARY_ALIASES } from '../../src/analysis/glossary.js';
 import { SECTIONS, TEACH, TASKS, EXAMPLES } from '../../src/ui/views/learn/concepts.js';
 import { DIAGRAMS } from '../../src/ui/views/learn/diagrams.js';
@@ -23,7 +23,9 @@ test('navigation: workflow order, every view described, explore views say what t
   }
   for (const id of ['network', 'people', 'groups', 'content', 'time']) {
     const v = VIEWS.find(x => x.id === id);
-    assert.match(v.purpose, /\?$/, `${id} purpose is a question`);
+    // Copy audit 2026-10-04: a statement of what the view reports, not a question.
+    assert.match(v.purpose, /\.$/, `${id} purpose is a statement`);
+    assert.doesNotMatch(v.purpose, /\?/, `${id} purpose asks no question`);
     assert.ok(v.shows.length >= 2 && v.shows.length <= 3);
   }
 });
@@ -40,7 +42,7 @@ test('hash: #learn/<key> opens Learn at a concept; other views keep their parame
   assert.equal(store.get().view, 'network');
 });
 
-test('Explanations: on by default, switchable, preference survives missing storage', () => {
+test('Interpretive notes: on by default, switchable, preference survives missing storage', () => {
   assert.equal(readExplainPref(), true, 'no storage in Node: default on');
   const mem = new Map();
   globalThis.localStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)) };
@@ -95,6 +97,17 @@ test('a small network is one calm note, not a CAUTION on every measure (M7)', ()
   assert.equal(both.level, 'caution');
   assert.equal(both.reason, 'One person\'s export.');
   assert.equal(applicabilityView({ level: 'na', reason: 'Needs direction.' }).reason, 'Needs direction.');
+  // Wherever a reason is printed, the engine's small-network reason reads as the copy audit's sentence.
+  assert.equal(SMALL_NETWORK_NOTE, 'Small network. Individual ties have substantial leverage on many measures. Comparisons across networks should therefore be interpreted cautiously.');
+  assert.equal(applicabilityReason({ level: 'caution', reasons: ['Very small network: single ties move these numbers a lot.', 'One person\'s export.'] }), `${SMALL_NETWORK_NOTE} One person's export.`);
+  assert.equal(applicabilityReason({ level: 'na', reason: 'Needs direction.' }), 'Needs direction.');
+});
+
+test('the shared explanatory grammar: Interpretation with Definition, Scale, In this network, Caution', () => {
+  assert.deepEqual(HOWTO_PARTS, { means: 'Definition.', scale: 'Scale.', example: 'In this network.', mistake: 'Caution.' });
+  // Learn sections use the audit's labels; the cautions are statements, not "common mistake" gerunds.
+  assert.deepEqual(SECTIONS.map(s => s.title), ['Basics', 'Person-level centrality', 'Personal networks', 'Whole network', 'Groups', 'Random-network comparisons and uncertainty', 'Two-mode networks', 'Surveys', 'Time and content']);
+  for (const [k, t] of Object.entries(TEACH)) if (t.mistake) assert.doesNotMatch(t.mistake, /^(Reading|Calling|Treating|Comparing|Expecting|Counting|Using|Forgetting|Missing|Trusting|Confusing|Ignoring|Leaving|Asking|Concluding|Switching|Hand-computing|Ranking)\b/, `${k}: caution, not a mistake gerund`);
 });
 
 test('Learn: beginner concepts exist, every key is in the glossary, links go to real views', () => {

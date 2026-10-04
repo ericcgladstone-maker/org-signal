@@ -34,7 +34,6 @@ import { JoinSetup, ProfileJoin } from './data/join.js';
 import { isProjectInput, readProject, projectSummary, openProject } from './data/project.js';
 import { rederivableSource, rederiveSurvey, RULE_NAME } from '../../importers/survey-response.js';
 import { ClassicList, ClassicCard } from './learn/classic.js';
-import { openAbout } from './learn/about.js';
 
 export { ReportView };
 
@@ -162,12 +161,14 @@ export function DataView() {
   };
 
   const showInputs = inputs.length > 0 && !pending;
+  // The landing page opens with its own orientation ("Start with a network").
+  const landing = !hasData && !inputs.length && !pending && !projects.length;
   return html`<div class="view view--col dv">
-    <${ViewHead} title="Data" intro=${hasData && !pending ? 'What is loaded, what each source can and cannot show, and who is who.' : null}
+    <${ViewHead} title="Data" intro=${landing ? null : DATA_INTRO}
       actions=${hasData && !pending && !showInputs && html`<button type="button" class="btn btn--primary" onClick=${() => store.actions.setView('network')}>Open network</button>`} />
     <p class="visually-hidden" role="status" aria-live="polite">${detectionSummary(inputs)}</p>
     ${projects.length > 0 && !pending && html`<${ProjectInputs} projects=${projects} hasData=${hasData} busy=${busy} onOpen=${openProj} onRemove=${id => setProjects(ps => ps.filter(p => p.id !== id))} />`}
-    ${!hasData && !inputs.length && !pending && !projects.length && html`<${EmptyState} onFiles=${addInputs} />`}
+    ${landing && html`<${EmptyState} onFiles=${addInputs} />`}
     ${hasData && !pending && !showInputs && dataset.meta?.example?.classic && html`<${ClassicCard} example=${dataset.meta.example} />`}
     ${hasData && !pending && !showInputs && html`<${CurrentData} dataset=${dataset} report=${report} tab=${tab} onTab=${setTab} />`}
     ${hasData && !pending && !showInputs && html`<section class="section dv-more" aria-label="Add data">
@@ -217,6 +218,8 @@ function actionNote({ detecting, toImport, toJoin, skipped, hasData, mode }) {
 
 // A preset of Generate: same engine, same recovery check and banner
 // (loaded by store.actions.loadSample, which every empty state shares).
+const DATA_INTRO = 'Import and review empirical data, open a saved project, or begin with a network constructed in Org Signal. The import review records what each source contains, the ties its records can support, and the limits of the resulting network.';
+
 export const SAMPLE_SPEC = { context: 'workplace', medium: 'slack', structure: 'bridge-dependent', size: 96, seed: 1, content: 'light' };
 
 const HOWTO = [
@@ -228,20 +231,29 @@ const HOWTO = [
   ['Microsoft Teams, Outlook, Telegram, Discord, Instagram', 'Each app\'s own "download your data" export works; drop the zip or folder as downloaded.'],
 ];
 
-// Nothing loaded: three equal ways in, then the drop zone for the third
-// (decision 3, L2). Weeks 1 to 6 of a course start in Build or with the
-// sample, so neither sits below the import instructions.
+// Nothing loaded: the landing page, in Eric's wording
+// (docs/ux/copy-landing-eric-2026-10-04.md): an orientation with the link to
+// the Networks Lab, four ways in, the import area, the classic datasets (the
+// first four, then all on request), synthetic networks and About. The sample
+// organization stays one click away from every analysis view's empty state
+// (store.actions.loadSample) and from Generate.
+const LAB = 'https://graystoneindustries.co/lab/';
+const REPO = 'https://github.com/ericcgladstone-maker/org-signal';
 const START = [
-  { id: 'build', title: 'Draw or type a small network', text: 'Draw people and ties, paste a list of who knows whom, or run a class survey or an ego-network interview.', action: 'Open Build' },
-  { id: 'sample', title: 'Explore a sample organization', text: 'A made-up 96-person workplace with departments, Slack-style messages and a planted broker. Every view works on it.', action: 'Load the sample' },
-  { id: 'import', title: 'Analyze your own exports', text: 'Slack, Teams, email, WhatsApp, LinkedIn, X, survey responses or network files. Nothing is uploaded.', action: 'Choose files to import' },
+  { id: 'build', title: 'Draw or construct a network', text: 'Draw people and ties directly, conduct an ego-network interview, collect a roster or perceived-network survey, or paste a tie list.', action: 'Open Build' },
+  { id: 'generate', title: 'Generate a network with known structure', text: 'Create a synthetic organization or online community with specified departments, brokers, silos, change over time, or diffusion processes, then compare the analysis with the structure used to generate it.', action: 'Open Generate' },
+  { id: 'import', title: 'Analyze empirical data', text: 'Import communication, calendar, messaging, social-platform, survey, spreadsheet, or standard network files. Org Signal reviews what each source contains and how its records can be used to construct ties.', action: 'Choose files to import' },
+  { id: 'classic', title: 'Work with a published network', text: 'Load a classic network with a documented substantive result and reference values that can be reproduced within Org Signal.', action: 'Browse classic datasets' },
 ];
 
 function EmptyState({ onFiles }) {
   const go = (id) => {
-    if (id === 'build') store.actions.setView('build');
-    else if (id === 'sample') store.actions.loadSample();
-    else {
+    if (id === 'build' || id === 'generate') store.actions.setView(id);
+    else if (id === 'classic') {
+      const el = document.getElementById('dv-classic');
+      el?.scrollIntoView({ block: 'start' });
+      el?.querySelector('#dv-classic-h')?.focus({ preventScroll: true });
+    } else {
       // Straight to the file picker (still inside the click, so the browser
       // allows it), with the drop zone in view for a drag instead.
       const el = document.getElementById('dv-import');
@@ -251,29 +263,52 @@ function EmptyState({ onFiles }) {
       pick?.click();
     }
   };
+  const ext = (href, text, cls = 'tlink') => html`<a class=${cls} href=${href} target="_blank" rel="noopener">${text} <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>`;
   return html`<div class="empty dv-empty">
-    <h2>Map who talks to whom</h2>
-    <p class="lead">Start with a network you draw, the sample organization, or your own data. Each view then shows who connects to whom, who bridges groups, how that changes over time, and how sure you can be.</p>
-    <ul class="dv-start" aria-label="Ways to start">
-      ${START.map(c => html`<li class="dv-start__item">
-        <button type="button" class="dv-start__card" onClick=${() => go(c.id)}>
-          <span class="dv-start__title">${c.title}</span>
-          <span class="dv-start__text">${c.text}</span>
-          <span class="dv-start__go tlink tlink--arrow">${c.action}</span>
-        </button>
-      </li>`)}
-    </ul>
-    <p class="dv-learn">New to network analysis? <a class="tlink tlink--arrow" href="#learn" onClick=${e => { e.preventDefault(); store.actions.setView('learn'); }}>Learn the ideas</a> <span class="small text2">· <a class="linkish" href="#learn" onClick=${e => { e.preventDefault(); openAbout(); }}>About Org Signal, your data and its known limits</a></span></p>
-    <div class="dv-classic" style="margin-top:2.25rem"><${ClassicList} level=${3} headingId="dv-classic-h" /></div>
-    <p class="small text2 dv-gen">Or <button type="button" class="tlink" onClick=${() => store.actions.setView('generate')}>generate a synthetic organization</button> with planted structure, to test what the measures recover.</p>
+    <section class="dv-orient" aria-labelledby="dv-orient-h">
+      <h2 id="dv-orient-h">Start with a network</h2>
+      <div class="prose dv-orient__text">
+        <p>I built Org Signal as a browser-based environment for teaching and conducting social network analysis. You can construct a network directly, generate one whose underlying structure is known, work with a published network, or import empirical records and define how those records become ties.</p>
+        <p>The same analysis environment then provides network visualization, person- and group-level measures, comparisons with random networks, uncertainty in rankings, change over time, content analysis, and export of networks, figures, tables, and methods documentation.</p>
+        <p>The analysis engine is built for research use. Its network measures have been checked against NetworkX, exact calculations, and closed-form reference cases across roughly 21 million comparisons. Statistical procedures are calibrated through simulation, and generated networks can be compared with the known structures from which they were produced.</p>
+        <p>Files are read locally in the browser.</p>
+      </div>
+      <p class="dv-orient__lab">${ext(LAB, 'Research context, validation, and current limits', 'tlink dv-lab')}</p>
+    </section>
+    <section class="dv-ways" aria-labelledby="dv-ways-h">
+      <h2 id="dv-ways-h" class="section__title">Choose a way in</h2>
+      <ul class="dv-start" aria-labelledby="dv-ways-h">
+        ${START.map(c => html`<li class="dv-start__item">
+          <button type="button" class="dv-start__card" onClick=${() => go(c.id)}>
+            <span class="dv-start__title">${c.title}</span>
+            <span class="dv-start__text">${c.text}</span>
+            <span class="dv-start__go tlink tlink--arrow">${c.action}</span>
+          </button>
+        </li>`)}
+      </ul>
+    </section>
+    <p class="dv-learn">New to network analysis? <a class="tlink tlink--arrow" href="#learn" onClick=${e => { e.preventDefault(); store.actions.setView('learn'); }}>Learn the ideas</a></p>
     <section class="dv-import" id="dv-import" aria-labelledby="dv-import-h" tabindex="-1">
-      <h3 id="dv-import-h" class="dv-h3">Analyze your own exports</h3>
-      <p class="dv-privacy"><${Flag} level="ok">Private</${Flag}> Everything runs in this browser and nothing is uploaded. Loaded data is not kept: closing the tab erases it. Only drafts you make in Build, and an API key if you choose to remember it, are saved in this browser.</p>
+      <h3 id="dv-import-h" class="dv-h3">Analyze empirical data</h3>
+      <p class="dv-privacy">Files are read and analyzed in this browser. Loaded data remain in the current tab unless you save an Org Signal project. Build drafts can be retained in this browser, and an API key is stored only when you explicitly choose to remember it.</p>
       <div class="dv-empty__drop"><${DropZone} onFiles=${onFiles} /></div>
-      <p class="small text2 dv-sources">Reads Slack, Microsoft Teams, Gmail and other email, Google and Outlook calendars, WhatsApp, LinkedIn, X, Telegram, iMessage, Messenger and Instagram, Discord, Reddit, Bluesky, Mastodon and Threads exports; survey responses (Google Forms, Qualtrics, Network Canvas, Org Signal surveys); network files (GraphML, GEXF, Pajek, UCINET); any spreadsheet of who-to-whom; and Org Signal project files.</p>
-      <details class="disclose dv-howto"><summary>How to get your export</summary>
+      <p class="small text2 dv-sources">Org Signal reads Slack, Microsoft Teams, email, Gmail Takeout, Google and Outlook calendars, WhatsApp, LinkedIn, X, Telegram, iMessage, Messenger, Instagram, Discord, Reddit, Bluesky, Mastodon, Threads, survey responses, Network Canvas data, GraphML, GEXF, GML, Pajek, UCINET DL, ordinary who-to-whom tables, and Org Signal project files.</p>
+      <details class="disclose dv-howto"><summary>How to get an export</summary>
         <dl class="dv-howto__list">${HOWTO.map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>
       </details>
+    </section>
+    <div class="dv-classic" id="dv-classic"><${ClassicList} level=${3} headingId="dv-classic-h" limit=${4}
+      intro="Org Signal includes published networks that can be used to learn measures, reproduce documented results, and compare an analysis with a known reference case." /></div>
+    <section class="dv-synth" aria-labelledby="dv-synth-h">
+      <h3 id="dv-synth-h" class="dv-h3">Synthetic networks</h3>
+      <p class="prose">You can also generate organizations and online communities whose underlying structure is specified in advance. Generated worlds can include departments, brokers, silos, reorganizations, departures, communities, content patterns, and diffusion processes.</p>
+      <p class="prose">Org Signal can write these worlds into the kinds of records produced by the selected communication medium, which can then be reconstructed through the same import and construction pipeline used for empirical data. The recovery check compares the resulting analysis with the structure used to generate the world.</p>
+      <p><button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView('generate')}>Open Generate</button></p>
+    </section>
+    <section class="dv-about" aria-labelledby="dv-about-h">
+      <h3 id="dv-about-h" class="dv-h3">About Org Signal</h3>
+      <p class="prose">Org Signal is part of the Networks Lab at Graystone Industries. The Networks Lab page describes the research logic behind the system, validation procedures, current limitations, teaching materials, and source documentation.</p>
+      <p class="tlinks">${ext(LAB, 'Read about Org Signal in the Networks Lab')}${ext(REPO, 'Source and documentation')}</p>
     </section>
   </div>`;
 }
@@ -321,8 +356,8 @@ function Pickers({ onFiles, primary }) {
 function DropZone({ onFiles, compact = false }) {
   const [over, drop] = useDrop(onFiles);
   return html`<div class=${`drop dv-drop${compact ? ' dv-drop--compact' : ''}`} data-over=${String(over)} ...${drop}>
-    <p class="drop__title">${compact ? 'Drop more files, zips or folders' : 'Drop files, zips or folders here'}</p>
-    ${!compact && html`<p class="drop__hint">An export zip as downloaded, a folder of exports, single files, or many at once (all your WhatsApp chats). Each is recognized separately.</p>`}
+    <p class="drop__title">${compact ? 'Drop more files, zips or folders' : 'Drop files, zips, or folders here'}</p>
+    ${!compact && html`<p class="drop__hint">You can load an export as downloaded, a folder containing several exports, individual files, or multiple related files at once.</p>`}
     <div class="row dv-drop__row">
       <${Pickers} onFiles=${onFiles} primary=${!compact} />
       ${pipelineMode() === 'mock' && html`<span class="meta">Demo mode: any file shows the demo import</span>`}

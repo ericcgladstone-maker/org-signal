@@ -98,8 +98,8 @@ function TieRules({ ds }) {
   const items = found.map(r => `${RULE_LABEL[r] || r} (${fmtInt(ev[r])})`);
   const list = items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}` : items[0];
   return html`<section class="dv-rules" aria-labelledby="dv-rules-h">
-    <p class="label" id="dv-rules-h">Ties these records can build</p>
-    <p class="small text2">Ties can be built from ${list}. Each is a rule you can switch on or off, and weigh, in Construction settings; the network is only what those rules make of these records.</p>
+    <p class="label" id="dv-rules-h">Records available for tie construction</p>
+    <p class="small text2">These records support tie construction from ${list}. Each rule can be enabled, disabled, or weighted under Construction settings. The network is rebuilt from the selected rules.</p>
   </section>`;
 }
 
@@ -146,8 +146,8 @@ function Deactivated({ list }) {
 function CanCannot({ s }) {
   // s: a source, or a group's { canShow, cannotShow } (core/report.js).
   return html`<div class="src__cols">
-    <div><p class="label">This data can show</p>${s.canShow?.length ? html`<ul class="can-list">${s.canShow.map(x => html`<li>${x}</li>`)}</ul>` : html`<p class="small text2">Nothing: no events were read.</p>`}</div>
-    <div><p class="label">It cannot show</p><ul class="can-list">${(s.cannotShow || []).map(x => html`<li>${x}</li>`)}</ul></div>
+    <div><p class="label">What these records support</p>${s.canShow?.length ? html`<ul class="can-list">${s.canShow.map(x => html`<li>${x}</li>`)}</ul>` : html`<p class="small text2">Nothing: no events were read.</p>`}</div>
+    <div><p class="label">Limits of these records</p><ul class="can-list">${(s.cannotShow || []).map(x => html`<li>${x}</li>`)}</ul></div>
   </div>`;
 }
 

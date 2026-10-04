@@ -158,7 +158,7 @@ for (const width of [1440, 390]) {
   await overflow(p, `${tag} generate`); await shot(p, `${tag}-generate`);
 
   // Learn: a concept anchor, a Term popover that opens on click and closes
-  // on Escape, and the Explanations switch (round 2, decision 1).
+  // on Escape, and the Interpretive notes switch (round 2, decision 1).
   await go(p, 'learn/betweenness'); await idle(p, 800);
   await overflow(p, `${tag} learn`); await shot(p, `${tag}-learn`);
   const atConcept = await p.evaluate(() => { const r = document.getElementById('learn-betweenness')?.getBoundingClientRect(); return !!r && r.top >= 0 && r.top < window.innerHeight / 2; });
@@ -172,7 +172,7 @@ for (const width of [1440, 390]) {
   const before = await p.evaluate(() => document.querySelector('.explain-switch__v')?.textContent);
   await p.evaluate(() => document.querySelector('.learn__explain button')?.click()); await sleep(200);
   const after = await p.evaluate(() => document.querySelector('.explain-switch__v')?.textContent);
-  if (!before || before === after) problems.push(`${tag}: Explanations switch did not change (${before} -> ${after})`);
+  if (!before || before === after) problems.push(`${tag}: Interpretive notes switch did not change (${before} -> ${after})`);
   await p.evaluate(() => document.querySelector('.learn__explain button')?.click()); await sleep(200);
 
   if (width < 600) {
@@ -182,11 +182,11 @@ for (const width of [1440, 390]) {
     if (descs < 10) problems.push(`${tag}: phone menu shows ${descs} view descriptions`);
     await p.keyboard.press('Escape');
   }
-  // Purposeful empty state: the view's question and the sample link.
+  // Purposeful empty state: what the view reports (a statement since the copy audit) and the sample link.
   await p.goto(`${BASE}/index.html?mock&empty#groups`, { waitUntil: 'load' });
   await idle(p, 500);
   const needs = await p.evaluate(() => ({ q: document.querySelector('.view__intro')?.textContent || '', sample: [...document.querySelectorAll('.needs button')].some(b => /sample/i.test(b.textContent)) }));
-  if (!/\?/.test(needs.q) || !needs.sample) problems.push(`${tag}: Groups empty state lacks its question or the sample link`);
+  if (!/within- and between-group structure/.test(needs.q) || /\?/.test(needs.q) || !needs.sample) problems.push(`${tag}: Groups empty state lacks its statement of purpose or the sample link`);
   await overflow(p, `${tag} groups-empty`); await shot(p, `${tag}-groups-empty`);
   // Keyboard: Tab from a fresh load reaches the skip link first. Leave the page
   // first: a URL that differs only after '#' is a view switch, not a load.

@@ -21,14 +21,14 @@ Built by [Eric Gladstone](https://graystoneindustries.co).
 | Survey a class or team | **Build > Roster**: share a link, collect answers, combine them into one network |
 | Work with a network where the right answer is known | **Generate**: a synthetic organization or community with planted structure, then its recovery check |
 | Study a famous network | **Data** or **Learn > Classic datasets** (below) |
-| Analyze your own exports | **Data**: drop files or a folder; the import report says what this kind of data can and cannot show |
+| Analyze your own exports | **Data**: drop files or a folder; the import review lists what these records support and the limits of these records |
 | Look up a term | **Learn**, or any dotted-underlined word in the app |
 
 ### For instructors
 
 - **Networks 101.** Twelve assignments for a first course, from drawing a first network to a final project ([`docs/ux/networks101-assignments.md`](docs/ux/networks101-assignments.md)). **Learn > Find it in the app** points students to where each answer is found.
 - **Class surveys.** Roster surveys go out as links. Each student answers in their own browser, sends back a response file, and the instructor combines them. No server holds the responses.
-- **Classic datasets.** Eleven published networks load with one click. Each has a card with what the original study found, a known answer to check work against, a suggested assignment, the citation and the license:
+- **Classic datasets.** Eleven published networks load with one click. Each has a card with what the original study found, a documented result and reference values, a suggested assignment, the citation and the license:
   - Zachary's karate club
   - Padgett's Florentine families
   - Krackhardt's high-tech managers, with all 21 managers' perceptions for the Perceived builder
@@ -42,7 +42,7 @@ Built by [Eric Gladstone](https://graystoneindustries.co).
   - Enron email, core employees, headers only
 
   Sources, conversions and checks are in [`docs/datasets.md`](docs/datasets.md).
-- **Explanations.** "How to read this" notes appear under numbers throughout. Students can turn them off once they no longer need them.
+- **Interpretive notes.** An "Interpretation" note (Definition, Scale, In this network, Caution) appears under numbers throughout. The "Interpretive notes: on/off" switch in the masthead turns them off once they are no longer needed.
 
 ## What it does
 
@@ -153,7 +153,7 @@ Open an issue at <https://github.com/ericcgladstone-maker/org-signal/issues>, or
 
 ## Citing
 
-> Gladstone, E. (2026). *Org Signal: browser-based network analysis for teaching and research* (Version 2.0) [Software]. https://github.com/ericcgladstone-maker/org-signal
+> Gladstone, E. (2026). *Org Signal: Browser-based network analysis for teaching and research* (Version 2.0) [Software]. https://github.com/ericcgladstone-maker/org-signal
 
 The methods appendix (**Methods & Export**) records the settings and analyses behind a result, for a paper's methods section.
 

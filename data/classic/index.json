@@ -12,7 +12,7 @@
    "mode": "one",
    "title": "Zachary's karate club",
    "year": 1977,
-   "description": "Friendships among 34 members of a university karate club that split in two after a dispute between its instructor and its administrator.",
+   "description": "Friendships among 34 members of a university karate club that later split into two groups following a conflict between the instructor and administrator.",
    "relations": [
     "friendship (interaction outside club meetings)"
    ],
@@ -63,7 +63,7 @@
    "mode": "one",
    "title": "Padgett's Florentine families",
    "year": 1993,
-   "description": "Marriage alliances and business ties among 16 leading families of early fifteenth-century Florence, from Padgett's archival research, with each family's wealth and seats on the city council (priorates). The network opens on marriage; Construction settings switches to business or both.",
+   "description": "Marriage and business ties among leading families in fifteenth-century Florence, together with family wealth and representation on the city council. The network opens on marriage ties. Construction settings can switch to business ties or combine the two relations.",
    "relations": [
     "marriage",
     "business"
@@ -114,7 +114,7 @@
    "mode": "one",
    "title": "Krackhardt's high-tech managers",
    "year": 1987,
-   "description": "21 managers of a small high-tech machinery firm: whom each goes to for advice, who their friends are, and whom they report to, plus how each manager perceives everyone else's ties.",
+   "description": "Twenty-one managers in a small technology firm, with advice, friendship, and reporting relations plus each manager’s perception of the network.",
    "relations": [
     "advice",
     "friendship",
@@ -183,7 +183,7 @@
    "mode": "one",
    "title": "Sampson's monastery",
    "year": 1968,
-   "description": "Novices in a New England monastery name the three peers they like most and least, at five time points before and during a crisis that ended with expulsions.",
+   "description": "Interpersonal nominations among novices in a New England monastery, observed at five points before and during a conflict that ended with several members leaving.",
    "relations": [
     "like",
     "dislike"
@@ -246,7 +246,7 @@
    "mode": "one",
    "title": "Kapferer's tailor shop",
    "year": 1972,
-   "description": "Interactions among 39 workers in a tailor shop in Kabwe, Zambia, observed twice, seven months apart, during a dispute over wages.",
+   "description": "Interaction among 39 workers in a tailor shop in Kabwe, Zambia, observed twice across a seven-month period that included a wage dispute.",
    "relations": [
     "sociational",
     "instrumental"
@@ -311,7 +311,7 @@
    "mode": "one",
    "title": "Newcomb's fraternity",
    "year": 1961,
-   "description": "17 men who did not know each other share a house at the University of Michigan; every week each ranks the other 16 from most to least liked.",
+   "description": "Seventeen men who began as strangers lived together at the University of Michigan and ranked one another weekly from most to least liked.",
    "relations": [
     "preference ranking"
    ],
@@ -365,7 +365,7 @@
    "mode": "one",
    "title": "Bank wiring room",
    "year": 1939,
-   "description": "14 men wiring telephone switchboard banks at Western Electric's Hawthorne plant: who played games, argued, were friends or antagonists, helped and traded jobs.",
+   "description": "Fourteen workers in Western Electric’s bank wiring room, with observed friendship, antagonism, games, help, arguments, and job trading.",
    "relations": [
     "games",
     "window arguments",
@@ -421,7 +421,7 @@
    },
    "title": "Davis's Southern Women",
    "year": 1941,
-   "description": "Which of 18 women in a Southern town attended which of 14 informal social events over nine months: a two-mode network (women and events).",
+   "description": "Attendance by 18 women at 14 informal social events over a nine-month period. The original data form a two-mode network of women and events.",
    "relations": [
     "attended"
    ],
@@ -478,7 +478,7 @@
    "mode": "one",
    "title": "Les Miserables co-appearances",
    "year": 1993,
-   "description": "Characters in Victor Hugo's novel, tied when they appear in the same chapter; the weight is how many chapters they share.",
+   "description": "Characters in Victor Hugo’s novel, tied when they appear in the same chapter. Tie weight records the number of chapters shared.",
    "relations": [
     "appear in the same chapter"
    ],
@@ -525,7 +525,7 @@
    "mode": "one",
    "title": "Lusseau's bottlenose dolphins",
    "year": 2003,
-   "description": "62 bottlenose dolphins in Doubtful Sound, New Zealand, tied when they were seen together more often than chance, 1994-2001.",
+   "description": "Associations among 62 bottlenose dolphins in Doubtful Sound, New Zealand, based on repeated observations from 1994 to 2001.",
    "relations": [
     "frequent association"
    ],
@@ -571,7 +571,7 @@
    "mode": "one",
    "title": "Enron email (core employees, headers only)",
    "year": 2004,
-   "description": "Who emailed whom among the 148 Enron employees whose mailboxes were released, 1998-2002: sender, recipients (to / cc / bcc), time, message and thread ids. No message text, no subjects.",
+   "description": "Email headers among the 148 Enron employees whose mailboxes were released, covering 1998 to 2002. The included data contain sender, recipients, time, message identifiers, and thread identifiers. Message text and subject lines are excluded.",
    "relations": [
     "email (to, cc, bcc)"
    ],

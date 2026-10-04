@@ -79,13 +79,13 @@ function useNavNotes(ds) {
 
 const NOTE_TITLE = { 'no text': 'This data has no message text', 'no dates': 'This data has no dates' };
 
-// The Explanations switch (decision 1): a quiet text control. On shows the
-// "How to read this" blocks and term glosses; the reader's choice is kept.
+// The Interpretive notes switch (decision 1): a quiet text control. On shows
+// the Interpretation blocks and term glosses; the reader's choice is kept.
 function ExplainSwitch({ className = '' }) {
   const on = useStore(s => s.explain !== false);
   return html`<button type="button" class=${`explain-switch ${className}`} aria-pressed=${String(on)}
-      title="Show or hide the How to read this blocks and term explanations"
-      onClick=${() => store.actions.setExplain(!on)}>Explanations: <span class="explain-switch__v">${on ? 'on' : 'off'}</span></button>`;
+      title="Show or hide the Interpretation notes and term explanations"
+      onClick=${() => store.actions.setExplain(!on)}>Interpretive notes: <span class="explain-switch__v">${on ? 'on' : 'off'}</span></button>`;
 }
 
 function Header() {
@@ -121,7 +121,7 @@ function Header() {
     <div class="app-header__inner">
       <a class="brand" href="#data" onClick=${e => go(e, 'data')}>
         <span class="brand__name">Org Signal</span>
-        <span class="brand__desc">Network measurement from relational traces</span>
+        <span class="brand__desc">Social network analysis in the browser</span>
       </a>
       <div class="app-header__end">
       <${Loaded} />

@@ -23,7 +23,7 @@ import { communityWords, communityCounts } from '../lib/rebuild.js';
 export function MethodsView() {
   const ds = useStore(s => s.dataset);
   return html`<div class="view view--col">
-    <${ViewHead} title="Methods & Export" intro="A methods appendix written from the choices actually made, files for other network tools, figures, a printable summary, and a project file to pick up where you left off." />
+    <${ViewHead} title="Methods & Export" intro="This view records how the current network was constructed and analyzed, and exports the resulting network, measures, figures, reports, and project state." />
     ${ds ? html`<${Loaded} ds=${ds} />` : html`<div class="section" style="border-top:0"><p class="text2">Nothing to describe or export yet. Load data, or open a saved project below.</p></div>`}
     ${!ds && html`<${Project} />`}
   </div>`;
@@ -129,7 +129,7 @@ function Loaded({ ds }) {
   return html`
     <section class="section" style="border-top:0" aria-labelledby="exp-h">
       <h2 id="exp-h" class="section__title">Network files</h2>
-      <p class="small text2" style="margin-bottom:.6rem">The network as currently constructed, with attributes, measures (contacts, ${state.network?.directed ? 'total ties in + out, ' : ''}betweenness and the rest) and communities numbered from 1 as in the app. Each tie carries its evidence per construction rule as evidence_reply, evidence_mention and so on, in every format.</p>
+      <p class="small text2" style="margin-bottom:.6rem">Export the network as currently constructed, including node attributes, computed measures, communities, and tie-level evidence for each construction rule. Contact details are omitted by default.</p>
       <label class="check mx-privacy"><input type="checkbox" checked=${omitContacts} onChange=${e => setOmitContacts(e.currentTarget.checked)} />
         <span>Leave out contact details: email addresses, handles, phone numbers and account ids. People keep their names; ids become p1, p2, ... ${omitContacts ? '' : 'With this off, ids are the dataset\'s person keys, so files can be joined back to the data.'}</span></label>
       <div class="table-wrap"><table class="tbl tbl--files">
@@ -147,12 +147,14 @@ function Loaded({ ds }) {
         <button type="button" class="tlink tlink--down" onClick=${summary} disabled=${md === null}>Summary report (HTML, prints to PDF)</button>
         <a class="tlink tlink--arrow" href="#network" onClick=${e => { e.preventDefault(); store.actions.setView('network'); }}>The current network view as SVG or PNG</a>
       </div>
-      <p class="basis">The summary report contains the data description, whole-network measures with their meanings, the random-network and group comparisons run so far (with null means, z and p), the most central people with applicability notes, and the methods appendix. No language model is involved.</p>
+      <p class="basis">Export a network figure or a summary report containing the data description, whole-network measures, analyses already run in Org Signal, and the methods appendix.</p>
+      <p class="basis">The summary is generated deterministically from computed results and can be saved as HTML or printed to PDF.</p>
     </section>
     <${Project} />
     <section class="section" aria-labelledby="meth-h">
       <h2 id="meth-h" class="section__title">Methods appendix</h2>
-      <p class="small text2" style="margin-bottom:.7rem">Written deterministically from the sources, construction settings and measures in use, and from the analyses run on this network so far (open Groups, Time or Content first to include them). Copy it into a paper or report and edit as needed.</p>
+      <p class="small text2">The methods appendix is generated from the sources, construction settings, measures, and analyses used for the current network. Analyses appear after they have been run in the relevant view.</p>
+      <p class="small text2" style="margin-bottom:.7rem">The exported text provides a reproducible record of the analytical sequence and can be edited for a paper or report.</p>
       ${md && html`<div class="tlinks" style="margin-bottom:1.25rem">
         <button type="button" class="tlink" onClick=${copy}>Copy appendix</button>
         <button type="button" class="tlink tlink--down" onClick=${() => save(md, `${base}-methods.md`, 'text/markdown')}>Markdown</button>
@@ -265,7 +267,8 @@ function Project() {
   const survey = (state.dataset?.meta?.sources || []).some(x => x.nominations?.respondents);
   return html`<section class="section" aria-labelledby="proj-h">
     <h2 id="proj-h" class="section__title" tabindex="-1">Project file</h2>
-    <p class="small text2" style="margin-bottom:.9rem">Loaded data and results are not kept in the browser: closing this tab erases them (only Build drafts and an opted-in API key are saved). A project file saves the combined data (after identity merges and joins) and the construction settings to your computer, and opening it here or dropping it on Data restores the same network and measures. It contains everything imported, including message text and contact details; store it as carefully as the original exports.${survey ? ' For this survey it also keeps who named whom, so whoever opens it can see each person\'s nominations: share it only with people allowed to see the raw answers.' : ''}</p>
+    <p class="small text2">Save the current project to preserve the data and construction settings for later work in Org Signal. Opening it here or in Data restores the same network and measures.</p>
+    <p class="small text2" style="margin-bottom:.9rem">Loaded data and results are not kept in the browser after the tab closes; only Build drafts and an API key the user chooses to remember are stored locally. The project file contains the combined data after identity merges and joins, including message text and contact details, and requires the same care as the original exports.${survey ? ' For this survey it also keeps who named whom, so whoever opens it can see each person\'s nominations: share it only with people allowed to see the raw answers.' : ''}</p>
     <div class="tlinks">
       ${state.dataset && html`<button type="button" class="btn btn--primary" onClick=${saveProject}>Save project</button>`}
       <button type="button" class="tlink" onClick=${() => ref.current.click()} disabled=${busy}>${busy ? 'Opening' : 'Open a project'}</button>

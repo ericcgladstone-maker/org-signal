@@ -41,7 +41,7 @@ export const CARDS = {
     title: "Zachary's karate club",
     manifest: ds => base(ds, {
       title: "Zachary's karate club", year: 1977,
-      description: 'Friendships among 34 members of a university karate club that split in two after a dispute between its instructor and its administrator.',
+      description: 'Friendships among 34 members of a university karate club that later split into two groups following a conflict between the instructor and administrator.',
       relations: ['friendship (interaction outside club meetings)'], directed: false, valued: true, timePoints: [],
       valuedNote: 'Each tie carries the number of settings in which the two interacted (Zachary\'s strength, 1 to 7); it is the tie weight and the tie field "contexts".',
       knownAnswers: [{ key: 'faction', meaning: 'The club each member joined after the split: "Mr. Hi" (the instructor\'s new club, 17 members) or "Officer" (the administrator\'s, 17).' }],
@@ -63,7 +63,7 @@ export const CARDS = {
     title: "Padgett's Florentine families",
     manifest: ds => base(ds, {
       title: "Padgett's Florentine families", year: 1993,
-      description: 'Marriage alliances and business ties among 16 leading families of early fifteenth-century Florence, from Padgett\'s archival research, with each family\'s wealth and seats on the city council (priorates). The network opens on marriage; Construction settings switches to business or both.',
+      description: 'Marriage and business ties among leading families in fifteenth-century Florence, together with family wealth and representation on the city council. The network opens on marriage ties. Construction settings can switch to business ties or combine the two relations.',
       relations: ['marriage', 'business'], directed: false, valued: false, timePoints: [],
       knownAnswers: [{ key: null, meaning: 'A position, not a grouping: the Medici have the highest betweenness in the marriage network.' }],
       findings: 'Padgett and Ansell (1993) argued that the Medici rose to power in the 1430s through their network position: they married into old patrician families and did business with newer families that were not tied to each other, so the Medici stood between groups that could reach each other only through them ("robust action"). The opposing oligarchs were densely intermarried among themselves.',
@@ -84,7 +84,7 @@ export const CARDS = {
     title: "Krackhardt's high-tech managers",
     manifest: ds => base(ds, {
       title: "Krackhardt's high-tech managers", year: 1987,
-      description: '21 managers of a small high-tech machinery firm: whom each goes to for advice, who their friends are, and whom they report to, plus how each manager perceives everyone else\'s ties.',
+      description: 'Twenty-one managers in a small technology firm, with advice, friendship, and reporting relations plus each manager’s perception of the network.',
       relations: ['advice', 'friendship', 'reports to'], directed: true, valued: false, timePoints: [],
       knownAnswers: [{ key: 'level', meaning: 'Formal rank: CEO (1), Vice president (4), Manager (16).' }, { key: 'department', meaning: 'Department 1 to 4 (the CEO has none).' }],
       findings: 'Krackhardt (1987) asked each manager about every pair of managers, not only their own ties, and introduced cognitive social structures: the network as each person perceives it. He showed that different ways of combining the reports (each tie judged by the two people involved, or by the consensus of all) give different networks, and that individuals differ in how accurately they perceive the network.',
@@ -105,7 +105,7 @@ export const CARDS = {
     title: "Sampson's monastery",
     manifest: ds => base(ds, {
       title: "Sampson's monastery", year: 1968,
-      description: 'Novices in a New England monastery name the three peers they like most and least, at five time points before and during a crisis that ended with expulsions.',
+      description: 'Interpersonal nominations among novices in a New England monastery, observed at five points before and during a conflict that ended with several members leaving.',
       relations: ['like', 'dislike'], directed: true, valued: true, timePoints: ['T1', 'T2', 'T3', 'T4', 'T5'],
       valuedNote: 'Weight 3 is the first choice, 1 the third; the tie field "choice" says 1 for the first choice. The source has no dates, so the time point is the tie field "wave".',
       knownAnswers: [{ key: 'faction', meaning: 'Sampson\'s four groups at T4: Young Turks (7), Loyal Opposition (5), Outcasts (3), Interstitial (3).' }, { key: 'outcome', meaning: 'Expelled (4), left (10) or stayed (4) after the crisis.' }],
@@ -127,7 +127,7 @@ export const CARDS = {
     title: "Kapferer's tailor shop",
     manifest: ds => base(ds, {
       title: "Kapferer's tailor shop", year: 1972,
-      description: 'Interactions among 39 workers in a tailor shop in Kabwe, Zambia, observed twice, seven months apart, during a dispute over wages.',
+      description: 'Interaction among 39 workers in a tailor shop in Kabwe, Zambia, observed twice across a seven-month period that included a wage dispute.',
       relations: ['sociational', 'instrumental'], directed: 'mixed', valued: false, timePoints: ['Time 1 (June 1965)', 'Time 2 (January 1966)'],
       knownAnswers: [{ key: 'time', meaning: 'Tie field: an abortive strike followed Time 1, a successful strike followed Time 2.' }],
       findings: 'Kapferer (1972) followed a dispute over wages in an Indian-owned tailor shop. An attempted strike after the first observation period failed; a strike after the second succeeded. Between the two periods the workers\' sociational (friendly, sociable) ties increased from 158 to 223, and Kapferer related the successful mobilization to how the shop\'s network of relations had changed.',
@@ -148,7 +148,7 @@ export const CARDS = {
     title: "Newcomb's fraternity",
     manifest: ds => base(ds, {
       title: "Newcomb's fraternity", year: 1961,
-      description: '17 men who did not know each other share a house at the University of Michigan; every week each ranks the other 16 from most to least liked.',
+      description: 'Seventeen men who began as strangers lived together at the University of Michigan and ranked one another weekly from most to least liked.',
       relations: ['preference ranking'], directed: true, valued: true, timePoints: ['weeks 0-15 (week 9 missing)'],
       valuedNote: 'Rank r (1 = most liked, 16 = least) becomes weight 17 - r, so a first choice weighs 16; "rank" and "week" are tie fields. By default only each man\'s top three choices are kept (a tie-field filter, rank at most 3); remove it in Settings to use the full rankings. Dates are a placeholder calendar (week 0 shown as the week of 24 Sep 1956); only the week numbers are in the source.',
       knownAnswers: [{ key: 'week', meaning: 'Tie field: the week of the ranking.' }],
@@ -170,7 +170,7 @@ export const CARDS = {
     title: 'Bank wiring room',
     manifest: ds => base(ds, {
       title: 'Bank wiring room', year: 1939,
-      description: '14 men wiring telephone switchboard banks at Western Electric\'s Hawthorne plant: who played games, argued, were friends or antagonists, helped and traded jobs.',
+      description: 'Fourteen workers in Western Electric’s bank wiring room, with observed friendship, antagonism, games, help, arguments, and job trading.',
       relations: ['games', 'window arguments', 'friendship', 'antagonism', 'helping', 'job trading'], directed: 'mixed', valued: true, timePoints: [],
       valuedNote: 'Job trading counts how often two men traded jobs (tie field "times"); the other relations are present or absent. By default only friendship is used (a tie-field filter); choose other relations in Settings.',
       knownAnswers: [{ key: 'clique', meaning: 'Homans\'s cliques: A (W1, W3, W4, S1, I1) and B (W7, W8, W9, S4); W2 and W6 were on the edges of A and B (clique_note); W5, S2 and I3 belonged to neither.' }],
@@ -191,7 +191,7 @@ export const CARDS = {
     title: "Davis's Southern Women",
     manifest: ds => base(ds, {
       title: "Davis's Southern Women", year: 1941,
-      description: 'Which of 18 women in a Southern town attended which of 14 informal social events over nine months: a two-mode network (women and events).',
+      description: 'Attendance by 18 women at 14 informal social events over a nine-month period. The original data form a two-mode network of women and events.',
       relations: ['attended'], directed: false, valued: false, timePoints: ['14 dated events, 23 Feb to 21 Nov 1936'],
       knownAnswers: [{ key: 'dgg_group', meaning: 'The authors\' own two overlapping groups: women 1-9 and 9-18 (Ruth, number 9, in both).' }, { key: 'consensus_group', meaning: 'Freeman\'s (2003) consensus of 21 analyses: women 1-9 and 10-18.' }, { key: 'dgg_position', meaning: 'Core, primary or secondary member, as Davis, Gardner and Gardner placed them.' }],
       findings: 'Davis, Gardner and Gardner studied how informal social life follows social class in a Mississippi town. From the attendance table they described two overlapping groups of women, each with core, primary and secondary members. Breiger (1974) used the table to show the duality of persons and groups; Freeman (2003) compared 21 analyses of it and found a clear consensus: women 1-9 and 10-18.',
@@ -212,7 +212,7 @@ export const CARDS = {
     title: 'Les Miserables co-appearances',
     manifest: ds => base(ds, {
       title: 'Les Miserables co-appearances', year: 1993,
-      description: 'Characters in Victor Hugo\'s novel, tied when they appear in the same chapter; the weight is how many chapters they share.',
+      description: 'Characters in Victor Hugo’s novel, tied when they appear in the same chapter. Tie weight records the number of chapters shared.',
       relations: ['appear in the same chapter'], directed: false, valued: true, timePoints: [],
       valuedNote: 'The weight (and the tie field "chapters") is the number of chapters in which both characters appear.',
       knownAnswers: [{ key: null, meaning: 'A position, not a grouping: Valjean has the most co-appearances and the highest betweenness.' }],
@@ -233,7 +233,7 @@ export const CARDS = {
     title: "Lusseau's bottlenose dolphins",
     manifest: ds => base(ds, {
       title: "Lusseau's bottlenose dolphins", year: 2003,
-      description: '62 bottlenose dolphins in Doubtful Sound, New Zealand, tied when they were seen together more often than chance, 1994-2001.',
+      description: 'Associations among 62 bottlenose dolphins in Doubtful Sound, New Zealand, based on repeated observations from 1994 to 2001.',
       relations: ['frequent association'], directed: false, valued: false, timePoints: [],
       knownAnswers: [{ key: 'split_2004', meaning: 'The two groups of the first Girvan-Newman split (41 and 21), which Newman and Girvan (2004) report match a division Lusseau observed in the field.' }],
       findings: 'Lusseau and colleagues found that this isolated community had an unusually large share of long-lasting associations. Newman and Girvan (2004) showed that the network splits into two groups that match a split observed in the field: for about two years the community separated along those lines after some dolphins on the boundary disappeared, and joined again when they returned.',
@@ -253,7 +253,7 @@ export const CARDS = {
     title: 'Enron email (core employees, headers only)',
     manifest: ds => base(ds, {
       title: 'Enron email (core employees, headers only)', year: 2004,
-      description: 'Who emailed whom among the 148 Enron employees whose mailboxes were released, 1998-2002: sender, recipients (to / cc / bcc), time, message and thread ids. No message text, no subjects.',
+      description: 'Email headers among the 148 Enron employees whose mailboxes were released, covering 1998 to 2002. The included data contain sender, recipients, time, message identifiers, and thread identifiers. Message text and subject lines are excluded.',
       relations: ['email (to, cc, bcc)'], directed: true, valued: false, timePoints: ['Nov 1998 - Jun 2002'],
       knownAnswers: [{ key: 'position', meaning: 'Position from the EnronData.org custodian list, grouped: CEO or President, Vice President, Director, Manager, Trader, In-house lawyer, Employee, Not recorded (title has the detail).' }],
       findings: 'Released by the US Federal Energy Regulatory Commission during its investigation of Enron, the corpus became the standard real email dataset. Klimt and Yang (2004) described it. Diesner, Frantz and Carley (2005) found that during the crisis of late 2001 the network was denser, more centralized and more connected than in normal times, and that communication spread across formal roles, bypassing the formal chain of command.',

@@ -8,7 +8,7 @@
 
 import { useState, useEffect } from '../../vendor/preact.js';
 
-// The Explanations switch (decision 1): "How to read this" blocks and inline
+// The Interpretive notes switch (decision 1): Interpretation blocks and inline
 // glosses. On for a first visit; the reader's choice is the one preference
 // kept in localStorage. Storage can be missing or throw (private windows,
 // blocked site data, Node tests), so every access is guarded.
@@ -26,7 +26,7 @@ export function writeExplainPref(on) {
 const initial = {
   view: 'data',          // data | build | generate | network | people | groups | content | time | methods | ask | learn
   learnKey: null,        // concept open in Learn (#learn/<key>), or null
-  explain: readExplainPref(), // Explanations switch: true shows "How to read this" blocks and glosses
+  explain: readExplainPref(), // Interpretive notes switch: true shows Interpretation blocks and glosses
   datasets: [],          // every Dataset loaded this session (before merging)
   dataset: null,         // the active, merged Dataset
   settings: null,        // ConstructionSettings for the active network

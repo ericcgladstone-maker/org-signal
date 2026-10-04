@@ -29,7 +29,7 @@ export function ContentView() {
   if (!hasText(ds)) {
     return html`<div class="view view--col"><${ViewHead} title="Content" />
       <div class="empty"><h2>This data has no message text</h2>
-      <p class="lead">Content measures need the words people wrote. The sources loaded here record who interacted with whom but not what was said (surveys, calendars, network files, or exports without message bodies).</p></div></div>`;
+      <p class="lead">Content measures require message text. The loaded sources record interactions but not their content (surveys, calendars, network files, or exports without message bodies).</p></div></div>`;
   }
   return html`<${ContentInner} ds=${ds} />`;
 }
@@ -54,7 +54,7 @@ function ContentInner({ ds }) {
     refs.current[TABS[j][0]]?.focus();
   };
   return html`<div class="view">
-    <${ViewHead} title="Content" intro=${`Tone, distinctive words, topics, and whether new words spread along ties. Measured from message text on this device; nothing is sent anywhere. ${fmtPct(coverage)} of messages carry text.`} actions=${html`<${ConstructionButton} />`} />
+    <${ViewHead} title="Content" intro=${`This view analyzes message text locally using lexicon, term-frequency, topic, and diffusion methods. It reports tone, distinctive words, recurring topics, and the spread of terms along observed ties. ${fmtPct(coverage)} of messages contain text.`} actions=${html`<${ConstructionButton} />`} />
     <div class="tabs" role="tablist" aria-label="Content measures" onKeyDown=${onKey}>
       ${TABS.map(([id, l]) => html`<button type="button" role="tab" id=${`ct-tab-${id}`} aria-controls="ct-panel" aria-selected=${String(tab === id)} tabindex=${tab === id ? '0' : '-1'} ref=${el => { refs.current[id] = el; }} onClick=${() => setTab(id)}>${l}</button>`)}
     </div>
@@ -149,7 +149,8 @@ function Affect({ ds }) {
   const outside = monthPts.length - inDense.length;
   return html`<div>
     <div class="toolbar"><${Select} label="Compare by" value=${by} onChange=${setBy} options=${byOptions(ds)} /></div>
-    <p class="small text2 cview__note"><${Flag} level="caution">Approximate</${Flag}> Word-list tone (VADER, Hutto and Gilbert 2014): each message gets a score from -1 (negative) to +1 (positive) from a word list with rules for negation and emphasis. It misses sarcasm, jargon and non-English text; compare averages over many messages, never single messages.${cov?.likelyNonEnglish ? ` ${fmtInt(cov.likelyNonEnglish)} messages look non-English.` : ''}${cov?.quotedRemoved ? ` Quoted replies were left out of ${fmtInt(cov.quotedRemoved)} messages before scoring, so each message is scored on its sender's own words.` : ''}${ap?.level === 'na' ? ` ${applicabilityReason(ap)}` : ''}</p>
+    <p class="small text2 cview__note"><${Flag} level="caution">Approximate</${Flag}> Tone is estimated with VADER (Hutto & Gilbert, 2014), which assigns each message a score from -1 to +1 using a lexicon and rules for negation and emphasis. Estimates are most informative in aggregate. Sarcasm, domain-specific language, and non-English text can reduce validity.${cov?.likelyNonEnglish ? ` ${fmtInt(cov.likelyNonEnglish)} messages appear to be non-English.` : ''}${ap?.level === 'na' ? ` ${applicabilityReason(ap)}` : ''}</p>
+    <p class="small text2 cview__note">Quoted replies and signatures are removed where they can be identified${cov?.quotedRemoved ? ` (quoted text in ${fmtInt(cov.quotedRemoved)} messages here)` : ''}. Words corresponding to people in the dataset are also excluded from the text used for keyword, topic, and diffusion analyses.</p>
     ${r && scored != null && html`<p class="small cview__note">${covered < scored
       ? html`${covered < 0.9 * scored ? html`<${Flag} level="caution" /> ` : ''}This comparison covers ${fmtInt(covered)} of ${fmtInt(scored)} scored messages${by.startsWith('attr:') ? `: only messages from people with a ${byLabel(ds, by)} value count` : by === 'node' ? `: people with at least ${FEW} messages, the 15 most active shown` : by === 'window' ? ': messages without a date are left out' : ''}${by.startsWith('attr:') || by === 'node' ? '' : '; messages from bots are never counted'}.`
       : `This comparison covers all ${fmtInt(scored)} scored messages.`}</p>`}
@@ -174,7 +175,7 @@ function Keywords({ ds }) {
   const units = q.data?.units || q.data?.groups || [];
   return html`<div>
     <div class="toolbar"><${Select} label="Distinctive words by" value=${by} onChange=${setBy} options=${byOptions(ds, { overall: false })} /></div>
-    <p class="small text2 cview__note">Words one group uses much more than the others. Each word is scored by how often the group uses it, discounted when every group uses it too (<${Term} k="tfidf">TF-IDF</${Term}>), so everyday words drop out.</p>
+    <p class="small text2 cview__note">Distinctive words are identified with <${Term} k="tfidf">TF-IDF</${Term}>. A term receives a higher score when it is common within one group and comparatively uncommon across the others. The comparison can be made across sources, groups, people, time periods, or visibility layers where the data support those distinctions.</p>
     <${CleaningNote} c=${q.data?.meta?.cleaning} />
     ${q.loading && html`<${Loading}>Counting words</${Loading}>`}<${ErrorLine} error=${q.error} onRetry=${q.retry} />
     ${q.data && !units.length && html`<p class="small text2">Not enough text per group to find distinctive words.</p>`}
@@ -196,7 +197,8 @@ function Topics() {
   const top = Math.max(1e-9, ...(r?.topics || []).map(tp => tp.share));
   return html`<div>
     <div class="toolbar"><${Select} label="Number of topics" value=${String(k)} onChange=${v => setK(Number(v))} options=${[4, 6, 8, 10, 12].map(n => ({ value: String(n), label: String(n) }))} /></div>
-    <p class="small text2 cview__note">Groups of words that tend to appear in the same messages${r?.meta?.documents ? `, found in ${fmtInt(r.meta.documents)} messages` : ''} by a <${Term} k="topics">topic model</${Term}> (latent Dirichlet allocation, <${Term} k="randomSeed">random seed</${Term}> ${r?.meta?.seed ?? 1}). Topics are word clusters, not themes someone named; read the words before naming one. A different number of topics or random seed gives a different split.</p>
+    <p class="small text2 cview__note">Topic analysis identifies recurring patterns of terms in the message corpus. Each topic is represented by its most strongly associated terms and by its share of the analyzed text. The number of topics can be changed to examine broader or finer partitions of the corpus.</p>
+    <p class="basis">A <${Term} k="topics">topic model</${Term}> (latent Dirichlet allocation${r?.meta?.documents ? `, ${fmtInt(r.meta.documents)} messages` : ''}, <${Term} k="randomSeed">random seed</${Term}> ${r?.meta?.seed ?? 1}). Topics are clusters of co-occurring terms; any label given to a topic is an interpretation of its terms. A different number of topics or random seed gives a different partition.</p>
     <${CleaningNote} c=${r?.meta?.cleaning} />
     ${q.loading && html`<${Loading}>Fitting topics</${Loading}>`}<${ErrorLine} error=${q.error} onRetry=${q.retry} />
     ${r && html`<div style="max-width:52rem"><${Bars} title="Share of words by topic" sub="Bars are scaled to the largest topic."
@@ -250,13 +252,14 @@ function Diffusion({ ds }) {
   const anyCeiling = items.some(d => roomOf(d.ex));
   const nTested = items.filter(d => Number.isFinite(d.ex?.pAdj)).length;
   return html`<div>
-    <p class="small text2 cview__tabintro">Did a new word spread from person to person? If it did, people who start using it will often have a contact who used it first. To check, the app shuffles who adopted the word when, among the same people, 200 times: if adopters had an earlier adopter among their contacts no more often than in the shuffled timelines, the network is not what spread it. ${auto ? 'Showing new words found automatically: words nobody used in the first tenth of the period, leaving out everyday English, ranked by how many people took them up; trace your own below.' : ''} When several words are tested, p is corrected for the number tested (Holm's method), so one word passing by chance does not read as spread.</p>
+    <p class="small text2 cview__tabintro">Diffusion analysis traces when a term first appears for each person and asks how often adoption follows earlier use by one of that person’s contacts. Adoption times are shuffled to provide a comparison distribution while holding the observed network and set of adopters fixed.</p>
+    <p class="small text2 cview__tabintro">The resulting comparison reports the observed share of adopters with prior exposure through a contact alongside the corresponding share under shuffled adoption times. ${auto ? 'The terms shown were selected automatically: terms absent from the first tenth of the period, excluding common English words, ranked by number of adopters. Other terms can be traced below.' : ''} When several terms are tested, p values are adjusted for multiple comparisons (Holm’s method).</p>
     <form class="toolbar" onSubmit=${e => { e.preventDefault(); const ts = input.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).slice(0, 6); if (ts.length) { setAuto(false); setTerms(ts); } }}>
       <label class="field field--grow"><span>Words to trace (comma separated)</span><input class="input" value=${input} onInput=${e => setInput(e.currentTarget.value)} placeholder="for example: roadmap, offsite" /></label>
       <button class="btn btn--primary" type="submit">Trace</button>
       <button class="tlink" type="button" aria-pressed=${String(auto)} onClick=${() => { setTerms(null); setAuto(true); }}>Find new words automatically</button>
     </form>
-    <p class="small muted cview__note">Names of people in the data are not traced.${gen ? ' Generated data: the recovery check under Generate scores spread on the true ties, of which only some show up in messages, so its verdict for a word can differ from this view, which uses the ties in the data.' : ''}</p>
+    <p class="small muted cview__note">Names of people in the data are not traced.${gen ? ' The recovery check evaluates diffusion against the underlying generated ties. This view uses ties reconstructed from the observed records, so the two analyses can differ when the observation process omits ties.' : ''}</p>
     ${q.loading && html`<${Loading}>Tracing adoption</${Loading}>`}<${ErrorLine} error=${q.error} onRetry=${q.retry} />
     ${q.data && !items.length && html`<p class="small text2">No new word was used by enough people to trace.</p>`}
     ${items.length > 0 && html`<div class="diff-grid">${items.map(d => { const room = roomOf(d.ex); const v = verdictOf(d.ex, room); return html`<section class="diff-card" aria-label=${`Diffusion of ${d.term}`}>
@@ -276,6 +279,8 @@ function Diffusion({ ds }) {
           <ol class="can-list small">${d.cascade.slice(0, 40).map(c => html`<li>${nodeLabel(ds, c.to)} after ${nodeLabel(ds, c.from)}, ${fmtDate(c.t)}</li>`)}</ol></details>`}`}
     </section>`; })}</div>
     <p class="basis">Charts share one y-axis (cumulative adopters, 0 to ${fmtInt(yMax)}) and one time axis.</p>
-    <${HowToRead} means="Exposed share: of the people who used the word after the first one, how many had a contact who used it earlier." scale="The shuffled share is what the network alone gives; only a share clearly above it suggests spread along ties." mistake=${`Reading a high exposed share as spread. In a dense network almost everyone has some earlier adopter nearby by chance${anyCeiling ? ', as here' : ''}; compare with the shuffled share.`} />`}
+    <${HowToRead} means="The exposed share is the proportion of adopters, after the first, with at least one contact who used the term earlier."
+      scale="The shuffled share is the exposure expected from the observed network and set of adopters alone. An observed share clearly above it is consistent with spread along ties."
+      mistake=${`In a dense network most adopters have an earlier-adopting contact by chance${anyCeiling ? ', as here' : ''}. A high exposed share is interpretable only relative to the shuffled share.`} />`}
   </div>`;
 }

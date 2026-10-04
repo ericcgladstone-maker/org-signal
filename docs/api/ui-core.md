@@ -13,7 +13,7 @@ Serve `app/` as static files (`python3 -m http.server 8787` from `app/`) and ope
 | `?mock` | Development only. The demo engine and fake pipeline in `src/ui/services/mock.js` stand in for the engine and pipeline; the Ask view defaults to an offline demo provider whose `chat()` follows the provider contract, so the real analyst, citation check, reports and coding run without a network. |
 | `&empty` | With `?mock` or `?demo`: start with nothing loaded (empty states). |
 
-The Data view's empty state also offers "Load a small synthetic organization", which loads the same demo data into the real engine.
+The Data view's landing page (copy of 2026-10-04) offers four ways in (Build, Generate, import, classic datasets); the sample organization loads from every analysis view's empty state ("Explore the sample") through `store.actions.loadSample()`.
 
 ## Design system (UX pass 2026-10-02)
 
@@ -69,7 +69,7 @@ Tokens live in `assets/theme.css` (type, frame, site colors) and the data palett
 
 ## Shell and store
 
-`src/ui/app.js` mounts the shell: masthead and primary navigation in workflow order (decision 2: **Get a network** Data · Build · Generate | **Explore** Network · People · Groups · Content · Time | **Report** Methods & Export · Ask | **Learn**), the Explanations switch, the active view (lazy-loaded, so a failing module only breaks its own view), the construction settings drawer, notices, and the job status bar. The URL hash holds the view (`#network`).
+`src/ui/app.js` mounts the shell: masthead and primary navigation in workflow order (decision 2: **Get a network** Data · Build · Generate | **Explore** Network · People · Groups · Content · Time | **Report** Methods & Export · Ask | **Learn**), the Interpretive notes switch, the active view (lazy-loaded, so a failing module only breaks its own view), the construction settings drawer, notices, and the job status bar. The URL hash holds the view (`#network`).
 
 `store.actions` (registered in `src/ui/actions.js`):
 
@@ -84,7 +84,7 @@ Tokens live in `assets/theme.css` (type, frame, site colors) and the data palett
 | `announce(text)` | Speak through the shell's permanent polite live region (`#announcer`). Jobs announce start, quarter marks, phase changes (at most every 2.5 s) and the end on their own. |
 | `focus(target, { fallback, scroll })` | After an action, move focus to a selector or element once the view has re-rendered; falls back to the view heading. The shell also moves focus to the heading whenever the focused control is removed and focus would drop to the page body. |
 | `startOver()` | Clear everything loaded in this tab (dataset, network, results, `generated`, notices), remount the views and return to Data. The masthead's "Clear loaded data" asks first. Builders say "New ..." for their own drafts. |
-| `setExplain(on)` | The Explanations switch: sets `store.explain` and keeps the choice as the one localStorage preference (`orgsignal.explain`, wrapped in try/catch; default on). |
+| `setExplain(on)` | The Interpretive notes switch: sets `store.explain` and keeps the choice as the one localStorage preference (`orgsignal.explain`, wrapped in try/catch; default on). |
 | `loadSample()` | Load the sample organization (the Data view's `SAMPLE_SPEC` through Generate's `generateAndAnalyze`, with its recovery check). Returns to the view it was called from (Generate hands off to Network). Resolves `true` when loaded. Use it for every "explore the sample" link. |
 | `runJob(label, fn(signal, progress))` | Status-bar entry with progress and a Cancel button that aborts `signal`. |
 | `openDrawer()` / `closeDrawer()` | Construction settings drawer. |
@@ -93,19 +93,19 @@ Respondent mode: when the address is `#survey=1.<data>` (a share link) or `#resp
 
 Shell behavior: the masthead shows "Analyzing: <short name>" with "Clear loaded data" whenever data is loaded (a row under the bar below 1280px, with `--header-h` growing to match); leaving or reloading the page with data loaded asks first (`beforeunload`); `document.title` is "<View> · <dataset> · Org Signal".
 
-`VIEWS` (actions.js) entries are `{ id, label, group, desc, purpose?, shows? }`: `desc` is the one line under each link in the phone menu and the link title on desktop; `purpose` (a question) and `shows` (2-3 things) feed `NeedsData` and `ViewHead`. `parseHash(hash) -> { view, key }`. Content and Time links stay live but show a muted "no text" / "no dates" when the loaded data cannot feed them.
+`VIEWS` (actions.js) entries are `{ id, label, group, desc, purpose?, shows? }`: `desc` is the one line under each link in the phone menu and the link title on desktop; `purpose` (a statement of what the view reports, never a question: copy audit 2026-10-04) and `shows` (2-3 things) feed `NeedsData`. `parseHash(hash) -> { view, key }`. Content and Time links stay live but show a muted "no text" / "no dates" when the loaded data cannot feed them.
 
 Store keys written by ui-core besides those in `store.js`: `methodsLog` (analyses run on the current network, recorded by `services/engine.js` and read by the methods appendix: `{ groups, nullModel, resampling, time, affect, keywords, topics, diffusion }`, each a list of the options used; cleared on load and rebuild), `lastRebuild`, `epoch` (bumped by Start over), `llm.codes` (Ask: send names as codes, default on), `report` (import report), `communities` (`{ membership (network order), modularity, count, sizes, ... }`, renumbered by size so color slot 1 is the largest group), `applicability`, `metrics = { node: { metric: Float64Array (network order) }, network: {...}, meta }`, `network = { n, edgeCount, directed, nodeIds, summary, settings, version }`, `notices`, and `ui = { drawer, menuOpen, profile, profileFile }`. `store.llm` holds `provider`, `model` and `remember` only; API keys live in `src/llm/keys.js` `createKeyStore()` and never in the store.
 
 ## Beginner support: shared components (round 2)
 
-All in `src/ui/components/common.js`. Use these rather than local look-alikes; they respect the Explanations switch where noted and are styled in `app.css`.
+All in `src/ui/components/common.js`. Use these rather than local look-alikes; they respect the Interpretive notes switch where noted and are styled in `app.css`.
 
 **`Term({ k, children?, label? })`**: a term with a dotted underline. Click, tap, Enter or Space opens a popover with the plain meaning from the glossary (`src/analysis/glossary.js`, aliases `z`, `p`, `seed`, `community`, `distance`) and "More in Learn" linking to `#learn/<key>`. Closes on outside click and Escape. Inline anywhere, including inside sentences: ``html`Most often on the route between others (<${Term} k="betweenness" />)` `` or ``html`<${Term} k="tie">ties</${Term}>` ``. Terms always render (the switch hides explanations, not words).
 
-**`HowToRead({ means, scale, example, mistake, title?, open?, children? })`**: a "How to read this" disclosure (closed by default; `open` to start open): what the number means, what counts as big or small, one sentence from the live data that the caller builds (`example`), and one common mistake. Each part optional. Renders nothing when Explanations is off.
+**`HowToRead({ means, scale, example, mistake, title?, open?, children? })`**: the shared explanatory note, in the grammar of the copy audit (`docs/ux/copy-audit-eric-2026-10-04.md`). A disclosure whose summary reads "Interpretation" (`title` overrides it; People's ranking note is "Interpretation of a ranking"), closed by default (`open` to start open), with up to four parts, each optional, labelled by `HOWTO_PARTS`: **Definition.** (`means`: what the measure is), **Scale.** (`scale`: how to judge its size), **In this network.** (`example`: one sentence from the live data that the caller builds) and **Caution.** (`mistake`: the inferential boundary, stated affirmatively, not as a "common mistake"). Write the parts in the methods register: declarative, third person, no rhetorical questions or instructions to the reader. Renders nothing when Interpretive notes are off.
 
-**`NeedsData({ title, purpose?, shows?, view? })`**: the empty state for a view that needs a network (L4). States the view's question and what it will show (defaults from the view's `VIEWS` entry, found by `title` or `view` id), then "Explore the sample" (primary; `store.actions.loadSample()`, stays on this view), "Draw or type a small network" (Build), "Analyze your own exports" (Data), and "Learn the ideas". `<${NeedsData} title="Groups" />` is enough.
+**`NeedsData({ title, purpose?, shows?, view? })`**: the empty state for a view that needs a network (L4). States what the view reports and what it will show (defaults from the view's `VIEWS` entry, found by `title` or `view` id), then "Explore the sample" (primary; `store.actions.loadSample()`, stays on this view), "Draw or construct a network" (Build), "Analyze empirical data" (Data), and "Learn the ideas". `<${NeedsData} title="Groups" />` is enough.
 
 **`Verdict({ verdict, plain?, details?, level? })`**: verdict-first statistic (decision 5): the plain sentence (`.verdict__claim`), then the number in plain words (`.verdict__plain`), then the technical basis (`.basis`, always shown). `level` adds a flag before the verdict.
 Helpers for the sentence:
@@ -114,11 +114,11 @@ Helpers for the sentence:
 - `pShort(p, reps)`: "p ≤ 1/201" or "p = 0.040", for tables and basis lines.
 - `chanceWords(z, { more, less })`: "about what chance gives" (|z| < 2), "more than chance", "far more than chance" (|z| ≥ 4), or with `less`.
 
-**Explanations switch.** `store.explain` (boolean, default true; `useExplain()` reads it; `store.actions.setExplain(on)` sets it). A quiet "Explanations: on/off" control in the masthead (in the phone menu, at the end) and in Learn. When off: `HowToRead` blocks and any gloss you mark as an explanation are hidden. The always-shown measure glosses (`MetricName gloss`, profile and whole-network rows) stay.
+**Interpretive notes switch.** `store.explain` (boolean, default true; `useExplain()` reads it; `store.actions.setExplain(on)` sets it; it announces "Interpretive notes on." / "Interpretive notes off."). A quiet "Interpretive notes: on/off" control in the masthead (in the phone menu, at the end) and in Learn. When off: `HowToRead` (Interpretation) blocks and any gloss you mark as an explanation are hidden. The always-shown measure glosses (`MetricName gloss`, profile and whole-network rows) stay.
 
-**`ViewHead({ title, intro, actions, purpose? })`**: intros lead with the view's purpose (L18). Without `purpose`, a view in `VIEWS` with a `purpose` gets it prefixed when the intro does not already ask a question; pass your own question as `purpose`, or `purpose={false}` for none.
+**`ViewHead({ title, intro, actions, purpose? })`**: each view writes its own intro, a statement of what the view reports (copy audit 2026-10-04); nothing is prefixed automatically. A `purpose` passed by the caller is shown first.
 
-**Flags carry their reason (C8).** `Flag({ level, reason?, iconOnly? })`: with `reason`, the flag is a button that opens the reason on click, tap or Enter. `MetricName` and `MetricInfo` do this for applicability. `applicabilityView(ap) -> { level, reason, small }` drops "Very small network" from the flag (it applies to every measure of a tiny network) and the tooltip says it once, calmly (`SMALL_NETWORK_NOTE`, M7). Show one small-network note per view yourself if you need it.
+**Flags carry their reason (C8).** `Flag({ level, reason?, iconOnly? })`: with `reason`, the flag is a button that opens the reason on click, tap or Enter. `MetricName` and `MetricInfo` do this for applicability. `applicabilityView(ap) -> { level, reason, small }` drops "Very small network" from the flag (it applies to every measure of a tiny network) and the tooltip says it once, calmly (`SMALL_NETWORK_NOTE`, M7: "Small network. Individual ties have substantial leverage on many measures. Comparisons across networks should therefore be interpreted cautiously."). `applicabilityReason(ap)` prints the engine's "Very small network" reason as the same sentence. Show one small-network note per view yourself if you need it.
 
 **Context-filtered tooltips (L17).** `MetricName`/`MetricInfo` tooltips open on hover, focus, click or tap; they show the plain meaning first, then only the reliability clauses that can apply (`reliabilityFor(text, dataContext(ds, net))`: nothing about 3,000+ people or Spearman on small networks, no construction rules, broadcast cutoff or resampling for hand-entered ties, no one-person-export caveat without an ego source).
 
@@ -130,7 +130,7 @@ Helpers for the sentence:
 
 ### Learn (`#learn`, `src/ui/views/learn.js`, `src/ui/views/learn/**`)
 
-Concepts (every glossary entry, grouped; meaning from the glossary, plus where you see it, how to read it and the common mistake from `learn/concepts.js` `TEACH`), figures for degree, betweenness, closeness, clustering, constraint, two-mode networks and projections (`learn/diagrams.js`; two-mode figures draw events as squares, as Build and Network do), a "Two-mode (affiliation) networks" section (`twoMode`, `affiliation`, `projection`, `borgattiEverett` and the two-mode measures), "Find it in the app" (`TASKS`, mapped to assignments A1-A12) and worked examples (`EXAMPLES`). Each concept has an anchor: link to `#learn/<glossary key>` (or an alias).
+Concepts (every glossary entry, grouped; meaning from the glossary, plus "Where it appears", "Interpretation" and "Caution" from `learn/concepts.js` `TEACH` (`where`, `read`, `mistake`), then "Formula and reliability"), figures for degree, betweenness, closeness, clustering, constraint, two-mode networks and projections (`learn/diagrams.js`; two-mode figures draw events as squares, as Build and Network do), a "Two-mode networks" section (`twoMode`, `affiliation`, `projection`, `borgattiEverett` and the two-mode measures), "Find it in the app" (`TASKS`, mapped to assignments A1-A12) and worked examples (`EXAMPLES`). Each concept has an anchor: link to `#learn/<glossary key>` (or an alias).
 
 **Learn links to Build examples.** Learn emits `#build?example=<id>` with these ids: `two-cliques-broker`, `path-and-star`, `ring-small-world`, `class-friendships`, `clubs-two-mode`, `ego-10`. Build reads `example` from `location.hash` (`new URLSearchParams(location.hash.split('?')[1])`) and opens that example; the shell keeps the parameter while the view is Build.
 

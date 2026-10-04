@@ -127,7 +127,7 @@ export function GenerateView() {
   }, []);
   useEffect(() => { if (form) storage.set(FORM_KEY, form); }, [form]);
 
-  const head = html`<${ViewHeader} title="Generate" intro="Build a realistic world with known structure, then see whether the analysis finds it. Choose a setting, the medium people use, a scenario and what an export would show." />`;
+  const head = html`<${ViewHeader} title="Generate" intro="Generate a synthetic social system with known structure and observe it through a selected communication medium. The resulting records can be analyzed directly in Org Signal or downloaded in the platform’s native export format. The settings specify the social context, communication medium, structural scenario, population size, observation period, message content, and portion of the system visible in the resulting export." />`;
   if (!state || !form) return html`<section class="ob ob-view">${head}<p class="ob-note" role="status">Loading the generator...</p></section>`;
   const { contexts, devFallback } = state;
   const opt = options(contexts, form);
@@ -202,7 +202,7 @@ export function GenerateView() {
               <input id="ob-gen-seed" class="input" type="number" min="1" value=${form.seed} onChange=${e => change({ seed: Math.max(1, Number(e.currentTarget.value) || 1) })} /></div>
             <button type="button" class="tlink ob-gen-newseed" onClick=${() => change({ seed: 1 + Math.floor(Math.random() * 99999) })}>New seed</button>
           </div>
-          <p class="ob-note">The random seed is the generator's starting number: the same settings and seed always give the same world, so anyone can make yours again.</p>
+          <p class="ob-note">The random seed makes generation reproducible. Identical settings and seed reproduce the same generated world.</p>
         </fieldset>
         ${opt.params.length ? html`<details class="ob-fieldset ob-advanced">
           <summary class="tlink">Advanced parameters for ${ctx?.label.toLowerCase()}</summary>
@@ -216,7 +216,7 @@ export function GenerateView() {
 
       <aside class="ob-stack ob-gen-aside" aria-label="Summary and actions">
         <div class="ob-stack" id="ob-gen-summary" style="gap:.5rem">
-          <h2 class="ob-h">What will be generated</h2>
+          <h2 class="ob-h">Generated world</h2>
           <p class="ob-text">${desc.what}</p>
           <p class="ob-note">${desc.export}</p>
           ${desc.caution ? html`<p class="ob-note ob-warn">${desc.caution}</p>` : null}
@@ -353,7 +353,9 @@ function Recovery({ g, check, available, loaded, name }) {
     </div>
     <p class="ob-text">${accounts?.toLocaleString('en-US') ?? '?'} accounts${mp?.bots ? `, ${mp.bots} ${mp.bots === 1 ? 'bot' : 'bots'} left out of the network` : ''}${inNet != null && inNet !== accounts - (mp?.bots || 0) ? ` (${inNet.toLocaleString('en-US')} people in the network)` : ''}; ${g.events?.toLocaleString('en-US') ?? '?'} events${span ? `, ${fmtDay(new Date(span.start).toISOString())} to ${fmtDay(new Date(span.end).toISOString())}` : ''}.
       ${stale ? ' Other data has been loaded since; this check still refers to the generated world.' : ' Loaded for analysis.'}</p>
-    <p class="ob-note">Did the analysis find what was planted? This compares what it finds (communities, brokers, content and change over time) with the generated world's ground truth. The network is built with ${rep && g.recoverySettings ? 'the construction settings in use when the check ran' : rep ? 'the default construction settings' : 'the construction settings in use now'}${rep ? ` (${settingsWords(g.recoverySettings)})` : ''}. To compare constructions, change them under Construction settings and run the check again.</p>
+    <p class="ob-note">The recovery check compares the network reconstructed from the generated records with the ground-truth structure used to create them. It evaluates recovery of communities, brokers, content patterns, and change over time using the construction settings shown here.</p>
+    <p class="ob-note">Construction settings: ${rep && g.recoverySettings ? 'those in use when the check ran' : rep ? 'the defaults' : 'those in use now'}${rep ? ` (${settingsWords(g.recoverySettings)})` : ''}.</p>
+    <p class="ob-note">Changing the construction settings and running the check again provides a direct way to examine how measurement choices affect recovery.</p>
     ${changed ? html`<p class="ob-note ob-warn" role="status">The construction settings have changed since this check ran. <button type="button" class="tlink" onClick=${runRecoveryCheck}>Run it again with the current settings</button></p>` : null}
     ${!available ? html`<p class="ob-note">The generator has no recovery check in this build.</p>` : null}
     ${check?.busy ? html`<p class="ob-note" role="status">Checking what the analysis recovers...</p>` : null}
@@ -379,9 +381,9 @@ function Report({ report }) {
   return html`<div class="ob-stack" style="gap:1rem">
     ${report.summary ? html`<p class="ob-text"><strong>${report.summary}</strong></p>` : null}
     ${report.rule ? html`<p class="ob-note"><strong>How verdicts are given.</strong> ${report.rule}</p>` : null}
-    <${HowToRead} means="Each row compares one planted feature with what the analysis found in the generated data: the verdict first, then the reading, then the numbers."
-      scale="Scores run from 0 (nothing in common with what was planted) to 1 (exactly what was planted). Chance is what a random guess would score on the same scale."
-      mistake="Reading Recovered as proof that a method works on real data: it says the method finds this planted structure in this kind of export, at this size and with these construction settings." />
+    <${HowToRead} means="Each row compares one planted feature with the corresponding result from the reconstructed network, reported as a verdict, a reading, and the underlying values."
+      scale="Agreement and share scores run from 0 (no correspondence with the planted structure) to 1 (exact correspondence). Where a chance value is shown, it is the score expected without any recovery of the planted structure, in the same units."
+      mistake="A Recovered verdict applies to this planted structure, this export format, this population size, and these construction settings. It does not establish comparable performance on empirical data." />
     ${areas.map(a => html`<div class="ob-stack" style="gap:0">
       <h3 class="label">${AREA[a] || a}</h3>
       <ul class="ob-checks">${rows.filter(r => (r.area || 'other') === a).map(r => {

@@ -16,10 +16,17 @@
 .dv-stored{margin-top:.6rem;max-width:66ch}
 .dv-stored .tlink{margin-left:.35rem}
 
-/* Empty state: three equal ways in, then Learn, then the import (decision 3). */
+/* Landing (copy 2026-10-04): orientation with the Networks Lab link, four ways in,
+   Learn, the import, classic datasets, synthetic networks, About. */
 .dv-empty{max-width:var(--w-col);padding-top:.25rem}
 .dv-empty .lead{max-width:58ch}
-.dv-start{list-style:none;margin:1.5rem 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}
+.dv-orient h2{font-size:var(--fs-h2);font-weight:600;margin:0 0 .6rem}
+.dv-orient__text{max-width:var(--measure)}
+.dv-orient__text p + p{margin-top:.7rem}
+.dv-orient__lab{margin-top:1rem}
+.dv-lab{font-size:1rem;display:inline;white-space:normal;overflow-wrap:anywhere}
+.dv-ways{margin-top:2rem;padding-top:1.25rem;border-top:1px solid var(--rule)}
+.dv-start{list-style:none;margin:.9rem 0 0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
 .dv-start__item{display:flex;min-width:0}
 .dv-start__card{display:flex;flex-direction:column;gap:.45rem;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;
   background:var(--panel);border:1px solid var(--rule-strong);border-radius:4px;padding:1rem 1.1rem 1.05rem}
@@ -30,10 +37,13 @@
 .dv-start__go{align-self:flex-start;margin-top:.2rem;font-size:var(--fs-small)}
 .dv-learn{margin-top:1.1rem;color:var(--text);font-size:1rem}
 .dv-learn .tlink{margin-left:.3rem}
-.dv-gen{margin-top:.4rem}
 .dv-import{margin-top:2rem;padding-top:1.25rem;border-top:1px solid var(--rule);scroll-margin-top:calc(var(--header-h,4.5rem) + 1rem)}
 .dv-import:focus{outline:none}
-.dv-privacy{display:flex;flex-wrap:wrap;gap:.5rem;align-items:baseline;margin-top:.6rem;font-size:var(--fs-small);color:var(--text)}
+.dv-privacy{margin-top:.6rem;max-width:var(--measure);font-size:var(--fs-small);color:var(--text)}
+.dv-classic{margin-top:2.25rem}
+.dv-synth,.dv-about{margin-top:2rem;padding-top:1.25rem;border-top:1px solid var(--rule)}
+.dv-synth .prose + .prose,.dv-about .prose + .tlinks{margin-top:.6rem}
+.classic-lib h3:focus,.classic .example__title:focus{outline:none}
 .dv-empty__drop{margin-top:1rem}
 @media (max-width:760px){.dv-start{grid-template-columns:1fr;gap:.75rem}}
 

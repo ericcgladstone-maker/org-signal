@@ -28,11 +28,11 @@ function Mount({ title, intro, load }) {
 }
 
 export function BuildMount() {
-  return html`<${Mount} title="Build" intro="Draw a network, run an ego-network interview, record a roster or collect perceived networks."
+  return html`<${Mount} title="Build" intro="Construct a network directly from a drawing, ego-network interview, roster, perceived-network reports, or pasted tie list."
     load=${() => import('../build/index.js').then(m => m.BuildView || m.default)} />`;
 }
 
 export function GenerateMount() {
-  return html`<${Mount} title="Generate" intro="Generate a synthetic organization or community with planted structure, then analyze it or download it as native export files."
+  return html`<${Mount} title="Generate" intro="Generate a synthetic social system with known structure and observe it through a selected communication medium. The resulting records can be analyzed directly in Org Signal or downloaded in the platform’s native export format."
     load=${() => import('../generate/index.js').then(m => m.GenerateView || m.default)} />`;
 }

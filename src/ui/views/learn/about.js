@@ -1,7 +1,7 @@
 // About Org Signal, in Learn: what it is for, how the numbers are checked,
-// what happens to your data, and the known limitations. The same content as
-// README.md ("Your data", "How the numbers are checked", "Known
-// limitations"); change both together.
+// what happens to the data, and the known limitations. README.md ("Your
+// data", "How the numbers are checked", "Known limitations") states the same
+// facts in its own wording; when a fact changes, change both.
 
 import { html } from '../../../../vendor/preact.js';
 import { store } from '../../store.js';
@@ -21,67 +21,68 @@ export function openAbout() {
   requestAnimationFrame(go);
 }
 
+// Wording from the copy audit (docs/ux/copy-audit-eric-2026-10-04.md), with
+// the corrections recorded in docs/ux/copy-audit-2026-10-04-applied.md.
 const LIMITS = [
-  ['Not yet tested in real use', [
-    'Automated tests run in Chrome. Safari and Firefox have not yet been tested systematically, and the network map uses WebGL, where browsers differ most.',
-    'Usability testing so far used simulated students and instructors working through the Networks 101 assignments. It has not yet been used in a real class.',
-    'Ask has been tested end to end with an offline stand-in, not yet against each provider\'s live service.',
-    'Importers were built from each platform\'s published format documentation and public sample files. Microsoft Teams and LinkedIn exports have not yet been tested on real user exports. Platforms change their exports without notice, and the import report says when a file was not understood.',
+  ['Testing and browser coverage', [
+    'Automated browser testing currently centers on Chrome. Safari and Firefox have received less systematic testing, including the WebGL network map.',
+    'Usability testing to date has used simulated student and instructor workflows through the Networks 101 assignments. Live classroom use has not yet been evaluated systematically.',
+    'Ask has been tested end to end with an offline provider stand-in. Coverage against the live services of each supported model provider remains more limited.',
+    'Some importers were developed from published platform specifications and public sample files. Microsoft Teams and LinkedIn are among the sources with the least testing against real user exports. Platform export formats can also change over time.',
   ]],
   ['Measurement', [
-    'Above 3,000 people, betweenness and closeness are estimated by sampling and labelled approximate. They work well when a few hubs dominate. When values are close together, only 40-80% of the top 10 are the same people as with the exact method, and on sparse, directed, tree-like networks the estimates are unreliable.',
-    'Resampling cannot invent ties that were never observed, so rank intervals for contacts (degree) are too narrow: about 88% coverage instead of 95%. Read them as a lower bound on the uncertainty.',
-    'With few events per time window, the shift detector misses small changes. Its thresholds are tuned to keep false alarms rare, so "no shift found" is weak evidence.',
-    'One person\'s export shows only that person\'s ties. Whole-network measures on such data describe the export, not the person\'s social world; use the ego measures.',
+    'Above approximately 3,000 people, betweenness and closeness are estimated by sampling. These approximations perform best when structural differences are large. Rankings become less stable when scores are close together or when the network is sparse, directed, or strongly tree-like.',
+    'Resampling addresses variation in observed events and cannot recover ties absent from the source data. Rank intervals for contacts therefore have narrower-than-nominal coverage in the current simulations, approximately 88 percent rather than 95 percent.',
+    'Shift detection has limited power when few events occur within each time window. The current calibration favors a low false-positive rate, so an undetected shift provides limited evidence of temporal stability.',
+    'Personal platform exports represent the portion of a network visible from one account. Whole-network measures calculated from those records describe that observed export. Ego-network measures are generally more appropriate when the source is explicitly personal.',
   ]],
-  ['Synthetic data (Generate)', [
-    'The recovery check works well for workplaces and online communities. It is weaker for professional (LinkedIn-style) worlds, where planted communities are not recovered; for Discord and calendar worlds, where the observed network matches the true one less closely; for calendar worlds, where planted silos and reorganizations are missed in half or more of runs; and for bot campaigns on X, Bluesky and Mastodon, missed in about half of runs. The check itself says when recovery is poor.',
-    'Generated people, messages and HR records are fictional: realistic in structure, not in individual detail.',
+  ['Synthetic data', [
+    'Recovery varies across generated contexts and media. Workplace and online-community structures are generally recovered well. Recovery is weaker in some professional-network, Discord, calendar, and bot-campaign scenarios.',
+    'Generated people, messages, and organizational records are fictional. Their structure is generated to support known-ground-truth analysis and recovery tests.',
   ]],
   ['Data and ethics', [
-    'The Enron email subset contains real people\'s workplace communications, released without their consent. Only who wrote to whom and when is included, with no text or subjects. Forensic analyses published in 2026 question whether some mailboxes contain forged messages. Use it to learn methods, not to make claims about individuals.',
-    'The classic datasets from the UCINET and Pajek collections carry no stated license. They are included with citations as facts from the published studies.',
+    'The included Enron subset contains workplace communication records from identifiable people. The dataset is provided for methodological use, and the included version excludes message text and subjects. Published forensic work has also raised questions about the authenticity of some records in the larger Enron corpus.',
+    'Several classic datasets distributed through UCINET and Pajek collections carry no explicit license statement in their source collections. Org Signal includes them with citations to the published studies from which they derive.',
   ]],
-  ['Practical', [
-    'Outlook PST, OST and MSG files are recognized but cannot be read in the browser yet. Convert them to mbox first; the import report says how.',
-    'Very large exports (several GB, or millions of messages) are limited by the browser\'s memory. Imports run in the background and can be cancelled.',
-    'There are no accounts and nothing is stored on a server, which also means no backup. Work in Build is saved in this browser only; download a project file to keep it.',
+  ['Practical limits', [
+    'PST, OST, and MSG files can be identified but are not currently parsed directly in the browser. Mbox provides the supported path for Outlook mail archives.',
+    'Very large exports are constrained by available browser memory. Imports run in the background and can be cancelled.',
+    'Loaded projects have no server backup. Build drafts are retained in local browser storage, and project files can be downloaded for durable storage.',
   ]],
 ];
 
 export function About() {
   return html`<section class="section learn__part learn-about" id="learn-about" aria-labelledby="learn-about-h">
     <h2 id="learn-about-h" tabindex="-1">About Org Signal and its limits</h2>
-    <p class="prose">Org Signal is a browser-based tool for teaching network analysis that is also built to support research-grade work. Students begin with networks they make themselves, then work with synthetic organizations and communities whose structure is known in advance, so there is something to recover, and then with real data. Tie construction is treated as a choice: a network is built from observations and decisions, not found sitting in the data. Built by <a class="linkish" href="https://graystoneindustries.co" target="_blank" rel="noopener">Eric Gladstone</a>.</p>
+    <p class="prose">Org Signal is a browser-based environment for teaching and conducting social network analysis. It supports directly constructed networks, ego networks, surveys, synthetic systems with known structure, published datasets, and empirical records. The same analysis engine is used across these sources, allowing measures and construction choices to be examined first in transparent settings and then applied to more complex data.</p>
+    <p class="prose">I built Org Signal as part of my work on network measurement and computational research systems.</p>
 
     <h3 class="dv-h3">Your data</h3>
     <ul class="prose learn-about__list">
-      <li>Everything runs in this browser. Files you load are read on your machine and are not uploaded anywhere.</li>
-      <li>Ask is off unless you add an API key. Then your browser sends requests directly to the provider you chose. It never sends your files. It does send the results of the analyses it runs, names (unless "Replace names with codes" is on), and short excerpts of messages when it looks up the evidence behind a tie. Ask shows the full list before you use it.</li>
-      <li>Exports leave out contact details (email addresses, handles, platform ids) by default.</li>
-      <li>Org Signal describes network structure and reported ties. It does not evaluate individuals.</li>
+      <li>Files are read and analyzed locally in the browser.</li>
+      <li>Ask sends information to a model provider only when a user supplies an API key and runs a language-model function. The Ask panel lists the information sent for each operation and supports replacement of names with codes before transmission.</li>
+      <li>Exported network files omit contact details by default.</li>
     </ul>
 
     <h3 class="dv-h3">How the numbers are checked</h3>
     <ul class="prose learn-about__list">
-      <li>Every measure is compared with networkx and exact calculations: about 21 million comparisons over thousands of graphs, with no unexplained failures.</li>
-      <li>The tests against random networks give about 5% false positives at p = 0.05. Rank intervals cover the true rank about 95% of the time for strength and 93% for betweenness.</li>
-      <li>Generated worlds are written in their real export formats, read back through the importers, and compared event by event with what was generated. The classic datasets reproduce their published values.</li>
-      <li>This checks the software, not whether a dataset measures what you think it does. That part is the analyst's job; the import report and the tie rules are there to help.</li>
+      <li>The numerical implementation is tested against NetworkX, exact linear-algebra calculations, and closed-form reference cases across approximately 21 million comparisons, with no unexplained failures in the current validation campaign.</li>
+      <li>Statistical procedures are calibrated through simulation. Tests based on degree-preserving randomization produce approximately the expected false-positive rate under the null, and rank intervals have been evaluated against known ranks across repeated simulations.</li>
+      <li>Generated worlds are written to native export formats, read back through the production importers, and compared with their source structure. The included classic datasets reproduce published counts and reference values.</li>
+      <li>These procedures evaluate implementation and numerical accuracy. Substantive validity depends on the relationship between the source data, the rules used to construct the network, and the theoretical quantity being studied.</li>
     </ul>
 
     <h3 class="dv-h3">Known limitations</h3>
-    <p class="prose">This is a new tool. These are the limits known so far.</p>
     ${LIMITS.map(([title, items]) => html`<div class="learn-about__group">
       <p class="label">${title}</p>
       <ul class="prose learn-about__list">${items.map(t => html`<li>${t}</li>`)}</ul>
     </div>`)}
 
-    <h3 class="dv-h3">Report a problem, cite, read the source</h3>
+    <h3 class="dv-h3">Source, citation, and issue reporting</h3>
     <ul class="prose learn-about__list">
-      <li>Report a problem or a limit not listed here: <a class="linkish" href=${REPO + '/issues'} target="_blank" rel="noopener">GitHub issues</a>. Say what you loaded (the kind of data, not the data itself), what you expected, what you saw, and your browser.</li>
-      <li>Cite: Gladstone, E. (2026). <em>Org Signal: browser-based network analysis for teaching and research</em> (Version 2.0) [Software]. ${REPO}. The methods appendix (Methods & Export) records the settings behind a result.</li>
-      <li>Source code, documentation and the full accuracy report: <a class="linkish" href=${REPO + '#readme'} target="_blank" rel="noopener">README on GitHub</a>.</li>
+      <li>Problems and undocumented limitations can be reported through the project’s <a class="linkish" href=${REPO + '/issues'} target="_blank" rel="noopener">GitHub issue tracker</a>. A useful report identifies the type of data loaded, the expected behavior, the observed behavior, and the browser, without including the underlying data.</li>
+      <li>Citation: Gladstone, E. (2026). <em>Org Signal: Browser-based network analysis for teaching and research</em> (Version 2.0) [Software].</li>
+      <li>The source code, documentation, accuracy report, supported formats, classic datasets, and Networks 101 materials are available in the <a class="linkish" href=${REPO + '#readme'} target="_blank" rel="noopener">project repository</a>.</li>
     </ul>
   </section>`;
 }

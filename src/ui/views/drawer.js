@@ -94,7 +94,7 @@ export function SettingsDrawer() {
       <button type="button" class="btn btn--quiet" onClick=${close} aria-label="Close settings">${Icon.close}</button>
     </div>
     <div class="drawer__body">
-      <p class="small text2" style="padding-top:.9rem">A tie between two people is built from the evidence below. Each rule is a choice you can defend or change; every tie can be traced back to its events in the Network view.</p>
+      <p class="small text2" style="padding-top:.9rem">A tie between two people is built from the evidence below. Each rule is a methodological choice that can be enabled, disabled, or weighted; every tie can be traced to its events in the Network view.</p>
 
       ${s.twoMode && html`<${TwoModeSection} ds=${ds} s=${s} setS=${setS} />`}
 

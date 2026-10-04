@@ -2,8 +2,8 @@
 // parts: "Find it in the app" (the course's questions, each with where to go),
 // worked examples that open in Build, the classic datasets library
 // (learn/classic.js), and every concept from the glossary
-// with its meaning, where it appears, how to read it, the common mistake, and
-// a tiny figure for the five core ideas. Meanings come from the glossary
+// with its meaning, where it appears, its interpretation, a caution, and a
+// tiny figure for the five core ideas (labels from the copy audit, 2026-10-04). Meanings come from the glossary
 // (src/analysis/glossary.js), so Learn, tooltips and the API docs agree.
 
 import { html, useState, useEffect, useMemo, useRef } from '../../../vendor/preact.js';
@@ -40,9 +40,9 @@ function Concept({ k, target }) {
       <h3 class="concept__name" id=${`learn-h-${k}`}><a class="concept__anchor" href=${`#learn/${k}`}>${g.label}</a></h3>
       <p class="concept__meaning">${g.meaning}</p>
       ${(t.where || t.read || t.mistake) && html`<dl class="concept__dl">
-        ${t.where && html`<dt>Where you see it</dt><dd><${Where} items=${t.where} /></dd>`}
-        ${t.read && html`<dt>How to read it</dt><dd>${t.read}</dd>`}
-        ${t.mistake && html`<dt>Common mistake</dt><dd>${t.mistake}</dd>`}
+        ${t.where && html`<dt>Where it appears</dt><dd><${Where} items=${t.where} /></dd>`}
+        ${t.read && html`<dt>Interpretation</dt><dd>${t.read}</dd>`}
+        ${t.mistake && html`<dt>Caution</dt><dd>${t.mistake}</dd>`}
       </dl>`}
       ${(g.formula || g.reliability) && html`<details class="disclose concept__more">
         <summary>Formula and reliability</summary>
@@ -114,25 +114,25 @@ export function LearnView() {
   }, [key]);
   const count = shown.reduce((a, s) => a + s.keys.length, 0);
   return html`<div class="view learn">
-    <${ViewHead} title="Learn" purpose=${false} intro="The ideas behind every number in Org Signal, in plain words: what each measure means, where you see it, how to read it, and the mistake students make most." />
+    <${ViewHead} title="Learn" purpose=${false} intro="Definitions, interpretation, worked examples, and limitations for the measures used throughout Org Signal." />
     <nav class="tlinks learn__jump" aria-label="On this page">
       <a class="tlink" href="#learn-tasks" onClick=${e => { e.preventDefault(); document.getElementById('learn-tasks')?.scrollIntoView({ block: 'start' }); }}>Find it in the app</a>
       <a class="tlink" href="#learn-examples" onClick=${e => { e.preventDefault(); document.getElementById('learn-examples')?.scrollIntoView({ block: 'start' }); }}>Worked examples</a>
       <a class="tlink" href="#learn-classic" onClick=${e => { e.preventDefault(); document.getElementById('learn-classic')?.scrollIntoView({ block: 'start' }); }}>Classic datasets</a>
       <a class="tlink" href="#learn-concepts" onClick=${e => { e.preventDefault(); document.getElementById('learn-concepts')?.scrollIntoView({ block: 'start' }); }}>Concepts</a>
       <a class="tlink" href="#learn-about" onClick=${e => { e.preventDefault(); document.getElementById('learn-about')?.scrollIntoView({ block: 'start' }); }}>About and limits</a>
-      <span class="small text2 learn__explain">Explanations are ${explain ? 'on' : 'off'}: they show "How to read this" under numbers in every view. <button type="button" class="tlink tlink--quiet" onClick=${() => store.actions.setExplain(!explain)}>Turn ${explain ? 'off' : 'on'}</button></span>
+      <span class="small text2 learn__explain">Interpretive notes: ${explain ? 'on' : 'off'}. When on, an Interpretation note appears under the numbers in every view. <button type="button" class="tlink tlink--quiet" onClick=${() => store.actions.setExplain(!explain)}>Turn ${explain ? 'off' : 'on'}</button></span>
     </nav>
 
     <section class="section learn__part" id="learn-tasks" aria-labelledby="learn-tasks-h">
       <h2 id="learn-tasks-h">Find it in the app</h2>
-      <p class="prose">The questions of a first course, each with where to go and what to read first.</p>
+      <p class="prose">Common network-analysis questions, with links to the views and measures used to address them.</p>
       <${Tasks} />
     </section>
 
     <section class="section learn__part" id="learn-examples" aria-labelledby="learn-examples-h">
       <h2 id="learn-examples-h">Worked examples</h2>
-      <p class="prose">Small networks to open in Build and check against what you expect. Each opens as a drawing you can change, then Analyze.</p>
+      <p class="prose">Small networks with known structure that can be opened in Build, modified, and analyzed.</p>
       <${Examples} />
     </section>
 
@@ -148,6 +148,7 @@ export function LearnView() {
           <input class="input" type="search" value=${q} placeholder="for example betweenness, tie, p" onInput=${e => setQ(e.currentTarget.value)} />
         </label>
       </div>
+      <p class="prose">Definitions, formulas, interpretation, and reliability notes for the measures used throughout the analysis.</p>
       <p class="small text2" role="status">${q ? `${count} ${count === 1 ? 'term' : 'terms'} match.` : html`Terms with a dotted underline anywhere in the app, like <${Term} k="tie">tie</${Term}>, open here.`}</p>
       ${shown.map(s => html`<div class="learn__sec" id=${`learn-sec-${s.id}`}>
         <p class="label">${s.title}</p>

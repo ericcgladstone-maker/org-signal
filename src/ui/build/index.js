@@ -36,11 +36,11 @@ import { store } from '../store.js';
 export { exampleFromHash, perceivedFromHash };
 
 const TABS = [
-  { id: 'draw', label: 'Draw', title: 'Draw a network', lede: 'Place people and ties on a canvas. Snap to a grid or to each other, apply a layout to all or part of the drawing, then analyze it like any other network.', C: DrawEditor },
-  { id: 'ego', label: 'Ego network', title: 'Ego network interview', lede: 'One respondent names the people around them, describes each, then says which of those people know each other. The result is a personal network from one point of view.', C: EgoBuilder },
-  { id: 'roster', label: 'Roster', title: 'Bounded network from a roster', lede: 'List everyone in the group, then record who is tied to whom: by one informant in a grid, or by collecting each member\'s own answers with a survey form.', C: RosterBuilder },
-  { id: 'perceived', label: 'Perceived', title: 'Perceived networks', lede: 'Several people (informants) each report the whole network of their group as they see it, including ties between other people (Krackhardt\'s cognitive social structures). Compare their views, combine them into a consensus (the ties most informants agree on), and see who perceives the network most accurately.', C: PerceivedBuilder },
-  { id: 'paste', label: 'Paste ties', title: 'Paste a list of ties', lede: 'Type or paste one tie per line. The preview shows how each line is read and flags the ones that are not.', C: PasteTies },
+  { id: 'draw', label: 'Draw', title: 'Draw a network', lede: 'Place people and ties directly on the canvas. You can preserve the hand-drawn positions or apply a layout before analyzing the network.', C: DrawEditor },
+  { id: 'ego', label: 'Ego network', title: 'Ego-network interview', lede: 'Conduct an ego-network interview by eliciting the people around a respondent, recording attributes of those people and relationships, and asking about ties among them. The resulting personal network can be analyzed using ego-network measures such as size, density, effective size, and constraint.', C: EgoBuilder },
+  { id: 'roster', label: 'Roster', title: 'Bounded network from a roster', lede: 'Define a bounded population from a roster and record ties among its members. Ties can be entered by one informant or collected from multiple respondents through a survey.', C: RosterBuilder },
+  { id: 'perceived', label: 'Perceived', title: 'Perceived networks', lede: 'Collect whole-network reports from multiple informants. Each perceived network is retained separately, allowing reports to be compared, combined into a consensus network, and evaluated for perceptual accuracy. This supports cognitive social structure designs such as Krackhardt\u2019s.', C: PerceivedBuilder },
+  { id: 'paste', label: 'Paste ties', title: 'Paste a list of ties', lede: 'Enter or paste one tie per line. The preview shows how each line is parsed and flags lines that remain unparsed.', C: PasteTies },
 ];
 
 const TAB_KEY = 'orgsignal.build.tab';
@@ -78,7 +78,7 @@ export function BuildView({ tab: initialTab } = {}) {
   const cur = TABS.find(t => t.id === tab) || TABS[0];
   const C = cur.C;
   return html`<section class="ob ob-view">
-    <${ViewHeader} title="Build" intro="Make a network by hand: draw it, interview one person about the people around them, record a roster, collect perceived networks, or paste a list of ties." />
+    <${ViewHeader} title="Build" intro="Construct a network directly from a drawing, ego-network interview, roster, perceived-network reports, or pasted tie list." />
     <${Tabs} tabs=${TABS} value=${cur.id} onChange=${setTab} label="Ways to build a network" />
     <div role="tabpanel" class="ob-stack" id=${'obpanel-' + cur.id} aria-labelledby=${'obtab-' + cur.id}>
       <div class="ob-subhead">

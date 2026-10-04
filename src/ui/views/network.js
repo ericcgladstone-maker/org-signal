@@ -66,7 +66,7 @@ function openRecovery() {
 export function NetworkView() {
   const ds = useStore(s => s.dataset);
   const net = useStore(s => s.network);
-  if (!ds || !net) return html`<${NeedsData} title="Network" purpose="Network answers: what does the whole web of ties look like, and who sits where in it?" shows=${['the map of people and ties, colored by group', 'who stands out: most contacts, most often between others, closest to everyone', 'whole-network measures compared with random networks']} />`;
+  if (!ds || !net) return html`<${NeedsData} title="Network" />`;
   return html`<${NetworkInner} ds=${ds} net=${net} />`;
 }
 
@@ -189,8 +189,10 @@ function NetworkInner({ ds, net }) {
   const noun = ds.meta?.nodeNoun || ['person', 'people'];
   const layouts = layoutOptions(net, { drawn: !!positions });
   const arranged = !!arrangeFor(layout) && twoModeView;
-  const intro = tm ? `${twoModeIntro(tm, fmtInt(net.n), fmtInt(net.edgeCount))}${tm.view !== 'two-mode' ? ` ${projectionSentence(tm)}` : ''} ${touch ? 'Tap' : 'Click'} a node to see its neighborhood, or a tie to see the events behind it.`
-    : `${fmtInt(net.n)} ${noun[1]} and ${fmtInt(net.edgeCount)} ties${net.directed ? ' (directed: a two-way tie counts as two)' : ''}. ${touch ? 'Tap' : 'Click'} a ${noun[0]} to see their neighborhood, or a tie to see the events behind it.`;
+  // Copy audit 2026-10-04: counts, what the view shows, then what selecting does.
+  // The two-mode view has no random-network comparison, so it does not claim one.
+  const intro = tm ? `${twoModeIntro(tm, fmtInt(net.n), fmtInt(net.edgeCount))}${tm.view !== 'two-mode' ? ` ${projectionSentence(tm)}` : ''} Select a node to inspect its neighborhood or a tie to inspect the observations that produced it.`
+    : `${fmtInt(net.n)} ${noun[1]} and ${fmtInt(net.edgeCount)} ties${net.directed ? ' (directed: a two-way tie counts as two)' : ''}. This view shows the constructed network, whole-network measures, and comparisons with degree-preserving random networks. Select a ${noun[0]} to inspect their neighborhood or a tie to inspect the observations that produced it.`;
 
   return html`<div class="view">
     <${ViewHead} title="Network" intro=${intro}
@@ -891,7 +893,7 @@ function NullVerdict({ stat, x, reps, shown = null }) {
   const near = flat ? x.observed === x.mean : !(x.p < 0.05) || !(Math.abs(x.z) >= 2);
   const verdict = `${subject} ${near ? same : chanceWords(x.z, { more, less })}.`;
   const twoQ = stat === 'modularity' && Number.isFinite(shown) && fmtNum(shown) !== fmtNum(x.observed);
-  const plain = `${twoQ ? `On the ties alone, ignoring weights, the best split found scores ${fmtNum(x.observed)} (the ${fmtNum(shown)} above counts tie weights; random networks have none, so the test compares unweighted splits)` : `Here ${fmtNum(x.observed)}`}; random networks where everyone keeps their number of ties average ${fmtNum(x.mean)}${Number.isFinite(x.lo) && Number.isFinite(x.hi) ? ` (95% of them between ${fmtNum(x.lo)} and ${fmtNum(x.hi)})` : ''}.`;
+  const plain = `${twoQ ? `On the ties alone, ignoring weights, the best split found scores ${fmtNum(x.observed)} (the ${fmtNum(shown)} above counts tie weights; random networks have none, so the test compares unweighted splits)` : `Observed ${fmtNum(x.observed)}`}; random networks in which every person keeps their number of ties average ${fmtNum(x.mean)}${Number.isFinite(x.lo) && Number.isFinite(x.hi) ? ` (95% of them between ${fmtNum(x.lo)} and ${fmtNum(x.hi)})` : ''}.`;
   const details = `${nullInWords(x.p, reps)}${Number.isFinite(x.z) ? `; z ${fmtNum(x.z, { digits: 2 })}` : ''}.${stat === 'modularity' ? ' Communities are found again in each random network.' : ''}`;
   return html`<${Verdict} className="net-verdict" verdict=${verdict} plain=${plain} details=${details} />`;
 }
@@ -929,20 +931,20 @@ function NetworkSummary({ open = null }) {
     ${twoModeView && html`<${TwoModeSummary} m=${m} net=${net} communities=${communities} />`}
     ${communities && html`<div class="metric-row"><span><${MetricName} metric="modularity" gloss=${true} /></span><span class="metric-row__val">${fmtNum(communities.modularity)}</span>
       <span class="metric-row__sub">${communityWords(communities)}.
-        ${tiny && html`<br />With only ${fmtInt(net.n)} people, community detection still splits the network into pieces (a chain of 6 becomes three pairs). Treat these communities as a suggestion, not groups, until modularity beats random networks.`}</span>
+        ${tiny && html`<br />With only ${fmtInt(net.n)} people, community detection still partitions the network (a chain of six people is split into three pairs). These communities are provisional until modularity exceeds the random-network comparison.`}</span>
       ${nm?.modularity && html`<${NullVerdict} stat="modularity" x=${nm.modularity} reps=${reps} shown=${communities.modularity} />`}</div>`}
     ${keys.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k === 'reciprocity' ? 'reciprocityNetwork' : k} gloss=${true} /></span><span class="metric-row__val">${k === 'largestComponentShare' ? `${Math.round(m[k] * 100)}%` : fmtNum(m[k])}</span>
       ${nm?.[k] && html`<${NullVerdict} stat=${k} x=${nm[k]} reps=${reps} />`}</div>`)}
     ${nullNa ? html`<p class="basis" style="margin-top:.8rem">No comparison with random networks here: ${(ap.nullModel.reason || '').replace(/^./, c => c.toLowerCase())}</p>`
       : !nm ? html`<div style="margin-top:.8rem"><button type="button" class="tlink" onClick=${runNull} disabled=${busy}>${busy ? 'Comparing' : 'Compare with random networks'}</button>
-      <p class="basis">Clustering, reciprocity and modularity are only notable if they beat random networks where everyone keeps their number of ties.</p></div>`
+      <p class="basis">Clustering, reciprocity, and modularity are interpreted relative to random networks in which every person keeps their number of ties.</p></div>`
       : html`<p class="basis">Random networks: ${nm.meta?.model || 'degree-preserving rewiring'}, ${fmtInt(reps)} networks, seed ${nm.meta?.seed ?? 1}; two-sided empirical p. The same run is quoted in Groups and the reports.</p>`}
-    <${HowToRead} title="How to read the comparison with random networks"
-      means="Each random network keeps everyone's number of ties but connects them at random. Whatever those networks also show comes from the numbers of ties alone; what this network has beyond them is structure."
-      scale="Compare with the random average, not with zero: random networks have some clustering and modularity too. Far above the random range means real structure; inside it means nothing beyond the degrees."
-      example=${tr ? `Transitivity here is ${fmtNum(tr.observed)} against about ${fmtNum(tr.mean)} in random networks, so ${tr.observed > tr.hi ? 'friends of friends are tied far more often than the degrees alone would give' : 'the clustering is about what the degrees alone would give'}.`
-        : m.transitivity != null ? `Transitivity here is ${fmtNum(m.transitivity)}. Compare with random networks to see whether that is more than the degrees alone would give.` : null}
-      mistake="Reading a value as high because it is far from 0, or a small p as a large effect. The size of the gap to the random average is the finding." />
+    <${HowToRead}
+      means="Each comparison preserves every person’s number of ties while rewiring the endpoints. The resulting distribution shows what the network measures would look like under that constraint."
+      scale="Interpret the observed value relative to the simulated distribution. The distance from the random-network mean describes the size of the departure. The empirical p value describes how unusual that departure is under the null model."
+      example=${tr ? `Observed transitivity is ${fmtNum(tr.observed)}; the random-network mean is ${fmtNum(tr.mean)}${Number.isFinite(tr.lo) && Number.isFinite(tr.hi) ? `, and the observed value lies ${tr.observed > tr.hi ? 'above' : tr.observed < tr.lo ? 'below' : 'within'} the central 95% of the simulated values (${fmtNum(tr.lo)} to ${fmtNum(tr.hi)})` : ''}.`
+        : m.transitivity != null ? `Observed transitivity is ${fmtNum(m.transitivity)}. The comparison with random networks places it relative to the simulated distribution.` : null}
+      mistake="Measures such as clustering and modularity can take positive values in randomized networks. Their magnitude is interpretable relative to the relevant comparison distribution." />
   </details>`;
 }
 
@@ -1059,7 +1061,7 @@ function Fragility({ ds, net, data, metrics, coloring, applicability }) {
   const pct = x => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '–');
   const words = concentrationWords(share);
   return html`<div class="net-frag">
-    <h2 class="label">Is brokerage concentrated in a few people?</h2>
+    <h2 class="label">Dependence on highly central people</h2>
     <div class="row" style="gap:.4rem 1rem;align-items:flex-end">
       <${Select} label="Top" value=${String(k)} onChange=${v => { setK(Number(v)); setRes(null); }} options=${choices.map(x => ({ value: String(x), label: `${x} by betweenness` }))} />
     </div>
@@ -1079,12 +1081,12 @@ function Fragility({ ds, net, data, metrics, coloring, applicability }) {
         ${row('Average steps between people', res.before.avgSteps, res.after.avgSteps, x => fmtNum(x))}
       </tbody>
     </table>
-    <p class="basis">Direction ignored; steps averaged over the people who can still reach each other${res.after.sampled ? ' (sampled)' : ''}. Removing people is a what-if on this network, not a forecast: others may take over their ties.</p>`}
-    <${HowToRead} title="How to read this"
-      means="Betweenness counts how often a person sits on the shortest route between two others. When a few people hold most of it, many routes between parts of the network run through them."
-      scale=${`An even spread gives the top ${share.k} about ${pct(share.even)}. About twice that or more is concentrated; the network leans on them when they hold half or more of all betweenness.`}
-      example=${res ? `Without them, ${res.groupTitle ? `ties across ${res.groupTitle} groups go from ${fmtInt(res.before.cross)} to ${fmtInt(res.after.cross)} and ` : ''}the average number of steps between people goes from ${fmtNum(res.before.avgSteps)} to ${fmtNum(res.after.avgSteps)}.` : null}
-      mistake="Concluding a network is robust because it stays in one piece after someone leaves. Fragility shows in longer routes and lost ties across groups, not only in the network falling apart." />
+    <p class="basis">Direction ignored; steps averaged over the pairs of people who remain connected${res.after.sampled ? ' (sampled)' : ''}. Removal is a static sensitivity analysis of this network, not a forecast.</p>`}
+    <${HowToRead}
+      means="Betweenness identifies people who frequently lie on shortest paths between others. Removing highly ranked people provides a sensitivity analysis of the observed network."
+      scale="Changes in cross-group ties, component size, and path length show how strongly observed connectivity depends on those people."
+      example=${res ? `Without these ${fmtInt(res.k)} people, ${res.groupTitle ? `ties across ${res.groupTitle} groups change from ${fmtInt(res.before.cross)} to ${fmtInt(res.after.cross)}, ` : ''}the largest component changes from ${pct(res.before.largestShare)} to ${pct(res.after.largestShare)} of people, and the average path length changes from ${fmtNum(res.before.avgSteps)} to ${fmtNum(res.after.avgSteps)} steps.` : null}
+      mistake="This is a static sensitivity analysis. An actual departure can be followed by new ties, role substitution, or other organizational change." />
   </div>`;
 }
 

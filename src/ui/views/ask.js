@@ -40,7 +40,7 @@ export function AskView() {
   useEffect(() => { if (providers && provider && llm.provider !== provider.id) store.set({ llm: { ...llm, provider: provider.id, model: null, key: null } }); }, [providers]);
 
   return html`<div class="view view--col">
-    <${ViewHead} title="Ask" intro="Optional. With your own API key, a language model can answer questions about this network, write reports and code message content. When you use it, parts of your data are sent to the provider you choose; below is exactly what. Every number in an answer is checked against the computed results." />
+    <${ViewHead} title="Ask" intro="Ask uses a user-supplied Anthropic, OpenAI, or Gemini API key to query the loaded network, draft reports, and code message content. Numerical claims are checked against results returned by the analysis engine. The provider receives the information required for the requested operation, as described below." />
     ${providers === null ? html`<${Loading}>Loading providers</${Loading}>` : !providers.length ? html`<${Unavailable}>The LLM layer (src/llm) is not available in this build. Everything else in Org Signal works without it.</${Unavailable}>` : html`
       <${ProviderSettings} providers=${providers} provider=${provider} keyState=${keyState} onKeyChange=${() => refreshKey()} />
       ${!keyState.has ? html`<${NoKey} />` : !ds ? html`<p class="text2" style="margin-top:1rem">Load data first; the model answers questions about the loaded network.</p>` : html`
@@ -57,16 +57,16 @@ export function AskView() {
 }
 
 function NoKey() {
-  return html`<section class="section" aria-label="What a key adds">
-    <h2 class="section__title">What an API key adds</h2>
+  return html`<section class="section" aria-label="Language-model functions">
+    <h2 class="section__title">Language-model functions</h2>
     <div class="prose small">
-      <p>Without a key, Org Signal does everything else: import, construction, every measure, null models and resampling, content measures, time series, generation, figures and exports. A key adds three things:</p>
+      <p>An API key enables three language-model functions. Network calculations continue to come from the Org Signal analysis engine.</p>
       <ul class="can-list" style="margin-top:.6rem">
-        <li><strong>Analyst.</strong> Ask questions in plain language. The model calls the analysis engine for numbers and must cite each one; uncited numbers are highlighted.</li>
-        <li><strong>Reports.</strong> A written report on the network, a group attribute or one person, built from a fixed set of computed results.</li>
-        <li><strong>Content coding.</strong> Apply your own codebook to a sample of messages, with an agreement check when double-coded.</li>
+        <li><strong>Analyst.</strong> Ask questions about the loaded network in ordinary language. The model can request computed results from the analysis engine and must cite numerical claims to those results. Unsupported numerical claims are flagged.</li>
+        <li><strong>Reports.</strong> Generate a written report for the whole network, a group attribute, or a selected person from a fixed set of computed results.</li>
+        <li><strong>Content coding.</strong> Apply a user-defined codebook to a sample of messages. Double-coding can be used to estimate agreement.</li>
       </ul>
-      <p style="margin-top:.8rem">You pay the provider directly; a cost estimate is shown before each report or coding run.</p>
+      <p style="margin-top:.8rem">Usage is billed by the provider. A cost estimate is shown before each report or coding run.</p>
     </div>
   </section>`;
 }
@@ -99,7 +99,7 @@ function ProviderSettings({ providers, provider, keyState, onKeyChange }) {
   const modelOptions = models?.length ? models.map(m => ({ value: m.id, label: m.label || m.id })) : [{ value: model, label: model }];
   if (models?.length && !models.some(m => m.id === model)) modelOptions.unshift({ value: model, label: `${model} (default)` });
   return html`<section class="section" style="border-top:0" aria-labelledby="prov-h">
-    <h2 id="prov-h" class="section__title">Provider and key</h2>
+    <h2 id="prov-h" class="section__title">Provider and API key</h2>
     <div class="grid-2">
       <${Select} label="Provider" value=${provider?.id} onChange=${v => store.set({ llm: { ...llm, provider: v, model: null, key: null } })} options=${providers.map(p => ({ value: p.id, label: p.label }))} />
       <${Select} label="Model" value=${model} onChange=${v => store.set({ llm: { ...llm, model: v, key: null } })} options=${modelOptions} disabled=${!keyState.has} />
@@ -130,18 +130,18 @@ function WhatIsSent({ provider }) {
   const codes = llm.codes !== false;
   const demo = provider?.id === 'demo';
   return html`<details class="disclose" open style="margin-top:1.25rem">
-    <summary>What leaves this computer</summary>
+    <summary>What is sent to the model provider</summary>
     <div class="prose small" style="padding:.4rem 0 .6rem">
-      <p>${demo ? 'The offline demo provider answers inside this tab, so nothing below leaves it. With a real provider: nothing' : 'Nothing'} is sent until you ask a question, write a report or run coding. Then this browser sends the request straight to ${demo ? 'the provider' : provider?.label || 'the provider you choose'}; no Org Signal server is involved, and the provider's own data policy applies.</p>
+      <p>${demo ? 'The offline demo provider answers inside this tab, so nothing is sent while it is selected. With a real provider: ' : ''}When a language-model function is run, the browser sends the request directly to the selected provider. The information sent depends on the operation and is listed below. Original files remain in the browser.</p>
       <ul class="can-list" style="margin-top:.6rem">
-        <li><strong>Analyst:</strong> your questions and the conversation so far; a short description of the data (source types, attribute names, the construction settings, no computed numbers); and the result of each analysis the model asks for. Results can include ${codes ? 'people\'s codes' : 'people\'s names and ids (which can be email addresses or account handles)'}, their measures and attribute values, group statistics and, when it asks for the evidence behind a tie, up to 10 messages with their date, channel name and the first 240 characters of text.</li>
-        <li><strong>Reports:</strong> the same kinds of results from a fixed plan: whole-network measures, the top people on a few measures with ${codes ? 'their codes' : 'their names'}, communities, groups, activity over time, and the most frequent words in messages. No message text beyond those words.</li>
-        <li><strong>Content coding:</strong> your codebook and the text of the sampled messages, cut at 1,000 characters each. No names, ids, channels or times are attached, though names written inside a message are part of its text${codes ? ' (those of people in the data are replaced by codes)' : ''}.</li>
-        <li><strong>Your key</strong> goes only to the provider, with each request.</li>
+        <li><strong>Analyst.</strong> The request can include the conversation, a description of the dataset and construction settings, computed results requested by the model, and short excerpts from underlying records when the question requires evidence for a tie.</li>
+        <li><strong>Reports.</strong> Reports use a fixed set of computed network, person, group, temporal, and content results. Message text is excluded except for the aggregate word results used by the report.</li>
+        <li><strong>Content coding.</strong> The provider receives the codebook and the sampled message text used for coding.</li>
+        <li><strong>API key.</strong> The key is sent directly to the selected provider with each request.</li>
       </ul>
       <label class="check" style="margin-top:.8rem;align-items:flex-start"><input type="checkbox" checked=${codes} onChange=${e => store.set({ llm: { ...store.get().llm, codes: e.currentTarget.checked } })} style="margin-top:.2rem" />
         <span>Replace names with codes before sending. People become P1, P2 and so on; their names in message excerpts, words and questions are replaced too, email addresses are removed, and name, email, phone and manager columns are left out. Answers are turned back into names on this computer. Nicknames, misspellings and people who are not in the data are not caught.</span></label>
-      <p style="margin-top:.8rem">Check that sending this content is allowed for your data (consent, contracts, ethics approval) before using a provider.</p>
+      <p style="margin-top:.8rem">Sending this content to a provider may require consent, contractual permission, or ethics approval for the data concerned.</p>
     </div>
   </details>`;
 }
@@ -371,7 +371,7 @@ function Coding({ provider, ds }) {
     saveFile(rows.map(r => r.map(x => { const s = String(x ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(',')).join('\n'), 'coded-messages.csv', 'text/csv');
   };
   return html`<div class="stack">
-    <p class="small text2">Define codes, draw a stratified sample, check the estimate, then run. Only message text is sent, with no names, ids, channels or times attached. Double-coding runs the sample twice in a different order and reports agreement, so you can judge whether the codes are reliable.</p>
+    <p class="small text2">Codes are defined, a stratified sample is drawn, and the cost is estimated before the run. Only message text is sent, with no names, ids, channels, or times attached. Double-coding runs the sample twice in a different order and reports agreement as an estimate of coding reliability.</p>
     <section aria-labelledby="cb-h">
       <h3 id="cb-h" class="label">Codebook</h3>
       <div class="grid-2">

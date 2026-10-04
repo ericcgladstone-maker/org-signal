@@ -141,17 +141,19 @@ export function Tip({ content, children, label, className = '' }) {
   </span>`;
 }
 
+// The engine's "Very small network" reason is shown in the audit's wording
+// (SMALL_NETWORK_NOTE) wherever a reason is printed.
 export function applicabilityReason(a) {
   if (!a) return '';
-  if (Array.isArray(a.reasons)) return a.reasons.join(' ');
-  return a.reason || '';
+  const list = Array.isArray(a.reasons) ? a.reasons : a.reason ? [a.reason] : [];
+  return list.map(r => (SMALL.test(r) ? SMALL_NETWORK_NOTE : r)).join(' ');
 }
 
 // "Very small network" applies to every measure of a tiny network, so it is
 // said once, calmly, rather than as a CAUTION on each measure (M7). The
 // remaining reasons decide the flag.
 const SMALL = /^Very small network/i;
-export const SMALL_NETWORK_NOTE = 'Small network: with few people, one tie more or less moves this number a lot. Fine for learning; be careful comparing values.';
+export const SMALL_NETWORK_NOTE = 'Small network. Individual ties have substantial leverage on many measures. Comparisons across networks should therefore be interpreted cautiously.';
 export function applicabilityView(ap) {
   const level = ap?.level || 'ok';
   const reasons = Array.isArray(ap?.reasons) ? ap.reasons : ap?.reason ? [ap.reason] : [];
@@ -233,7 +235,7 @@ export function MetricName({ metric, short = false, showFlag = true, iconOnly = 
   const content = withNote(metricTip(g, name, ap, ctx), note);
   const flag = showFlag && v.level !== 'ok' && html` <${Flag} level=${v.level} reason=${v.reason || applicabilityReason(ap)} iconOnly=${iconOnly}>${v.level === 'na' ? 'n/a' : 'caution'}</${Flag}>`;
   const main = html`<span class=${iconOnly ? '' : 'nowrap'}><${Tip} content=${content} label=${`${name}: what it means`}>${short ? name.split(' (')[0] : name}</${Tip}>${flag}</span>`;
-  // The always-shown gloss rows stay on regardless of the Explanations switch (decision 3).
+  // The always-shown gloss rows stay on regardless of the Interpretive notes switch (decision 3).
   if (!showGloss || !g.meaning) return main;
   return html`<span class="metric-name">${main}<span class="metric-name__gloss">${g.meaning}</span></span>`;
 }
@@ -253,7 +255,7 @@ export function MetricInfo({ metric, label = null, note = null }) {
 
 // ---- beginner support (decision 1) -----------------------------------------
 
-// The Explanations switch: true unless the reader turned explanations off.
+// The Interpretive notes switch: true unless the reader turned the notes off.
 export function useExplain() {
   return useStore(s => s.explain !== false);
 }
@@ -281,20 +283,24 @@ export function termGloss(k) {
   return gloss(k);
 }
 
-// "How to read this": a disclosure under a number or chart. Four parts, each
-// optional: what it means, what counts as big or small, one sentence from
-// the live data (the caller builds it), and one common mistake. Hidden when
-// the reader turns Explanations off.
-export function HowToRead({ title = 'How to read this', means, scale, example, mistake, open = false, children, className = '' }) {
+// Interpretation: a disclosure under a number or chart, in the shared
+// explanatory grammar of the copy audit (2026-10-04). Four parts, each
+// optional: Definition (what the measure is), Scale (how to judge its size),
+// In this network (one sentence from the live data; the caller builds it) and
+// Caution (the inferential boundary). Hidden when the reader turns
+// Interpretive notes off. The prop names are the original ones (means, scale,
+// example, mistake) so callers did not change.
+export const HOWTO_PARTS = { means: 'Definition.', scale: 'Scale.', example: 'In this network.', mistake: 'Caution.' };
+export function HowToRead({ title = 'Interpretation', means, scale, example, mistake, open = false, children, className = '' }) {
   const explain = useExplain();
   if (!explain) return null;
   return html`<details class=${`disclose howto ${className}`} open=${open}>
     <summary>${title}</summary>
     <div class="reading howto__body">
-      ${means && html`<p><span class="howto__k">What it means.</span> ${means}</p>`}
-      ${scale && html`<p><span class="howto__k">Big or small.</span> ${scale}</p>`}
-      ${example && html`<p><span class="howto__k">Here.</span> ${example}</p>`}
-      ${mistake && html`<p><span class="howto__k">Common mistake.</span> ${mistake}</p>`}
+      ${means && html`<p><span class="howto__k">${HOWTO_PARTS.means}</span> ${means}</p>`}
+      ${scale && html`<p><span class="howto__k">${HOWTO_PARTS.scale}</span> ${scale}</p>`}
+      ${example && html`<p><span class="howto__k">${HOWTO_PARTS.example}</span> ${example}</p>`}
+      ${mistake && html`<p><span class="howto__k">${HOWTO_PARTS.mistake}</span> ${mistake}</p>`}
       ${children}
     </div>
   </details>`;
@@ -450,15 +456,13 @@ export function useFocusHeading(ref) {
   }, []);
 }
 
-// View heading. Intros lead with the view's purpose (L18): when `purpose` is
-// not given and the intro does not already ask its question, the view's
-// question from the navigation (actions.js VIEWS) goes first. Pass
-// purpose={false} to leave it out.
+// View heading. Each view writes its own intro, a statement of what the view
+// reports (copy audit 2026-10-04: no rhetorical question in front of it).
+// `purpose`, when a caller passes one, is shown first as before.
 export function ViewHead({ title, intro, actions, hiddenTitle = false, purpose }) {
   const ref = useRef(null);
   useFocusHeading(ref);
-  const info = VIEWS.find(v => v.label === title);
-  const q = purpose === false ? null : purpose || (info?.purpose && !(typeof intro === 'string' && intro.includes('?')) ? info.purpose : null);
+  const q = purpose || null;
   return html`<header class=${hiddenTitle ? 'visually-hidden' : 'view__head'}>
     <div class="grow">
       <h1 class="view__title" tabindex="-1" ref=${ref}>${title}</h1>
@@ -489,11 +493,11 @@ export function NeedsData({ title, purpose, shows, view }) {
       ${list.length > 0 && html`<p class="label">${title} will show</p>
         <ul class="needs__shows">${list.map(x => html`<li>${x}</li>`)}</ul>`}
       <h2 class="needs__h">No network is loaded yet</h2>
-      <p class="needs__lead">Load one first: explore the sample organization, draw or type a small network, or analyze your own exports.</p>
+      <p class="needs__lead">Load one first: explore the sample organization, draw or construct a network, or analyze empirical data.</p>
       <div class="row needs__acts">
         <button type="button" class="btn btn--primary" disabled=${busy} onClick=${sample}>${busy ? 'Loading the sample' : 'Explore the sample'}</button>
-        <a class="tlink tlink--arrow" href="#build" onClick=${e => { e.preventDefault(); store.actions.setView('build'); }}>Draw or type a small network</a>
-        <a class="tlink tlink--arrow" href="#data" onClick=${e => { e.preventDefault(); store.actions.setView('data'); }}>Analyze your own exports</a>
+        <a class="tlink tlink--arrow" href="#build" onClick=${e => { e.preventDefault(); store.actions.setView('build'); }}>Draw or construct a network</a>
+        <a class="tlink tlink--arrow" href="#data" onClick=${e => { e.preventDefault(); store.actions.setView('data'); }}>Analyze empirical data</a>
       </div>
       <p class="small text2 needs__learn">New to network analysis? <a class="tlink tlink--arrow" href="#learn">Learn the ideas</a></p>
     </div>

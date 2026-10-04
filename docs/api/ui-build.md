@@ -143,7 +143,7 @@ import { GenerateView } from './generate/index.js'; // <GenerateView />
 3. Collect names (duplicates across questions are flagged)
 4. Describe (fast table entry)
 5. Who knows whom: sort people into settings, then fix exceptions on a canvas or in a filterable pair list
-6. Review and export: "This ego network" first, a verdict (brokering, closed or in between, from efficiency = effective size / size) and size, density, effective size and constraint, each with its meaning, the hand formula and constraint's possible range for this size, plus How to read this
+6. Review and export: "This ego network" first, a verdict (brokering, closed or in between, from efficiency = effective size / size) and size, density, effective size and constraint, each with its meaning, the hand formula and constraint's possible range for this size, plus the Interpretation note
 
 ## Roster: src/builders/roster.js, matrix.js; UI src/ui/build/roster/
 
@@ -241,7 +241,7 @@ Also `defaultObservation(ctx, medium)` (Everyone whenever the medium allows it),
 - **Generate and analyze**: generates with `output: 'dataset'` and hands the result off.
 - **Download as native export files**: generates with `output: 'native'`, zips `files[{ path, bytes }]` and names the importer that reads them back.
 - Progress bar and Cancel (Cancel terminates the worker).
-- A recovery check panel after analysis: titled with the world ("Bridge-dependent workplace (Slack), 120 people, seed 1"), accounts and bots ("121 accounts, 1 bot left out of the network"), the construction settings it used in words, a warning with "Run it again" when they changed since, the verdict rule, How to read this, and per check the verdict, the reading, the numbers (three decimals) and, for brokers, every planted broker with its measured rank (decision 9). When the loaded world differs from the form (for example the sample from Data), the form says "Loaded now: ..." and offers to show its settings (L13). The seed is called the random seed (L14).
+- A recovery check panel after analysis: titled with the world ("Bridge-dependent workplace (Slack), 120 people, seed 1"), accounts and bots ("121 accounts, 1 bot left out of the network"), the construction settings it used in words, a warning with "Run it again" when they changed since, the verdict rule, the Interpretation note, and per check the verdict, the reading, the numbers (three decimals) and, for brokers, every planted broker with its measured rank (decision 9). When the loaded world differs from the form (for example the sample from Data), the form says "Loaded now: ..." and offers to show its settings (L13). The seed is called the random seed (L14).
 
 ## Tests and QA
 

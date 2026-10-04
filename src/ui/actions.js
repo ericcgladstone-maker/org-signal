@@ -13,7 +13,7 @@
 //   focus(target, { fallback })    move focus after an action (selector or element), once the view has rendered
 //   runJob(label, fn)       fn(signal, progress) with a status-bar entry and cancel
 //   startOver()             clear everything loaded in this tab and return to Data (masthead: "Clear loaded data")
-//   setExplain(on)          the Explanations switch (kept as the one localStorage preference)
+//   setExplain(on)          the Interpretive notes switch (kept as the one localStorage preference)
 //   loadSample()            load the sample organization; stays on the view it was asked from
 //   openDrawer() / closeDrawer()   construction settings drawer
 
@@ -24,9 +24,9 @@ import { NODE_METRICS, TWO_MODE_METRICS } from './services/glossary.js';
 
 // Navigation in workflow order (decision 2): get a network, explore it,
 // report on it, and Learn. `desc` is the one line shown under the label in
-// the phone menu and as the link's title on desktop; `purpose` and `shows`
-// feed the purposeful empty state (NeedsData) and the view intros, so a
-// student can tell what a view is for before anything is loaded.
+// the phone menu and as the link's title on desktop; `purpose` (a statement,
+// not a question: copy audit 2026-10-04) and `shows` feed the empty state
+// (NeedsData), so a reader can tell what a view is for before anything is loaded.
 export const NAV_GROUPS = [
   { id: 'get', label: 'Get a network' },
   { id: 'explore', label: 'Explore' },
@@ -35,27 +35,27 @@ export const NAV_GROUPS = [
 ];
 
 export const VIEWS = [
-  { id: 'data', label: 'Data', group: 'get', desc: 'Import your exports or open a saved project' },
-  { id: 'build', label: 'Build', group: 'get', desc: 'Draw, paste or survey a small network' },
-  { id: 'generate', label: 'Generate', group: 'get', desc: 'Synthetic organizations with known answers' },
-  { id: 'network', label: 'Network', group: 'explore', sep: true, desc: 'The map and whole-network numbers',
-    purpose: 'What does the whole network look like, and is it different from chance?',
-    shows: ['The map of who is tied to whom, colored by group or community', 'Whole-network numbers such as density and clustering, compared with random networks', 'Who stands out: most contacts, most often between others, closest to everyone'] },
-  { id: 'people', label: 'People', group: 'explore', desc: 'Every person\u2019s measures, ranked',
-    purpose: 'Who has the most ties, who connects groups, and who is close to everyone?',
-    shows: ['Every person\u2019s measures in one table you can sort', 'How settled each ranking is when the data is resampled', 'A profile for each person with their contacts'] },
-  { id: 'groups', label: 'Groups', group: 'explore', desc: 'Do ties stay inside groups?',
-    purpose: 'Do ties stay inside departments, teams or communities, or cross them?',
-    shows: ['How many ties run within and between each pair of groups', 'The E-I index and assortativity, compared with chance', 'Each group\u2019s size and how tied together it is'] },
-  { id: 'content', label: 'Content', group: 'explore', desc: 'What people wrote about, and in what tone',
-    purpose: 'What did people write about, and in what tone?',
-    shows: ['The tone of messages by person, group or week', 'Distinctive words and recurring topics', 'Whether new words spread along ties'] },
-  { id: 'time', label: 'Time', group: 'explore', desc: 'How the network changed',
-    purpose: 'How did the network change over time?',
-    shows: ['Measures week by week (or day, or month)', 'Weeks that stand out from the ones before them', 'A before and after comparison around a date you choose'] },
-  { id: 'methods', label: 'Methods & Export', group: 'report', sep: true, desc: 'Methods appendix, network files and projects' },
-  { id: 'ask', label: 'Ask', group: 'report', desc: 'Questions in plain language (optional AI)' },
-  { id: 'learn', label: 'Learn', group: 'learn', sep: true, desc: 'The ideas, the terms and worked examples' },
+  { id: 'data', label: 'Data', group: 'get', desc: 'Import empirical records or open a saved project' },
+  { id: 'build', label: 'Build', group: 'get', desc: 'Draw, interview, survey, or paste a network' },
+  { id: 'generate', label: 'Generate', group: 'get', desc: 'Synthetic networks with known structure' },
+  { id: 'network', label: 'Network', group: 'explore', sep: true, desc: 'Network map and whole-network measures',
+    purpose: 'This view shows the constructed network, whole-network measures, and comparisons with degree-preserving random networks.',
+    shows: ['The network map, colored by group or community', 'Whole-network measures such as density and clustering, compared with degree-preserving random networks', 'Who stands out: most contacts, most often between others, closest to everyone'] },
+  { id: 'people', label: 'People', group: 'explore', desc: 'Person-level measures, ranks, and profiles',
+    purpose: 'This view reports person-level network measures, ranks, attributes, and profiles.',
+    shows: ['Person-level measures in a sortable table', 'Rank stability under resampling of the observed events', 'Profiles with each person\u2019s ties, attributes, and activity'] },
+  { id: 'groups', label: 'Groups', group: 'explore', desc: 'Within- and between-group structure',
+    purpose: 'Compare within- and between-group structure using an observed attribute or communities detected from the network.',
+    shows: ['How many ties run within and between each pair of groups', 'The E-I index and assortativity, compared with degree-preserving random networks', 'Group size and internal density'] },
+  { id: 'content', label: 'Content', group: 'explore', desc: 'Tone, words, topics, and diffusion',
+    purpose: 'This view analyzes message text locally using lexicon, term-frequency, topic, and diffusion methods.',
+    shows: ['The tone of messages by person, group or week', 'Distinctive words and recurring topics', 'The spread of terms along observed ties'] },
+  { id: 'time', label: 'Time', group: 'explore', desc: 'Network structure over time',
+    purpose: 'The network is rebuilt separately for each time window using the current construction settings.',
+    shows: ['Network measures by day, week, or month', 'Detected shifts between adjacent periods', 'Before-and-after comparisons around a selected date'] },
+  { id: 'methods', label: 'Methods & Export', group: 'report', sep: true, desc: 'Methods, network files, figures, and projects' },
+  { id: 'ask', label: 'Ask', group: 'report', desc: 'Questions, reports, and content coding with an API key' },
+  { id: 'learn', label: 'Learn', group: 'learn', sep: true, desc: 'Definitions, worked examples, and limitations' },
 ];
 
 export const viewInfo = id => VIEWS.find(v => v.id === id) || null;
@@ -239,11 +239,11 @@ function setView(view, { focus = true } = {}) {
   if (focus && hasDOM) window.scrollTo({ top: 0 });
 }
 
-// The Explanations switch: store field plus the one localStorage preference.
+// The Interpretive notes switch: store field plus the one localStorage preference.
 function setExplain(on) {
   store.set({ explain: !!on });
   writeExplainPref(!!on);
-  announce(on ? 'Explanations on.' : 'Explanations off.');
+  announce(on ? 'Interpretive notes on.' : 'Interpretive notes off.');
 }
 
 // The sample organization (the Data view's preset of Generate), loadable from

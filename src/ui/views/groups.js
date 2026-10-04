@@ -112,7 +112,7 @@ function GroupsInner({ ds, net }) {
   const groupAp = ap.groups;
 
   return html`<div class="view">
-    <${ViewHead} title="Groups" intro="Do ties stay inside groups or cross them? Compare departments, roles or any attribute, or the communities found in the network."
+    <${ViewHead} title="Groups" intro="Compare within- and between-group structure using an observed attribute or communities detected from the network. The view reports group size, internal density, within- and between-group ties, E-I index, assortativity, and comparisons with degree-preserving random networks."
       actions=${html`<${ConstructionButton} />`} />
     <div class="toolbar">
       <${Select} label="Groups from" value=${by} onChange=${v => { setBy(v); setOpenGroup(null); }} options=${[
@@ -121,7 +121,7 @@ function GroupsInner({ ds, net }) {
       ]} />
     </div>
     <${ShiftBanner} ds=${ds} by=${by} isComm=${isComm} name=${name} attrs=${attrs} />
-    ${!attrs.length && html`<p class="small text2">This data has no attribute that sorts people into a few groups. Join an HR or attribute table in the Data view to compare departments or teams; until then the groups are the communities detected in the network.</p>`}
+    ${!attrs.length && html`<p class="small text2">Detected communities are currently the available grouping. Join an attribute table in Data to compare departments, teams, roles, or other observed groups.</p>`}
     ${groupAp && groupAp.level !== 'ok' && html`<p class="small text2"><${Flag} level=${groupAp.level} /> ${applicabilityReason(groupAp)}</p>`}
     ${res.loading && html`<${Loading}>Comparing groups</${Loading}>`}
     <${ErrorLine} error=${res.error} onRetry=${res.retry} />
@@ -129,7 +129,7 @@ function GroupsInner({ ds, net }) {
       ${r.note && html`<p class="small text2">${r.note}</p>`}
       ${r.coverage != null && r.coverage < 1 && html`<p class="small text2"><${Flag} level="caution" /> ${fmtPct(r.coverage)} of people in the network have a value for ${name}; the rest are left out of these comparisons.</p>`}
       <section class="section" style="border-top:0;padding-top:.25rem" aria-labelledby="reading-h">
-        <h2 id="reading-h" class="section__title">Reading</h2>
+        <h2 id="reading-h" class="section__title">Group structure</h2>
         <${Reading} isComm=${isComm} name=${isComm ? 'community' : name.replace(/\s*\([^)]*\)$/, '').toLowerCase()} assort=${assort} ei=${ei} nA=${nA} nE=${nE} nQ=${nQ} communities=${communities} loadingNull=${nul.loading} nullError=${nul.error} meta=${nul.data?.meta} groups=${groupsSorted} />
       </section>
       <section class="section" aria-labelledby="gt-h">
@@ -218,8 +218,8 @@ function Reading({ isComm, name, assort, ei, nA, nE, nQ, communities, loadingNul
       if (usable(nQ)) {
         const real = sig(nQ) && nQ.observed > nQ.mean;
         out.push(html`<${Verdict} level=${real ? null : 'info'}
-          verdict=${real ? `${head} That split is real structure: random networks with the same numbers of ties split far less cleanly.` : `${head} That is not clearly cleaner than random networks give; treat the communities as one of many similar splits.`}
-          plain=${html`On the ties alone, ignoring weights, the best split found scores ${fmtNum(nQ.observed)}; the same search on random networks with the same numbers of ties scores ${fmtNum(nQ.mean)} on average, and ${nullInWords(nQ.p, nQ.replicates ?? reps)}. (Modularity 0 means no cleaner than chance; above about 0.3 is usually clear structure, but random networks reach that too, which is why the comparison re-runs the search on each.)`}
+          verdict=${real ? `${head} The split is cleaner than in random networks with the same numbers of ties.` : `${head} The split is not clearly cleaner than in random networks with the same numbers of ties; the communities are one of many comparable partitions.`}
+          plain=${html`On the ties alone, ignoring weights, the best split found scores ${fmtNum(nQ.observed)}; the same search on random networks with the same numbers of ties scores ${fmtNum(nQ.mean)} on average, and ${nullInWords(nQ.p, nQ.replicates ?? reps)}. (Modularity values above about 0.3 are often read as clear community structure, but randomized networks can reach such values too, so the comparison re-runs the search on each.)`}
           details=${`${basis(nQ)} Community detection (Louvain) is re-run on every random network.`} />`);
       } else out.push(html`<p class="verdict__claim">${head}</p>`);
     }
@@ -230,7 +230,7 @@ function Reading({ isComm, name, assort, ei, nA, nE, nQ, communities, loadingNul
       if (nA && !usable(nA)) out.push(html`<${Verdict} verdict=${`${plain}.`} plain=${`${scale}. There are too few ties between people with a value to compare with random networks, so no test is reported.`} />`);
       else if (usable(nA)) {
         out.push(html`<${Verdict} level=${sig(nA) ? null : 'info'}
-          verdict=${sig(nA) ? `${plain}: ${Math.abs(nA.z) >= 4 ? 'far ' : ''}more ${nA.observed > nA.mean ? 'within' : 'across'} than random networks with the same numbers of ties give.` : `${plain}, but no more than random networks with the same numbers of ties give, so ${name} does not explain who ties to whom here.`}
+          verdict=${sig(nA) ? `${plain}: ${Math.abs(nA.z) >= 4 ? 'far ' : ''}more ${nA.observed > nA.mean ? 'within' : 'across'} than random networks with the same numbers of ties give.` : `${plain}, but no more than random networks with the same numbers of ties give; the observed mixing by ${name} is consistent with the random-network comparison.`}
           plain=${html`${scale}; random networks with the same numbers of ties give ${fmtNum(nA.mean)} on average, and ${nullInWords(nA.p, nA.replicates ?? reps)}.`} />`);
       } else out.push(html`<${Verdict} verdict=${`${plain}.`} plain=${`${scale}.`} />`);
     }
@@ -243,7 +243,7 @@ function Reading({ isComm, name, assort, ei, nA, nE, nQ, communities, loadingNul
       const notAll = ei < 0 && outward.length ? ` Not every group keeps to itself: ${names} ${outward.length === 1 ? 'has' : 'have'} more ties out than in${stillIn ? ', though fewer than random networks give (see E-I if random in the table)' : ''}.` : '';
       out.push(html`<${Verdict}
         verdict=${usable(nE) ? `${lean}, ${chanceWords(nE.z, { more: 'more outward', less: 'more inward' })} for groups of these sizes.${notAll}` : `${lean}.${notAll}`}
-        plain=${html`Overall <${Term} k="eiIndex">E-I index</${Term}> ${fmtNum(ei)} (-1 all inside, +1 all across)${usable(nE) ? html`; random networks with the same numbers of ties give ${fmtNum(nE.mean)}, and ${nullInWords(nE.p, nE.replicates ?? reps)}` : ''}. Larger groups have more chances for inside ties, so compare with the random value, not with zero.`}
+        plain=${html`Overall <${Term} k="eiIndex">E-I index</${Term}> ${fmtNum(ei)} (-1 all inside, +1 all across)${usable(nE) ? html`; random networks with the same numbers of ties give ${fmtNum(nE.mean)}, and ${nullInWords(nE.p, nE.replicates ?? reps)}` : ''}. Larger groups have more possible within-group ties, so the E-I index is interpreted relative to the random value.`}
         details=${(usable(nA) || usable(nE)) ? basis(usable(nE) ? nE : nA) : null} />`);
     }
   }
@@ -251,8 +251,22 @@ function Reading({ isComm, name, assort, ei, nA, nE, nQ, communities, loadingNul
     ${out}
     ${loadingNull && html`<p class="small muted"><span class="spinner"></span> Comparing with ${reps} random networks; the numbers above are final, the comparison fills in when it is done.</p>`}
     ${nullError && html`<p class="small"><${Flag} level="error" /> Comparison with random networks failed: ${nullError.message}</p>`}
-    ${!isComm && html`<${HowToRead} means="E-I index: ties leaving a group minus ties inside it, over all its ties. Assortativity: how much more often ties join people with the same value than chance." scale="E-I runs from -1 (every tie inside) to +1 (every tie across); the random value is what groups of these sizes would show if ties ignored the groups." mistake="Calling a group siloed because its E-I is below zero. Big groups have more people to tie to inside; compare with the random value, and remember the number covers the whole period: if something changed partway, it mixes before and after." />`}
+    ${!isComm && html`<${HowToRead} means="E-I index summarizes the balance between ties within a group and ties crossing its boundary. Assortativity summarizes the tendency for ties to connect people with the same group value."
+      scale="E-I ranges from -1 for entirely within-group ties to +1 for entirely between-group ties. The random-network comparison accounts for group sizes and each person’s number of ties."
+      example=${groupExample(name, ei, assort, nE, nA, usable)}
+      mistake="Group size affects the number of possible within-group ties. Interpret E-I and assortativity relative to the random-network comparison, particularly when groups differ substantially in size." />`}
   </div>`;
+}
+
+// The live sentence for the Interpretation note: the observed E-I index and
+// assortativity for this grouping, each beside its random-network mean when
+// the comparison has run.
+function groupExample(name, ei, assort, nE, nA, usable) {
+  const parts = [];
+  if (Number.isFinite(ei)) parts.push(`the E-I index is ${fmtNum(ei)}${usable(nE) ? ` (random-network mean ${fmtNum(nE.mean)})` : ''}`);
+  if (Number.isFinite(assort)) parts.push(`assortativity is ${fmtNum(assort)}${usable(nA) ? ` (random-network mean ${fmtNum(nA.mean)})` : ''}`);
+  if (!parts.length) return null;
+  return `Grouped by ${name}, ${parts.join(' and ')}.`;
 }
 
 // When the Time view's shift scan finds a change, Groups says so before any
