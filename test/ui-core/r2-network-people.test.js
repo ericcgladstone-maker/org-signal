@@ -215,13 +215,17 @@ test('Groups banner: only a shift that lasted raises it, not a one-window blip',
   assert.equal(groupShift([blip, step]), step);
 });
 
-test('fragility wording is relative to an even spread; "run through" only above the stated threshold', () => {
+test('fragility wording is relative to an even spread; "most of the brokerage" only above the stated threshold', () => {
   // Top 5 of 96 holding 20%: concentrated (3.8x), not "depends on a few people".
   const a = concentrationWords({ k: 5, share: 0.2, even: 5 / 96 });
   assert.equal(a.level, 'concentrated');
   assert.match(a.text, /3\.8 times the 5% an even spread gives/);
   assert.doesNotMatch(a.text, /run through/);
-  assert.equal(concentrationWords({ k: 5, share: 0.6, even: 5 / 96 }).level, 'depends');
+  const d = concentrationWords({ k: 5, share: 0.6, even: 5 / 96 });
+  assert.equal(d.level, 'depends');
+  // Summed betweenness overcounts paths through several of them: no claim about routes (M6).
+  assert.match(d.text, /these 5 people account for most of the brokerage/);
+  assert.doesNotMatch(d.text, /route/);
   assert.equal(concentrationWords({ k: 5, share: 0.07, even: 5 / 96 }).level, 'even');
 });
 

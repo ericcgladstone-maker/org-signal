@@ -25,11 +25,16 @@ export function otherGroupsLabel(groups, people) {
   return `Other groups (${fmtInt(groups)} ${groups === 1 ? 'group' : 'groups'}, ${fmtInt(people)} ${people === 1 ? 'person' : 'people'})`;
 }
 
-// groups: [{ value, label?, count }] in fixed order. missing: people with no
-// value. Returns the color function, the legend rows and the highlight test.
+// groups: [{ value, label?, count, color? }] in fixed order. missing: people
+// with no value. A group's own `color` (one of the eight hues) overrides the
+// hue its position gives (communities matched to an attribute's hues,
+// lib/coloring.js). Returns the color function, the legend rows and the
+// highlight test.
 export function groupColoring(groups, { missing = 0 } = {}) {
   const t = tokens();
-  const sc = categoricalScale(groups.map(g => String(g.value)));
+  const base = categoricalScale(groups.map(g => String(g.value)));
+  const fixed = new Map(groups.filter((g, i) => g.color && i < HUES).map(g => [String(g.value), g.color]));
+  const sc = { color: v => fixed.get(String(v)) ?? base.color(v) };
   const index = new Map();
   const entries = groups.map((g, i) => {
     const value = String(g.value);

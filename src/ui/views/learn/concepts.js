@@ -140,7 +140,7 @@ export const TEACH = {
     mistake: 'A departure from the null model establishes that a pattern exceeds what the degrees alone produce, not what caused it.',
   },
   nullZ: { where: [NETWORK, GROUPS], read: 'How many standard deviations the real value is from the random average. Beyond about 2 (either sign) is unusual; 50 is far outside anything chance gave.', mistake: 'z values are not comparable between tests: a large z on a tight null distribution is not a larger effect.' },
-  nullP: { where: [NETWORK, GROUPS], read: 'The share of random networks at least as extreme. With 200 random networks the smallest p possible is 1/201 (about 0.005): "none of the 200 came this close".', mistake: 'p is the share of random networks at least as extreme as the observed value, not the probability that the finding is wrong.' },
+  nullP: { where: [NETWORK, GROUPS], read: 'The share of random networks at least as extreme. With 200 random networks the smallest p possible is 1/201 (about 0.005): "none of the 200 came this far from their average".', mistake: 'p is the share of random networks at least as extreme as the observed value, not the probability that the finding is wrong.' },
   rankInterval: { where: [['People: rank stability', 'people']], read: 'The events are resampled many times and the ranking recomputed: a person who stays at rank 1 to 2 has a stable rank; rank 1 to 30 is not stable.', mistake: 'Resampling events shows how much the ranking depends on which events were recorded. It does not test whether a tie exists.' },
   topShare: { where: [['People: rank stability', 'people']], read: 'In what share of the resamples this person was in the top k. 100% is settled.', mistake: 'A top-k share of 60 percent means the person fell outside the top k in 40 percent of resamples.' },
   randomSeed: { where: [GENERATE, ['Basis lines: "seed 1"', 'network']], read: 'The same seed reproduces the same result, which allows others to reproduce the numbers.', mistake: 'The random seed is distinct from the first user of a word in diffusion analysis (Content).' },
@@ -210,12 +210,12 @@ export const TASKS = [
 // Build (src/ui/build) loads the example of that id. Keep these ids in step
 // with Build's example library (docs/api/ui-core.md, "Learn links").
 export const EXAMPLES = [
-  { id: 'two-cliques-broker', what: 'The broker is the only route between the teams: highest betweenness, though not the most contacts.', learn: ['betweenness', 'contacts'] },
-  { id: 'path-and-star', what: 'In the path the middle people score highest and the ends 0. Then open the star (File, Start from an example): its center has betweenness 1. Compare with your hand values.', learn: ['betweenness', 'closeness', 'degree'] },
-  { id: 'ring-small-world', what: 'Then open the small world (File, Start from an example): a few shortcuts cut the average path length sharply while clustering barely moves.', learn: ['avgPathLength', 'clustering'] },
-  { id: 'class-friendships', what: 'Friendships mostly within majors: positive assortativity, far from what random networks give; and one student with no friendships yet, an isolate.', learn: ['assortativity', 'eiIndex', 'nullModel', 'isolate'] },
+  { id: 'two-cliques-broker', what: 'The broker is the only route between the teams: the highest betweenness (0.571), with 4 contacts, no more than each of the four team members tied to him.', learn: ['betweenness', 'contacts'] },
+  { id: 'path-and-star', what: 'In the path C and D have the highest betweenness (0.600) and the ends A and F have 0. Then open the star (File, Start from an example): its center has betweenness 1 and each leaf 0. Compare with your hand values.', learn: ['betweenness', 'closeness', 'degree'] },
+  { id: 'ring-small-world', what: 'Then open the small world (File, Start from an example): two shortcuts cut the average path length from 2.895 to 2.347 steps, while clustering (transitivity) stays high, 0.441 against 0.500.', learn: ['avgPathLength', 'clustering'] },
+  { id: 'class-friendships', what: 'Friendships mostly within majors: 15 of 18 ties, assortativity 0.750, far above what random networks give; and one student with no friendships yet, an isolate.', learn: ['assortativity', 'eiIndex', 'nullModel', 'isolate'] },
   { id: 'clubs-two-mode', what: 'Six students and four clubs. Compare plain and two-mode degree, find the two bridging students by two-mode betweenness, then project onto students: Ana and Ben share two clubs.', learn: ['twoMode', 'projection', 'borgattiEverett', 'twoModeBetweenness'] },
-  { id: 'ego-10', what: 'Two circles that do not know each other: low constraint, effective size close to size.', learn: ['constraint', 'effectiveSize', 'ego'] },
+  { id: 'ego-10', what: 'Three settings (family, college, work) that barely know each other: effective size 7.6 of 10 contacts. Constraint is 0.292, high in the 0.100 to 0.361 range possible with 10 contacts, because each setting is close-knit inside.', learn: ['constraint', 'effectiveSize', 'ego'] },
 // The title is the one the example opens under in Build, so Learn and the
 // header name match ("Example: <title>").
 ].map(x => ({ ...x, title: exampleById(x.id)?.title || x.id }));

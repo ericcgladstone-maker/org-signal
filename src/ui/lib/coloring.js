@@ -6,7 +6,7 @@
 import { sequentialScale, tokens } from './palette.js';
 import { NO_COMMUNITY } from './communities.js';
 import { groupColoring } from './grouping.js';
-import { orderedValues, defaultGroupAttr, isBookkeeping } from './dsutil.js';
+import { orderedValues, defaultGroupAttr, isBookkeeping, preferredAttributes } from './dsutil.js';
 import { fmtAttr, humanize } from './format.js';
 
 let choice = { ds: null, value: null };
@@ -52,15 +52,9 @@ export function nodeColoring({ ds, net, communities, colorBy, attrs = [], nodeMe
     return { kind: 'cat', mode: true, gc, of: v => gc.color(key(v)), key, title: 'Kind of node (two-mode)', short: 'kind of node', labels: tm.labels };
   }
   if (colorBy === 'community' && communities?.membership) {
-    const k = communities.count ?? 0;
-    const sizes = communities.sizes || Array.from({ length: k }, (_, i) => communities.membership.filter(m => m === i).length);
-    // People on their own (a Louvain "community" of one) are listed together
-    // as having no community, not as communities of one (N17).
-    const alone = c => sizes[c] <= 1;
-    const key = v => (alone(communities.membership[v]) ? '' : String(communities.membership[v]));
-    const gc = groupColoring(Array.from({ length: k }, (_, c) => c).filter(c => !alone(c)).map(c => ({ value: String(c), label: `Community ${c + 1}`, count: sizes[c] })),
-      { missing: sizes.filter(x => x <= 1).reduce((a, x) => a + x, 0) });
-    gc.missingLabel = NO_COMMUNITY;
+    const gc = communityColoring(ds, net, communities);
+    const sizes = communitySizes(communities);
+    const key = v => (sizes[communities.membership[v]] <= 1 ? '' : String(communities.membership[v]));
     return { kind: 'cat', community: true, gc, of: v => gc.color(key(v)), key, title: 'Community (found by Louvain)', short: 'community' };
   }
   if (colorBy?.startsWith('attr:')) {
@@ -90,4 +84,72 @@ export function nodeColoring({ ds, net, communities, colorBy, attrs = [], nodeMe
     return { kind: 'seq', of: v => sc(arr[v]), scale: sc, title: label(m), short: label(m).toLowerCase(), metric: m };
   }
   return { kind: 'none', of: () => t.node, title: null };
+}
+
+// ---- communities in the attribute's colors (M5) -----------------------------------
+
+function communitySizes(communities) {
+  const k = communities.count ?? 0;
+  return communities.sizes || Array.from({ length: k }, (_, i) => communities.membership.filter(m => m === i).length);
+}
+
+// Communities are numbered by Louvain, a numbering unrelated to any
+// attribute, so by number alone Community 1 can take the hue a department or
+// faction has when the map is colored by that attribute, with the opposite
+// meaning (green for John A.'s community and for Mr. Hi's faction, M5).
+// Instead each community whose members are mostly one value of an attribute
+// takes that value's hue, largest community first, one community per value;
+// the rest take hues no value uses. The attribute is the groupable one (2 to
+// 8 values, not bookkeeping) under which most people sit in a community
+// colored like their own value; ties go to the default grouping, then the
+// order Groups lists attributes in. With no such match within the eight
+// hues, communities keep the colors of their numbers. Same function for
+// Network, People and Groups; gc.alignedTo names the attribute.
+function matchCommunities(ds, net, communities, list, sizes, attr, t) {
+  const values = orderedValues(ds, attr);
+  if (values.length > 8) return null;
+  const valueHue = new Map(values.map((o, i) => [o.value, t.cat[i]]));
+  const tally = new Map(list.map(c => [c, new Map()]));
+  for (let v = 0; v < net.n; v++) {
+    const m = tally.get(communities.membership[v]);
+    const x = ds.nodes.attrs[net.nodeIds ? net.nodeIds[v] : v]?.[attr];
+    if (!m || x == null || x === '') continue;
+    m.set(String(x), (m.get(String(x)) || 0) + 1);
+  }
+  const color = new Map(), claimed = new Set();
+  let covered = 0;
+  for (const c of [...list].sort((a, b) => sizes[b] - sizes[a] || a - b)) {
+    let best = null, bn = 0;
+    for (const [x, k] of tally.get(c)) if (k > bn || (k === bn && best != null && x < best)) { best = x; bn = k; }
+    if (best != null && bn * 2 > sizes[c] && valueHue.has(best) && !claimed.has(best)) { claimed.add(best); color.set(c, valueHue.get(best)); covered += bn; }
+  }
+  if (!color.size) return null;
+  const used = new Set(valueHue.values());
+  const spare = t.cat.filter(h => !used.has(h));
+  const rest = list.filter(c => !color.has(c));
+  if (rest.length > spare.length) return null;
+  rest.forEach((c, i) => color.set(c, spare[i]));
+  return { color, covered };
+}
+
+export function communityColoring(ds, net, communities) {
+  const t = tokens();
+  const sizes = communitySizes(communities);
+  const list = sizes.map((_, c) => c).filter(c => sizes[c] > 1);
+  const missing = sizes.filter(x => x <= 1).reduce((a, x) => a + x, 0);
+  let best = null;
+  if (ds && net && !net.twoMode && list.length <= 8) {
+    const def = defaultGroupAttr(ds);
+    const cands = preferredAttributes(ds).filter(a => !isBookkeeping(a) && a.key !== 'planted_group' && (a.values?.length ?? 0) >= 2 && (a.values?.length ?? 0) <= 8);
+    cands.sort((a, b) => (b.key === def) - (a.key === def));
+    for (const a of cands) {
+      const m = matchCommunities(ds, net, communities, list, sizes, a.key, t);
+      if (m && (!best || m.covered > best.m.covered)) best = { a, m };
+    }
+  }
+  const gc = groupColoring(list.map(c => ({ value: String(c), label: `Community ${c + 1}`, count: sizes[c], color: best?.m.color.get(c) })), { missing });
+  gc.missingLabel = NO_COMMUNITY;
+  gc.alignedTo = best ? best.a.key : null;
+  gc.alignedLabel = best ? (best.a.label || humanize(best.a.key)).toLowerCase() : null;
+  return gc;
 }

@@ -17,6 +17,7 @@ import { ViewHead, NeedsData, Loading, ErrorLine, Select, MetricName, Swatch, Co
 import { tokens } from '../lib/palette.js';
 import { metricLabel } from '../lib/measures.js';
 import { groupColoring } from '../lib/grouping.js';
+import { communityColoring } from '../lib/coloring.js';
 import * as d3 from '../../../vendor/d3.js';
 import { preferredAttributes, isBookkeeping, orderedValues, defaultGroupAttr, label as nodeLabel } from '../lib/dsutil.js';
 import { cachedRender } from '../lib/render-cache.js';
@@ -24,7 +25,7 @@ import { fmtNum, fmtInt, fmtPct, fmtDate, humanize, columnFormat } from '../lib/
 import { communityWords, communityCounts } from '../lib/rebuild.js';
 import { communitySize, NO_COMMUNITY } from '../lib/communities.js';
 import { isBookkeepingAttr } from '../../analysis/groups.js';
-import { cssVar, useTimeShifts, groupShift, snapshotNote, inWindow } from './time.js';
+import { cssVar, useTimeShifts, groupShift, snapshotNote, changeWords, persistWords } from './time.js';
 import { timeExtent } from '../lib/dsutil.js';
 import { suggestTimeRange } from '../../analysis/time.js';
 
@@ -85,13 +86,17 @@ function GroupsInner({ ds, net }) {
   const name = attrLabel(ds, by);
   // A Louvain community of one is a person with no ties, not a community (N17).
   const labelOf = (v) => (isComm ? (communitySize(communities, Number(v)) > 1 ? `Community ${Number(v) + 1}` : NO_COMMUNITY) : String(v));
-  // Colors as on the Network view: communities by number, attribute values
-  // by size over the whole dataset (not just the people in the network), the
-  // eight largest in color and the rest in the "Other groups" gray.
+  // Colors as on the Network view (the same functions): communities as
+  // communityColoring assigns them (matched to the grouping attribute's hues
+  // where it can), attribute values by size over the whole dataset (not just
+  // the people in the network), the eight largest in color and the rest in
+  // the "Other groups" gray. A community of one is "no community".
   const scale = useMemo(() => {
-    if (isComm) return groupColoring(Array.from({ length: communities?.count ?? 0 }, (_, c) => ({ value: String(c) })));
-    return groupColoring(orderedValues(ds, by));
-  }, [ds, by, isComm, communities]);
+    if (!isComm) return groupColoring(orderedValues(ds, by));
+    const gc = communityColoring(ds, net, communities || { count: 0, membership: [] });
+    const color = gc.color;
+    return { ...gc, color: v => (communitySize(communities, Number(v)) > 1 ? color(v) : gc.missingColor), isOther: v => communitySize(communities, Number(v)) > 1 && gc.isOther(v) };
+  }, [ds, net, by, isComm, communities]);
   const means = useMemo(() => groupMeans(ds, net, metrics, by, communities), [ds, net, metrics, by, communities]);
   const members = useMemo(() => groupMembers(ds, net, metrics, by, communities), [ds, net, metrics, by, communities]);
   const shownMeans = MEAN_METRICS.filter(m => metrics?.node?.[m] && ap[m]?.level !== 'na');
@@ -175,12 +180,14 @@ function GroupsInner({ ds, net }) {
 
 // The mixing matrix as a real table: values readable by screen readers, full
 // group names in the headers, color as a second channel. Zero cells stay
-// empty so they recede; the diagonal (within-group) cells are outlined and,
-// being usually much larger, do not set the color scale for the rest.
+// empty so they recede; the diagonal (within-group) cells are outlined. One
+// scale from 0 to the largest cell, diagonal included: scaled to the largest
+// between-group cell, a 0.833 within a group and a 0.063 between groups took
+// the same full color and the contrast the matrix exists to show vanished (m12).
 function MixTable({ rows, values, mode, caption }) {
-  const off = [], diag = [];
-  values.forEach((r, i) => r.forEach((v, j) => { if (Number.isFinite(v) && v > 0) (i === j ? diag : off).push(v); }));
-  const hi = Math.max(1e-12, ...(off.length ? off : diag));
+  const all = [];
+  values.forEach(r => r.forEach(v => { if (Number.isFinite(v) && v > 0) all.push(v); }));
+  const hi = Math.max(1e-12, ...all);
   const ramp = [cssVar('--seq-zero', '#0d2a35'), ...tokens().seq];
   const interp = d3.piecewise(d3.interpolateLab, ramp);
   const color = (v) => interp(Math.max(0, Math.min(1, v / hi)));
@@ -200,7 +207,7 @@ function MixTable({ rows, values, mode, caption }) {
       })}</tr>`)}</tbody>
     </table>
     <div class="mx-legend" aria-hidden="true">
-      <div><div class="ramp" style=${`background:linear-gradient(90deg,${ramp.join(',')})`}></div><div class="ramp-labels" style="max-width:12rem"><span>${mode === 'density' ? '0' : '1'}</span><span>${fmt(hi)}${diag.some(v => v > hi) ? ' or more' : ''}</span></div></div>
+      <div><div class="ramp" style=${`background:linear-gradient(90deg,${ramp.join(',')})`}></div><div class="ramp-labels" style="max-width:12rem"><span>${mode === 'density' ? '0' : '1'}</span><span>${fmt(hi)}</span></div></div>
       <span><span class="mx-legend__diag"></span>Within the group</span>
       ${narrow && html`<span>Values between groups are in the cell tooltips and read aloud.</span>`}
     </div>
@@ -294,7 +301,7 @@ function ShiftBanner({ ds, by, isComm, name, attrs }) {
   return html`<div class="notice-line gview__shift" role="note">
     <${Flag} level="caution" />
     <div class="grow">
-      <p><strong>The network changed partway through.</strong> Time found a ${sh.direction === 'up' ? 'rise' : 'drop'} in ${what} ${inWindow(sh.start, unit)}${sh.metric === 'crossGroupShare' ? ` (measured in each ${unit || 'window'}'s own network; the before-and-after comparison pools each period, see its note)` : `, from ${fmtV(sh.baseline)} to ${fmtV(sh.value)}`}${sh.heldToEnd ? ', and it stayed at the new level to the end of the data' : Number.isFinite(sh.held) ? `; it stayed nearer the new level in ${sh.held} of the ${sh.span} ${unit || 'window'}s from then on` : ''}. The numbers below cover the whole period, so they mix before and after.</p>
+      <p><strong>The network changed partway through.</strong> Time found a ${sh.direction === 'up' ? 'rise' : 'drop'} in ${what}, from a typical ${fmtV(sh.baseline)} ${changeWords(sh, unit, fmtV)}${sh.metric === 'crossGroupShare' ? ` (measured in each ${unit || 'window'}'s own network; the before-and-after comparison pools each period, see its note)` : ''}.${persistWords(sh, unit) ? ` ${persistWords(sh, unit)}` : ''} The numbers below cover the whole period, so they mix before and after.</p>
       ${attr ? html`<p class="gview__shift-acts"><button type="button" class="tlink" disabled=${q.loading} onClick=${() => setRan({ date: sh.start, attr })}>Compare ${gName} mixing before and after ${fmtDate(sh.start)}</button>
         <a class="tlink tlink--arrow" href="#time" onClick=${e => { e.preventDefault(); store.actions.setView('time'); }}>See it in Time</a></p>` : html`<p class="small"><a class="tlink tlink--arrow" href="#time" onClick=${e => { e.preventDefault(); store.actions.setView('time'); }}>See it in Time</a></p>`}
       ${q.loading && html`<${Loading}>Building the networks before and after</${Loading}>`}<${ErrorLine} error=${q.error} />

@@ -29,7 +29,7 @@ export const REFERENCES = {
   bonacich1972: 'Bonacich, P. (1972). Factoring and weighting approaches to status scores and clique identification. *Journal of Mathematical Sociology, 2*(1), 113-120. https://doi.org/10.1080/0022250X.1972.9989806',
   bonacich1987: 'Bonacich, P. (1987). Power and centrality: A family of measures. *American Journal of Sociology, 92*(5), 1170-1182. https://doi.org/10.1086/228631',
   freeman1977: 'Freeman, L. C. (1977). A set of measures of centrality based on betweenness. *Sociometry, 40*(1), 35-41. https://doi.org/10.2307/3033543',
-  freeman1978: 'Freeman, L. C. (1978). Centrality in social networks: Conceptual clarification. *Social Networks, 1*(3), 215-239. https://doi.org/10.1016/0378-8733(78)90021-7',
+  freeman1979: 'Freeman, L. C. (1979). Centrality in social networks: Conceptual clarification. *Social Networks, 1*(3), 215-239. https://doi.org/10.1016/0378-8733(78)90021-7',
   marchiori2000: 'Marchiori, M., & Latora, V. (2000). Harmony in the small-world. *Physica A, 285*(3-4), 539-546. https://doi.org/10.1016/S0378-4371(00)00311-3',
   boldi2014: 'Boldi, P., & Vigna, S. (2014). Axioms for centrality. *Internet Mathematics, 10*(3-4), 222-262. https://doi.org/10.1080/15427951.2013.865686',
   watts1998: "Watts, D. J., & Strogatz, S. H. (1998). Collective dynamics of 'small-world' networks. *Nature, 393*(6684), 440-442. https://doi.org/10.1038/30918",
@@ -59,7 +59,7 @@ const CITE = {
   brandes2001: 'Brandes, 2001', burt1992: 'Burt, 1992', blondel2008: 'Blondel et al., 2008', newman2002: 'Newman, 2002',
   newman2003: 'Newman, 2003', krackhardt1988: 'Krackhardt & Stern, 1988', hutto2014: 'Hutto & Gilbert, 2014',
   maslov2002: 'Maslov & Sneppen, 2002', page1999: 'Page et al., 1999', bonacich1972: 'Bonacich, 1972', bonacich1987: 'Bonacich, 1987',
-  freeman1977: 'Freeman, 1977', freeman1978: 'Freeman, 1978', marchiori2000: 'Marchiori & Latora, 2000', boldi2014: 'Boldi & Vigna, 2014',
+  freeman1977: 'Freeman, 1977', freeman1979: 'Freeman, 1979', marchiori2000: 'Marchiori & Latora, 2000', boldi2014: 'Boldi & Vigna, 2014',
   watts1998: 'Watts & Strogatz, 1998', seidman1983: 'Seidman, 1983', batagelj2003: 'Batagelj & Zaversnik, 2003',
   newman2004: 'Newman & Girvan, 2004', borgatti1997: 'Borgatti & Everett, 1997', breiger1974: 'Breiger, 1974', newman2001: 'Newman, 2001', latapy2008: 'Latapy et al., 2008', robins2004: 'Robins & Alexander, 2004', barber2007: 'Barber, 2007', traag2019: 'Traag et al., 2019', efron1993: 'Efron & Tibshirani, 1993',
   borgatti2006: 'Borgatti et al., 2006', blei2003: 'Blei et al., 2003', krippendorff2019: 'Krippendorff, 2019', cohen1960: 'Cohen, 1960',
@@ -71,7 +71,7 @@ const CITE = {
 // the directed wording where the definition differs.
 const NODE_METRIC_TEXT = {
   contacts: ['Contacts: number of distinct people a person has a tie with, in either direction.', ['wasserman1994']],
-  degree: ['Total ties (in + out): in-degree plus out-degree, so a two-way tie counts twice; contacts count each person once.', ['freeman1978']],
+  degree: ['Total ties (in + out): in-degree plus out-degree, so a two-way tie counts twice; contacts count each person once.', ['freeman1979']],
   inDegree: ['In-degree: number of distinct people who directed ties to the person.', ['wasserman1994']],
   outDegree: ['Out-degree: number of distinct people the person directed ties to.', ['wasserman1994']],
   strength: ['Strength: sum of tie weights (weighted degree).', ['wasserman1994']],
@@ -115,7 +115,7 @@ export const NETWORK_STAT_TEXT = {
   components: ['number of connected components', ['wasserman1994']],
   largestComponentShare: ['share of nodes in the largest component', []],
   avgPathLength: ['average shortest-path length within components', ['watts1998']],
-  degreeCentralization: ['degree centralization', ['freeman1978']],
+  degreeCentralization: ['degree centralization', ['freeman1979']],
   strengthGini: ['Gini coefficient of node strength (inequality of activity)', []],
   modularity: ['modularity of the detected partition', ['newman2004']],
   twoModeDensity: ['two-mode density (ties divided by the product of the two mode sizes)', ['borgatti1997']],
@@ -202,10 +202,24 @@ function filesRead(src) {
   return isSurvey(src) && src.format === 'shared-survey' ? ` ${fmtNum(f.length)} response file${f.length === 1 ? '' : 's'} read.` : ` ${fmtNum(f.length)} file${f.length === 1 ? '' : 's'} read.`;
 }
 
+// One source count in words. Importers name their counts in the plural
+// ("messages", "duplicates-skipped"); the generator counts by event type,
+// which is singular ("message", "leave"). Event types get their noun, plural
+// unless the count is 1; hyphenated keys read as words.
+const EVENT_NOUN = {
+  message: ['message', 'messages'], reaction: ['reaction', 'reactions'], leave: ['leave', 'leaves'], join: ['join', 'joins'],
+  copresence: ['co-presence event', 'co-presence events'], declared: ['declared tie', 'declared ties'],
+  repost: ['repost', 'reposts'], like: ['like', 'likes'], follow: ['follow', 'follows'],
+};
+export function countWords(k, v) {
+  const noun = EVENT_NOUN[k] ? EVENT_NOUN[k][v === 1 ? 0 : 1] : String(k).replace(/-/g, ' ');
+  return `${fmtNum(v)} ${noun}`;
+}
+
 // src.label, when given, is the import report's short source name.
 function sourceLine(src) {
   const name = src.label || formatName(src.format);
-  const counts = Object.entries(src.counts || {}).filter(([, v]) => typeof v === 'number').map(([k, v]) => `${fmtNum(v)} ${k}`).join(', ');
+  const counts = Object.entries(src.counts || {}).filter(([, v]) => typeof v === 'number').map(([k, v]) => countWords(k, v)).join(', ');
   // Family, medium and context only where they add something the format name
   // does not already say ("Email (email, email, workplace)" said nothing).
   const said = name.toLowerCase();
@@ -290,10 +304,14 @@ export function summarizeRun(kind, r, { labels = null } = {}) {
 const n3 = x => (finite(x) == null ? 'n/a' : Math.abs(x) >= 1000 ? fmtNum(Math.round(x)) : String(Number(x.toPrecision(3))));
 const share = x => (finite(x) == null ? 'n/a' : `${Math.round(x * 100)}%`);
 // p from an empirical test with `reps` random draws: at its floor, say that
-// none came this close (decision 5).
-function pWords(p, reps, what = 'randomized networks') {
+// none was as extreme (decision 5), worded for the test as implemented:
+// 'two' (distance from the random average, nullModel), 'diff' (an absolute
+// difference at least as large, the before-and-after relabelling test) or
+// 'upper' (one-sided, at least the observed value, diffusion).
+function pWords(p, reps, what = 'randomized networks', sided = 'two') {
   if (finite(p) == null) return 'no p-value (the statistic was undefined in the random networks)';
-  if (reps > 0 && p <= (1 / (reps + 1)) * (1 + 1e-9)) return `none of the ${fmtNum(reps)} ${what} came this close (p ≤ 1/${fmtNum(reps + 1)})`;
+  const as = sided === 'upper' ? 'reached the observed value' : sided === 'diff' ? 'gave a difference this large in either direction' : 'came this far from their average';
+  if (reps > 0 && p <= (1 / (reps + 1)) * (1 + 1e-9)) return `none of the ${fmtNum(reps)} ${what} ${as} (p ≤ 1/${fmtNum(reps + 1)})`;
   return p < 0.001 ? 'p < 0.001' : `p = ${p.toFixed(3)}`;
 }
 // The last day a window or period covers: ends are exclusive.
@@ -530,7 +548,7 @@ export function buildMethodsAppendix(input = {}) {
       }
       out.push('', `Before and after ${fmtDate(r.date)}: two periods of equal length, ${fmtDate(r.before.start)} to ${lastDay(r.before.end)} (${fmtNum(r.before.ties)} ties) and ${fmtDate(r.after.start)} to ${lastDay(r.after.end)} (${fmtNum(r.after.ties)} ties), each built with the same construction rules. Each person's measure was compared across the two periods. The p-value comes from a randomization test: every event in the two periods was reassigned to before or after at random, ${fmtNum(reps)} times, and the mean per-person difference recomputed each time. The effect size is Cohen's d_z, the mean difference divided by the standard deviation of the differences.`);
       for (const [m, x] of Object.entries(r.metrics || {})) {
-        out.push(`- ${mword(m).charAt(0).toUpperCase()}${mword(m).slice(1)}: mean ${n3(x.meanBefore)} before and ${n3(x.meanAfter)} after (${fmtNum(x.n)} people; d_z ${n3(x.dz)}; ${pWords(x.p, x.reps ?? reps, 'random relabellings')}).`);
+        out.push(`- ${mword(m).charAt(0).toUpperCase()}${mword(m).slice(1)}: mean ${n3(x.meanBefore)} before and ${n3(x.meanAfter)} after (${fmtNum(x.n)} people; d_z ${n3(x.dz)}; ${pWords(x.p, x.reps ?? reps, 'random relabellings', 'diff')}).`);
       }
       // Path measures rebuild both networks for every relabelling, so they use fewer.
       const fewer = Object.entries(r.metrics || {}).filter(([, x]) => x.reps && x.reps !== reps);
@@ -560,7 +578,7 @@ export function buildMethodsAppendix(input = {}) {
         for (const t of r.terms) {
           const x = t.null || {};
           const ceiling = x.ceiling ?? (finite(x.mean) != null && x.mean >= 0.85);
-          out.push(`- "${t.term}": ${fmtNum(t.adopters)} adopters; ${fmtNum(t.exposed)} of ${fmtNum(t.eligible)} (${share(t.exposedShare)}) had an earlier-adopting contact, against ${share(x.mean)} in the shuffled timelines (sd ${n3(x.sd)}; z ${n3(x.z)}; ${pWords(x.pUpper, x.reps ?? reps, 'shuffled timelines')}${finite(x.pAdjusted) != null && (r.meta?.tested ?? 0) > 1 ? `; Holm-adjusted p = ${n3(x.pAdjusted)}` : ''}).${ceiling ? ' The shuffled baseline is already near 100%, so this test has little room to show spread along ties: inconclusive.' : ''}`);
+          out.push(`- "${t.term}": ${fmtNum(t.adopters)} adopters; ${fmtNum(t.exposed)} of ${fmtNum(t.eligible)} (${share(t.exposedShare)}) had an earlier-adopting contact, against ${share(x.mean)} in the shuffled timelines (sd ${n3(x.sd)}; z ${n3(x.z)}; ${pWords(x.pUpper, x.reps ?? reps, 'shuffled timelines', 'upper')}${finite(x.pAdjusted) != null && (r.meta?.tested ?? 0) > 1 ? `; Holm-adjusted p = ${n3(x.pAdjusted)}` : ''}).${ceiling ? ' The shuffled baseline is already near 100%, so this test has little room to show spread along ties: inconclusive.' : ''}`);
         }
       }
       out.push('');

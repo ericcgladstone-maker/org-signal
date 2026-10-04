@@ -65,9 +65,9 @@ test('Interpretive notes: on by default, switchable, preference survives missing
 test('p at its floor is said in words (decision 5)', () => {
   assert.equal(pAtFloor(1 / 201, 200), true);
   assert.equal(pAtFloor(0.01, 200), false);
-  assert.equal(nullInWords(1 / 201, 200), 'none of the 200 random networks came this close (p ≤ 1/201)');
-  assert.equal(nullInWords(8 / 201, 200), '7 of the 200 random networks came this close (p = 0.040)');
-  assert.equal(nullInWords(1 / 101, 100, { what: 'shuffled timelines' }), 'none of the 100 shuffled timelines came this close (p ≤ 1/101)');
+  assert.equal(nullInWords(1 / 201, 200), 'none of the 200 random networks came this far from their average (p ≤ 1/201)');
+  assert.equal(nullInWords(8 / 201, 200), '7 of the 200 random networks came at least this far from their average (p = 0.040)');
+  assert.equal(nullInWords(1 / 101, 100, { what: 'shuffled timelines', sided: 'upper' }), 'none of the 100 shuffled timelines reached the observed value (p ≤ 1/101)');
   assert.equal(pShort(1 / 201, 200), 'p ≤ 1/201');
   assert.equal(pShort(0.2, 200), 'p = 0.200');
   assert.equal(chanceWords(55), 'far more than chance');

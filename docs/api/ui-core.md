@@ -110,7 +110,7 @@ All in `src/ui/components/common.js`. Use these rather than local look-alikes; t
 **`Verdict({ verdict, plain?, details?, level? })`**: verdict-first statistic (decision 5): the plain sentence (`.verdict__claim`), then the number in plain words (`.verdict__plain`), then the technical basis (`.basis`, always shown). `level` adds a flag before the verdict.
 Helpers for the sentence:
 - `pAtFloor(p, reps)`: p is the smallest value the test can give, 1/(reps+1).
-- `nullInWords(p, reps, { what = 'random networks' })`: "none of the 200 random networks came this close (p ≤ 1/201)" at the floor, else "7 of the 200 random networks came this close (p = 0.040)". `what` for other nulls ("shuffled timelines").
+- `nullInWords(p, reps, { what = 'random networks', sided = 'two' })`: "none of the 200 random networks came this far from their average (p ≤ 1/201)" at the floor, else "7 of the 200 random networks came at least this far from their average (p = 0.040)", as the two-sided null-model p is computed. `sided: 'upper'` for one-sided tests: "reached the observed value". `what` for other nulls ("shuffled timelines").
 - `pShort(p, reps)`: "p ≤ 1/201" or "p = 0.040", for tables and basis lines.
 - `chanceWords(z, { more, less })`: "about what chance gives" (|z| < 2), "more than chance", "far more than chance" (|z| ≥ 4), or with `less`.
 

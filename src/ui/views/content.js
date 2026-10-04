@@ -266,7 +266,7 @@ function Diffusion({ ds }) {
       <h3>"${d.term}"</h3>
       ${!d.adopters ? html`<p class="small text2">Nobody in the data used this word.</p>` : html`
         <p class="small"><${Flag} level=${v.level}>${v.label}${room ? ' (little room)' : ''}</${Flag}></p>
-        <p class="small text2">${fmtPct(d.ex?.observed)} of adopters had an earlier adopter among their contacts, against ${fmtPct(d.ex?.mean)} with shuffled timing; ${nullInWords(d.ex?.p, d.ex?.reps, { what: 'shuffled timelines' }).replace('came this close', 'came this high')}${nTested > 1 && Number.isFinite(d.ex.pAdj) ? `; corrected for ${nTested} words tested (Holm), p = ${d.ex.pAdj.toFixed(3)}` : ''}.</p>
+        <p class="small text2">${fmtPct(d.ex?.observed)} of adopters had an earlier adopter among their contacts, against ${fmtPct(d.ex?.mean)} with shuffled timing; ${nullInWords(d.ex?.p, d.ex?.reps, { what: 'shuffled timelines', sided: 'upper' })}${nTested > 1 && Number.isFinite(d.ex.pAdj) ? `; corrected for ${nTested} words tested (Holm), p = ${d.ex.pAdj.toFixed(3)}` : ''}.</p>
         ${room && html`<p class="small diff-card__room"><${Flag} level="caution" /> Little room to test: even with shuffled timing ${fmtPct(d.ex.mean)} of adopters have an earlier adopter among their contacts${Number.isFinite(room.zMax) ? `, so the strongest result possible, 100%, would be only z = ${fmtNum(room.zMax, { digits: 2 })}` : ''}. Inconclusive either way.</p>`}
         <${TimeChart} series=${[{ id: d.term, label: 'Adopters', color: t.cat[0], values: d.timeline.map(p => ({ x: p.t, y: p.cumulative })) }]} height=${120} area=${true} yDomain=${[0, yMax]} xDomain=${xDomain} compact=${true} yFormat=${fmtInt} />
         <dl class="kv">

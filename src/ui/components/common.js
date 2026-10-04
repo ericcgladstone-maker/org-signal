@@ -325,16 +325,21 @@ export function pAtFloor(p, reps) {
   return Number.isFinite(p) && Number.isFinite(reps) && reps > 0 && p <= (1 / (reps + 1)) * (1 + 1e-9);
 }
 
-// How many of the random networks came at least this close, in words:
-//   none of the 200 random networks came this close (p <= 1/201)
-//   7 of the 200 random networks came this close (p = 0.040)
+// How many of the random networks were at least as extreme, in words, worded
+// for the test as implemented:
+//   two-sided (nullModel: |random - random mean| >= |observed - random mean|)
+//     none of the 200 random networks came this far from their average (p <= 1/201)
+//     7 of the 200 random networks came at least this far from their average (p = 0.040)
+//   upper (one-sided, random >= observed)
+//     none of the 100 shuffled timelines reached the observed value (p <= 1/101)
 // `what` names the random networks ("shuffled timelines" for diffusion).
-export function nullInWords(p, reps, { what = 'random networks' } = {}) {
+export function nullInWords(p, reps, { what = 'random networks', sided = 'two' } = {}) {
   if (!Number.isFinite(p)) return '';
   if (!Number.isFinite(reps) || reps <= 0) return fmtPPlain(p);
-  if (pAtFloor(p, reps)) return `none of the ${reps} ${what} came this close (p ≤ 1/${reps + 1})`;
+  const upper = sided === 'upper';
+  if (pAtFloor(p, reps)) return `none of the ${reps} ${what} ${upper ? 'reached the observed value' : 'came this far from their average'} (p ≤ 1/${reps + 1})`;
   const k = Math.max(0, Math.round(p * (reps + 1) - 1));
-  return `${k} of the ${reps} ${what} came this close (p = ${p.toFixed(3)})`;
+  return `${k} of the ${reps} ${what} ${upper ? 'reached the observed value' : 'came at least this far from their average'} (p = ${p.toFixed(3)})`;
 }
 
 // p for a table cell: "p <= 1/201" at the floor, else "p = 0.040".

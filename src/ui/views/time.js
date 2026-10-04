@@ -26,6 +26,7 @@ import { timeExtent, label as nodeLabel } from '../lib/dsutil.js';
 import { fmtNum, fmtInt, fmtPct, fmtDate, isoDay, humanize } from '../lib/format.js';
 import { suggestTimeRange } from '../../analysis/time.js';
 import { defaultGrouping } from '../../analysis/groups.js';
+import { withLevelsAfter, shiftSeries } from '../lib/shifts.js';
 
 const DAY = 86400000;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -206,7 +207,15 @@ export function useTimeShifts(ds, { win = 'auto', range = null, enabled = true }
   const ready = enabled && !series.loading && !!s?.windows?.length;
   const sKey = ready ? `${s.meta?.window}|${s.windows.length}|${s.windows[0].start}|${s.meta?.end}` : null;
   const shifts = useEngine('shifts', () => engine.shifts(s, { labels: ds.nodes.labels }), [win, r.start, r.end, groupAttr, sKey], { enabled: ready });
-  return { series, shifts: ready ? shifts : { ...shifts, data: null }, groupAttr };
+  // Each shift also carries the level after it (withLevelsAfter): the first
+  // flagged window alone can be a transition window (C2).
+  const data = useMemo(() => {
+    const d = shifts.data;
+    if (!ready || !d) return null;
+    if (Array.isArray(d)) return withLevelsAfter(s, d);
+    return { ...d, shifts: withLevelsAfter(s, d.shifts) };
+  }, [ready, shifts.data, s]);
+  return { series, shifts: { ...shifts, data }, groupAttr };
 }
 
 // Attributes are one value per person (a snapshot), not a history. When the
@@ -244,14 +253,26 @@ export function persistentShift(x) {
   return Number.isFinite(x?.held) && x.span > 0 && x.held >= 2 && x.held / x.span >= 0.5;
 }
 
-// "stayed nearer the new level ... to the end" or "for 3 of 9 windows", from
-// the shift's persistence against its pre-shift baseline (J3).
+// Whether the series came back, from the shift's persistence against its
+// pre-shift baseline (J3): each window from the first flagged one to the end
+// is nearer either the earlier level or the flagged run's level. A sentence,
+// or '' when persistence is unknown.
 export function persistWords(x, unit) {
   if (!Number.isFinite(x?.held) || !x.span) return '';
   const w = (k) => `${k} ${unit ? `${unit}${k === 1 ? '' : 's'}` : `window${k === 1 ? '' : 's'}`}`;
-  if (x.heldToEnd) return x.span === 1 ? 'in the last window of the period' : `and stayed there to the end of the period (${w(x.span)}, compared with the level before the change)`;
-  if (x.held <= 1) return `for ${w(1)}, then returned toward the level before`;
-  return `and stayed nearer the new level in ${x.held} of the ${w(x.span)} that followed (compared with the level before the change)`;
+  if (x.heldToEnd) return x.span === 1 ? 'This is the last window of the period.' : `It did not return toward the earlier level: all ${w(x.span)} from then to the end of the period sit nearer the changed level than the earlier one.`;
+  if (x.held <= 1) return `It returned toward the earlier level after ${w(1)}.`;
+  return `${x.held} of the ${w(x.span)} from then to the end of the period sit nearer the changed level than the earlier one.`;
+}
+
+// "to 0.113 in the week of 17 Mar 2025, and to a median of 0.0483 over the
+// 15 weeks that followed": the first flagged window and the level after it
+// (lib/shifts.js), never the first window alone as the new level (C2).
+export function changeWords(x, unit, fmt = fmtNum) {
+  const first = `${fmt(x.value)} ${inWindow(x.start, unit)}`;
+  if (!Number.isFinite(x.after) || !x.afterWindows) return `to ${first}`;
+  const u = (k) => `${unit || 'window'}${k === 1 ? '' : 's'}`;
+  return `to ${first}, and to a median of ${fmt(x.after)} over the ${x.afterWindows === 1 ? u(1) : `${x.afterWindows} ${u(x.afterWindows)}`} that followed${x.afterUntilNext ? ' (up to the next shift in this series)' : ''}`;
 }
 
 // ---- view -------------------------------------------------------------------------------
@@ -393,7 +414,7 @@ function explainShift(ds, s, x, unit) {
   const what = x.target === 'node' ? personMeasure(x.metric).replace(/^./, c => c.toLowerCase()) : x.label === x.metric ? humanize(x.metric).toLowerCase() : x.label;
   const verb = x.direction === 'up' ? 'rose' : 'fell';
   const kept = persistWords(x, unit);
-  const lines = [`${who}: ${what} ${verb} from a typical ${fmtNum(x.baseline)} to ${fmtNum(x.value)} ${inWindow(x.start, unit)}${kept ? ` ${kept}` : ''}.`];
+  const lines = [`${who}: ${what} ${verb} from a typical ${fmtNum(x.baseline)} ${changeWords(x, unit)}.${kept ? ` ${kept}` : ''}`];
   if (x.length > 1 || !x.heldToEnd) lines.push(`Flagged for ${x.length} ${unit || 'window'}${x.length === 1 ? '' : 's'}: each window is compared with the ${unit || 'window'}s just before it, so once a new level lasts a few windows it stops being flagged. That is not the change ending.`);
   if (x.target === 'node' && x.direction === 'down') {
     const act = s.activity?.node || [];
@@ -412,15 +433,7 @@ function Shifts({ ds, s, shifts, list, unit, xName, edges, xDomain, groupAttr })
   const meta = shifts.data?.meta;
   const shown = list.slice(0, 30);
   const keyOf = (x, i) => `${x.target}|${x.id}|${x.metric}|${x.window}|${i}`;
-  const seriesOf = (x) => {
-    if (x.target === 'node') return s.node?.[x.metric]?.map(a => a[x.id]);
-    if (x.target === 'group') { const g = s.activity?.group; const gi = g?.values.indexOf(x.id); return gi >= 0 ? g.counts[gi] : null; }
-    if (x.metric === 'activity') return s.activity?.total;
-    if (x.metric === 'tiesFormed') return s.ties?.formed;
-    if (x.metric === 'tiesDissolved') return s.ties?.dissolved;
-    if (x.metric === 'tieRetention') return s.ties?.jaccard;
-    return s.network?.[x.metric];
-  };
+  const seriesOf = (x) => shiftSeries(s, x);
   const unitName = meta?.window || unit;
   const top = shown[0];
   const verdict = !shown.length ? null : `${list.length === 1 ? 'One measure departs from its' : `${fmtInt(list.length)} measures depart from their`} recent level. The largest: ${top.target === 'node' ? nodeLabel(ds, top.id) : top.target === 'group' ? top.label : 'the whole network'}, ${top.direction === 'up' ? 'a rise' : 'a drop'} ${inWindow(top.start, unitName)}${top.heldToEnd ? ' that lasts to the end of the period' : ''}.`;
@@ -433,20 +446,20 @@ function Shifts({ ds, s, shifts, list, unit, xName, edges, xDomain, groupAttr })
       <p class="tview__verdict">${verdict} Select a row for what changed.</p>
       ${meta?.window && html`<p class="small text2">Computed with ${meta.window === 'day' ? 'daily' : meta.window === 'week' ? 'weekly' : 'monthly'} windows${meta.window === 'day' ? (meta.weekendsSkipped ? '; weekends are left out, so each weekday is compared with weekdays' : '; daily counts swing with the weekly rhythm, so read day-level flags with care, or use weeks') : ''}.</p>`}
       <div class="table-wrap"><table class="tbl tview__shifts">
-        <thead><tr><th scope="col">What</th><th scope="col">Measure</th><th scope="col">From</th><th scope="col">Change</th><th scope="col">Lasted</th><th scope="col" class="num">Typical before</th><th scope="col" class="num">New value</th><th scope="col" class="num">How unusual (<${Term} k="shiftZ">z</${Term}>)</th></tr></thead>
+        <thead><tr><th scope="col">What</th><th scope="col">Measure</th><th scope="col">From</th><th scope="col">Change</th><th scope="col">Lasted</th><th scope="col" class="num">Typical before</th><th scope="col" class="num">First ${unitName || 'window'}</th><th scope="col" class="num">New value <span class="muted">(median after)</span></th><th scope="col" class="num">How unusual (<${Term} k="shiftZ">z</${Term}>)</th></tr></thead>
         <tbody>${shown.map((x, i) => { const k = keyOf(x, i); const isOpen = open === k; const v = isOpen ? seriesOf(x) : null; return html`<tr class=${isOpen ? 'is-open' : ''}>
           <td class="name"><button type="button" class="tview__rowbtn" aria-expanded=${String(isOpen)} onClick=${() => setOpen(isOpen ? null : k)}>${x.target === 'node' ? nodeLabel(ds, x.id) : x.target === 'group' ? x.label : 'Whole network'}</button></td>
           <td>${x.target === 'network' && x.label !== x.metric ? humanize(x.label) : x.target === 'node' ? personMeasure(x.metric) : humanize(x.metric)}${(x.metric === 'crossGroupShare' || x.target === 'group') && groupAttr ? html` <${Flag} level="caution" iconOnly=${true} reason=${snapshotNote(ds, groupAttr)} />` : ''}</td><td>${windowName(x.start, unitName)}</td>
           <td>${x.direction === 'up' ? 'Rise' : x.direction === 'down' ? 'Drop' : ''}</td>
           <td>${Number.isFinite(x.held) ? (x.heldToEnd ? 'to the end' : `${x.held} of ${x.span} ${unitName || 'window'}s`) : `${x.length} ${unitName || 'window'}${x.length === 1 ? '' : 's'}`}</td>
-          <td class="num">${fmtNum(x.baseline)}</td><td class="num">${fmtNum(x.value)}</td>
+          <td class="num">${fmtNum(x.baseline)}</td><td class="num">${fmtNum(x.value)}</td><td class="num">${fmtNum(x.after)}</td>
           <td class="num">${fmtNum(x.z ?? x.statistic, { digits: 2 })}</td>
-        </tr>${isOpen && html`<tr class="tview__detail"><td colspan="8">
+        </tr>${isOpen && html`<tr class="tview__detail"><td colspan="9">
           ${explainShift(ds, s, x, unitName).map(l => html`<p class="small">${l}</p>`)}
           ${v && html`<div class="tview__detail-chart"><${TimeChart} series=${[{ id: 'v', label: humanize(x.metric), color: t.cat[0], values: s.windows.map((w, j) => ({ x: w.start, y: v[j] })) }]} height=${130} highlight=${{ x0: s.windows[x.window].start, x1: s.windows[Math.min(s.windows.length - 1, x.lastHeld ?? x.end ?? x.window)].end }} edges=${edges} xName=${xName} xDomain=${xDomain} compact=${true} /></div>`}
         </td></tr>`}`; })}</tbody></table></div>
       ${groupRow && groupAttr && html`<p class="small text2"><${Flag} level="caution" /> ${snapshotNote(ds, groupAttr)}</p>`}
-      <${HowToRead} means="A shift is a window whose value departs from the windows immediately before it. The Lasted column compares each later window with the level before the change, showing whether the series stays near the new level or returns to the old one."
+      <${HowToRead} means="A shift is a window whose value departs from the windows immediately before it. The first flagged window can be a transition (a change that begins midweek is only partly in it), so the new value is the median of the windows after it, up to the next shift in the same series or the end of the period. The Lasted column compares each later window with the level before the change, showing whether the series stays near the new level or returns to the old one."
         scale="The z statistic is scaled by the typical variation between windows: 3.5 or more is flagged for the whole network, 5 or more for an individual person."
         mistake="The flagged run does not measure how long a change lasted. A step that persists stops being flagged after a few windows, because the preceding windows then share the new level; the Lasted column reports duration." />`
       : html`<p class="tview__verdict">No window departs from its recent level by more than the threshold.</p>`)}

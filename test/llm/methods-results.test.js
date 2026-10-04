@@ -49,7 +49,7 @@ test('every null-model run reports observed, null mean, sd, interval, z and p (N
   const t = nm.transitivity;
   assert.ok(md.includes(`Transitivity: observed ${n3(t.observed)}; the randomized networks averaged ${n3(t.mean)} (sd ${n3(t.sd)}; 95% between ${n3(t.lo)} and ${n3(t.hi)}); z ${n3(t.z)};`), md);
   // At the smallest p 20 replicates allow, say so in words.
-  assert.match(md, /Modularity: observed [\d.]+; .*none of the 20 randomized networks came this close \(p ≤ 1\/21\), two-sided/);
+  assert.match(md, /Modularity: observed [\d.]+; .*none of the 20 randomized networks came this far from their average \(p ≤ 1\/21\), two-sided/);
   assert.match(md, /For modularity, Louvain community detection was re-run on each of the 20 rewired networks \(seeded per network\), and the best modularity it found there was compared with what the same search finds on the observed ties; tie weights were ignored on both sides\./);
   assert.match(md, /Observed attribute assortativity and E-I index for groups defined by `Department` were compared with 20 degree-preserving randomizations/);
   assert.match(md, /its smallest possible value is 1 \/ \(R \+ 1\)/);
@@ -80,7 +80,7 @@ test('shift detection, before/after and diffusion are described with parameters 
   assert.match(md, /every event in the two periods was reassigned to before or after at random, 2,000 times|every event in the two periods was reassigned to before or after at random, 200 times/);
   assert.doesNotMatch(md, /sign-flip|paired/i);
   const d = ba.node.degree;
-  assert.ok(md.includes(`- Total ties (in + out): mean ${n3(d.meanBefore)} before and ${n3(d.meanAfter)} after (${d.n} people; d_z ${n3(d.dz)}; none of the 200 random relabellings came this close (p ≤ 1/201)).`), md);
+  assert.ok(md.includes(`- Total ties (in + out): mean ${n3(d.meanBefore)} before and ${n3(d.meanAfter)} after (${d.n} people; d_z ${n3(d.dz)}; none of the 200 random relabellings gave a difference this large in either direction (p ≤ 1/201)).`), md);
   assert.match(md, /Diffusion along ties: .* compared with 50 timelines in which adoption times were shuffled among the same adopters/);
   const t0 = df.terms[0];
   assert.ok(md.includes(`- "${t0.term}": ${t0.adopters} adopters; ${t0.exposed} of ${t0.eligible} (100%) had an earlier-adopting contact, against ${Math.round(t0.null.mean * 100)}% in the shuffled timelines`), md);

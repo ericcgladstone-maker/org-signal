@@ -868,7 +868,7 @@ function Legend({ coloring, pinCat, setPinCat, setHoverCat, sizeBy, directed, sm
         ? `Everyone is named on the map; ${coloring.community ? 'community numbers' : 'group names'} sit at the edge of each group.${gc.many ? '' : ' Hover or select a group to pick it out.'}`
         : coloring.community
         ? `Numbers on the map mark each community of three or more people.${gc.many ? ' Communities after the eighth share gray; choose one to light it up.' : ' Hover or select a community to pick it out.'}`
-        : `Groups of 1% of the people or more are named on the map where most of their members sit.${gc.many ? '' : ' Hover or select a group to pick it out.'}`}${gc.missing > 0 ? ` Not recorded: people with no ${coloring.title.toLowerCase()} in the data, not a group.` : ''} Colors stay fixed while you filter.</p>`}
+        : `Groups of 1% of the people or more are named on the map where most of their members sit.${gc.many ? '' : ' Hover or select a group to pick it out.'}`}${gc.missing > 0 && !coloring.community ? ` Not recorded: people with no ${coloring.title.toLowerCase()} in the data, not a group.` : ''}${coloring.community && gc.alignedTo ? ` Each community takes the color of the ${gc.alignedLabel} most of its members share, the color that ${gc.alignedLabel} has when the map is colored by ${gc.alignedLabel}; the others take colors no ${gc.alignedLabel} uses.` : ''} Colors stay fixed while you filter and are the same in every view.</p>`}
     ${coloring.kind === 'seq' && html`<${RampLegend} scale=${coloring.scale} label=${`Color: ${coloring.title}`} />`}
     ${sizeBy !== 'none' && html`<h2 class="label" style="margin-top:1rem">Size: ${metricLabel(sizeBy, directed)}</h2><p class="basis" style="margin-top:0">Area grows with the value (square-root scale).</p>`}
   </div>`;
@@ -1070,7 +1070,7 @@ function Fragility({ ds, net, data, metrics, coloring, applicability }) {
     </div>
     <${Verdict} verdict=${`The top ${share.k} people hold ${pct(share.share)} of all betweenness, ${words.text}.`}
       plain=${`They are ${names(share.people)}.`}
-      details=${`"Run through these people" is said only when they hold at least ${pct(DEPENDS_SHARE)} of all betweenness and at least three times an even share; 1.8 times or more reads as concentrated.`} />
+      details=${`"Account for most of the brokerage" is said only when they hold at least ${pct(DEPENDS_SHARE)} of all betweenness and at least three times an even share; 1.8 times or more reads as concentrated. The share is of summed betweenness, which counts a shortest path through several of these people once for each of them, so it is not the share of paths that pass through them; the what-if below shows what the network loses without them.`} />
     ${truncated ? html`<p class="basis">The map is simplified for this network, so the what-if is not available.</p>`
       : html`<button type="button" class="tlink" onClick=${run}>What if these ${share.k} people left?</button>`}
     ${res && res.k === k && html`<table class="net-frag__table">

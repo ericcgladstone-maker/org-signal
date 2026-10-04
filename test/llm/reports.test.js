@@ -100,7 +100,7 @@ test('methods appendix: minimal settings, ego view limitations, no inference sec
   assert.match(md, /treated as undirected; tie weights were binary/);
   assert.match(md, /Ego-view sources record only the export owner's own interactions/);
   for (const h of ['Community detection', 'Statistical comparison', 'Change over time', 'Content analysis']) assert.ok(!md.includes(`## ${h}`), h);
-  assert.match(md, /Freeman, L\. C\. \(1978\)/);
+  assert.match(md, /Freeman, L\. C\. \(1979\)/);
 });
 
 test('methods appendix: LLM coding with and without double-coding', () => {
