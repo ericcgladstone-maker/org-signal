@@ -1,6 +1,7 @@
 // The import report as people read it: totals, then one card per source (or
-// per group of like sources, such as 56 WhatsApp chats), each with what the
-// data can and cannot show and the problems found while reading.
+// per group of like sources, such as 56 WhatsApp chats), each leading with
+// what the data can and cannot show, then its counts and the problems found
+// while reading. The review before loading puts the cards first.
 //
 // Wording follows the evidence: message exports count messages; surveys and
 // network files, whose events are self-reported ties, count responses and
@@ -68,14 +69,20 @@ export function ReportView({ report, pending = false, excludeBots = true }) {
     ...(!reported ? [['Bots', fmtInt(t.botsInEvents ?? t.bots), t.botNames?.length ? t.botNames.slice(0, 4).join(', ') + (t.botNames.length > 4 ? ', ...' : '') : null]] : []),
     ...(t.deactivatedInEvents ? [['Deactivated accounts', fmtInt(t.deactivatedInEvents), t.deactivatedNames.slice(0, 4).join(', ') + (t.deactivatedNames.length > 4 ? ', ...' : '')]] : []),
   ];
-  return html`<div class="dv-report">
+  const totals = html`
     <dl class="dv-totals">
       ${rows.map(([k, v, sub]) => html`<div><dt class="label">${k}</dt><dd class="tnum dv-totals__v">${v}</dd>${sub && html`<dd class="small text2">${sub}</dd>`}</div>`)}
     </dl>
     ${(report.notes || []).length > 0 && html`<ul class="dv-notes">${report.notes.map(n => html`<li><${Flag} level=${/deactivated|Nothing was read/.test(n) ? 'caution' : 'info'} /> <span>${n}</span></li>`)}</ul>`}
-    ${report.unclaimed?.length > 0 && html`<p class="small text2"><${Flag} level="caution">Not read</${Flag}> ${plural(report.unclaimed.length, 'file')} matched no importer: ${report.unclaimed.slice(0, 6).join(', ')}${report.unclaimed.length > 6 ? ', ...' : ''}</p>`}
-    ${groupSources(report.sources).map(list => (list.length > 1 ? html`<${SourceGroup} key=${list[0].id} list=${list} group=${(report.groups || []).find(g => g.key === `${list[0].label}|${list[0].view}`)} />` : html`<${SourceReport} key=${list[0].id} s=${list[0]} />`))}
-  </div>`;
+    ${report.unclaimed?.length > 0 && html`<p class="small text2"><${Flag} level="caution">Not read</${Flag}> ${plural(report.unclaimed.length, 'file')} matched no importer: ${report.unclaimed.slice(0, 6).join(', ')}${report.unclaimed.length > 6 ? ', ...' : ''}</p>`}`;
+  const cards = groupSources(report.sources).map(list => (list.length > 1 ? html`<${SourceGroup} key=${list[0].id} list=${list} group=${(report.groups || []).find(g => g.key === `${list[0].label}|${list[0].view}`)} />` : html`<${SourceReport} key=${list[0].id} s=${list[0]} />`));
+  // Before loading, what each source can and cannot show is what the reader
+  // has to judge, so the source cards (which lead with it) come before the
+  // totals: under the review's sticky action bar the totals had pushed it
+  // below the first screen, even on a laptop.
+  return pending
+    ? html`<div class="dv-report dv-report--pending">${cards}<div class="dv-report__totals"><h3 class="dv-h3">${report.sources.length > 1 ? 'All sources together' : 'In total'}</h3>${totals}</div></div>`
+    : html`<div class="dv-report">${totals}${cards}</div>`;
 }
 
 function Counts({ s, counts }) {
@@ -155,9 +162,9 @@ function SourceReport({ s }) {
       <span class="meta">${s.timeRange ? fmtRange(s.timeRange.start, s.timeRange.end) : 'no timestamps'}${s.tz?.status === 'assumed' ? ' · time zone assumed' : ''}</span>
     </div>
     <p class="small text2 dv-files-line">${files.slice(0, 3).join(', ')}${files.length > 3 ? ` and ${fmtInt(files.length - 3)} more files` : ''}${ownerLine(s)}</p>
+    <${CanCannot} s=${s} />
     <${Counts} s=${s} />
     <${Deactivated} list=${[s]} />
-    <${CanCannot} s=${s} />
     <${Warnings} list=${[s]} />
   </article>`;
 }
@@ -179,9 +186,9 @@ function SourceGroup({ list, group }) {
       <span class="meta">${starts.length ? fmtRange(Math.min(...starts), Math.max(...ends)) : 'no timestamps'}${list.some(s => s.tz?.status === 'assumed') ? ' · time zone assumed' : ''}</span>
     </div>
     ${owners.length > 0 && html`<p class="small text2 dv-files-line">Owner: <span class="dv-strong">${owners.join(', ')}</span>${owners.length === 1 && list.some(s => !s.ego) ? ' (group chats name no owner)' : ''}</p>`}
+    <${CanCannot} s=${group?.canShow ? group : s0} />
     <${Counts} s=${s0} counts=${c} />
     <${Deactivated} list=${list} />
-    <${CanCannot} s=${group?.canShow ? group : s0} />
     <${Warnings} list=${list} />
     <details class="disclose dv-chats"><summary>List the ${fmtInt(list.length)} ${noun}</summary>
       <div class="table-wrap"><table class="tbl">

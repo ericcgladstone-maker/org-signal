@@ -545,11 +545,14 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
       sigma: renderer,
       graph: g,
       placed,
+      // Frame a person picked by name with their neighbors, so their ties
+      // stay on the canvas (a fixed zoom ran most of a broker's ties off it).
       focusNode(dsIdx) {
         const v = data.nodeIds.indexOf(dsIdx);
         if (v < 0) return;
-        const p = renderer.getNodeDisplayData(String(v));
-        if (p) renderer.getCamera().animate({ x: p.x, y: p.y, ratio: 0.35 }, { duration: dur(400) });
+        const cam = renderer.getCamera();
+        const view = focusFrame(renderer, g, String(v));
+        if (view) cam.animate({ ...view, angle: cam.getState().angle }, { duration: dur(400) });
       },
     };
     // The canvas height follows the viewport and the status bar; keep sigma's
@@ -604,6 +607,31 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
   </div>`;
 }
 
+// The camera that frames a person and their neighbors: centered on the
+// neighborhood's box, zoomed until the box and a margin fill the canvas and
+// no further. The box is measured at ratio 1 around that center (sigma's
+// viewport scales as 1 / ratio); a person with no neighbors, or neighbors
+// sitting on top of them, stops at FOCUS_MIN_RATIO rather than zooming
+// into empty space.
+const FOCUS_MIN_RATIO = 0.25;
+const FOCUS_MARGIN = 48; // px on each side, room for the neighbors' discs and names
+function focusFrame(renderer, g, node) {
+  const pts = [];
+  const add = k => { const d = renderer.getNodeDisplayData(k); if (d && !d.hidden) pts.push(d); };
+  add(node);
+  if (!pts.length) return null;
+  g.forEachNeighbor(node, add);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const d of pts) { if (d.x < x0) x0 = d.x; if (d.x > x1) x1 = d.x; if (d.y < y0) y0 = d.y; if (d.y > y1) y1 = d.y; }
+  const x = (x0 + x1) / 2, y = (y0 + y1) / 2;
+  const cameraState = { x, y, ratio: 1, angle: 0 };
+  const a = renderer.framedGraphToViewport({ x: x0, y: y0 }, { cameraState });
+  const b = renderer.framedGraphToViewport({ x: x1, y: y1 }, { cameraState });
+  const { width: W, height: H } = renderer.getDimensions();
+  const fit = Math.max(Math.abs(b.x - a.x) / Math.max(1, W - 2 * FOCUS_MARGIN), Math.abs(b.y - a.y) / Math.max(1, H - 2 * FOCUS_MARGIN));
+  return { x, y, ratio: Math.max(FOCUS_MIN_RATIO, fit) };
+}
+
 // Where each group sits on the map (lib/labels.js groupAnchors), for the
 // community numbers and the group names. Read lazily so a new coloring needs
 // no graph rebuild.
@@ -629,10 +657,10 @@ function groupCentres(g, state) {
 // the canvas. Small networks label everyone who fits.
 //
 // Group names and community numbers are the non-color cue for groups. On a
-// large map they go where most of each group sits, before the people. On a
-// small or hand-drawn map (L5) people's names come first and the group cue
-// goes on the edge of the group (lib/labels.js hullEdgeSpots), so it never
-// covers a person.
+// large map they go where most of each group sits (on each part of a group
+// split across the map), before the people. On a small or hand-drawn map
+// (L5) people's names come first and the group cue goes on the edge of the
+// group (lib/labels.js hullEdgeSpots), so it never covers a person.
 function drawLabels(renderer, g, data, s, focus, hovered, centres, placed, small, nameAll = false) {
   const ctx = renderer.canvasContexts?.f2labels;
   if (!ctx) return;
@@ -706,7 +734,7 @@ function drawLabels(renderer, g, data, s, focus, hovered, centres, placed, small
     if (!cs || focus.set || s.coloring?.mode) return;
     if (s.coloring.community) {
       for (const c of cs) {
-        if ((c.n < 3 && !small) || !shownKey(c.key)) continue;
+        if ((c.n < 3 && !small) || !shownKey(c.key) || (small && c.part)) continue;
         const text = String(Number(c.key) + 1);
         const color = gc.many && s.focusCat != null ? t.accent : gc.color(c.key);
         const rad = 9;
@@ -723,13 +751,15 @@ function drawLabels(renderer, g, data, s, focus, hovered, centres, placed, small
     }
     // Attribute groups above the size threshold are named (a dot in the
     // group's color, the name in ink with a halo), largest first, skipping
-    // any name that would collide or leave the map.
+    // any name that would collide or leave the map. A group in two or more
+    // separate clusters is named on each (groupAnchors), except on a small
+    // map, where the name goes once on the edge of the whole group.
     const min = small ? 1 : groupLabelMin(g.order);
     const byKey = new Map(gc.entries.map(e => [e.value, e]));
     ctx.font = `600 13px ${LABEL_FONT}`;
     for (const c of cs) {
       const e = byKey.get(c.key);
-      if (!e || !shownKey(c.key) || (c.n < min && s.focusCat == null)) continue;
+      if (!e || !shownKey(c.key) || (c.n < min && s.focusCat == null) || (small && c.part)) continue;
       const w = ctx.measureText(e.label).width + 12, h = 17;
       let box;
       if (small) box = hullEdgeSpots(members.get(c.key) || [], w, h).find(fits);

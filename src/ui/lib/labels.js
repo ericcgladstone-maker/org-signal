@@ -40,8 +40,19 @@ export function overlaps(a, list, pad = 2) {
 // group spread over the map would be named in the middle of someone else's
 // cluster) but the mean of its members in the densest 3x3 block of a grid
 // laid over the layout, where most of the group actually sits. keyOf(i)
-// gives node i's group ('' or null for none). Returns [{ key, x, y, n }],
-// n being the whole group's size, largest first.
+// gives node i's group ('' or null for none).
+//
+// A group can also sit in two or more separate places (a division whose
+// departments each form their own cluster), and one name would leave the
+// rest unnamed. So each group is split into clusters (groupClusters), and
+// every substantial cluster gets its own anchor at its own densest block.
+//
+// Returns [{ key, x, y, n, m, part }]: n is the whole group's size, m the
+// cluster's, part 0 the group's main anchor (its largest substantial
+// cluster, or the whole group when it has only one) and 1.. the further
+// clusters. Main anchors come first, largest group first, then the further
+// ones, largest cluster first, so a second name never takes the place of
+// another group's first.
 export function groupAnchors(x, y, keyOf, { grid = 24 } = {}) {
   const n = x.length;
   if (!n) return [];
@@ -54,34 +65,82 @@ export function groupAnchors(x, y, keyOf, { grid = 24 } = {}) {
     const k = keyOf(i);
     if (k == null || k === '') continue;
     let g = groups.get(k);
-    if (!g) groups.set(k, g = { n: 0, cells: new Map() });
-    g.n++;
-    const c = cellOf(i);
-    g.cells.set(c, (g.cells.get(c) || 0) + 1);
+    if (!g) groups.set(k, g = []);
+    g.push(i);
   }
-  const best = new Map();
-  for (const [k, g] of groups) {
+  // Mean position of the members in the densest 3x3 block of cells.
+  const anchor = (members) => {
+    const cells = new Map();
+    for (const i of members) { const c = cellOf(i); cells.set(c, (cells.get(c) || 0) + 1); }
     let top = -1, at = 0;
-    for (const c of g.cells.keys()) {
+    for (const c of cells.keys()) {
       const cx = Math.floor(c / grid), cy = c % grid;
       let s = 0;
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
         const X = cx + dx, Y = cy + dy;
-        if (X >= 0 && Y >= 0 && X < grid && Y < grid) s += g.cells.get(X * grid + Y) || 0;
+        if (X >= 0 && Y >= 0 && X < grid && Y < grid) s += cells.get(X * grid + Y) || 0;
       }
       if (s > top || (s === top && c < at)) { top = s; at = c; }
     }
-    best.set(k, { cx: Math.floor(at / grid), cy: at % grid, sx: 0, sy: 0, m: 0 });
+    const bx = Math.floor(at / grid), by = at % grid;
+    let ax = 0, ay = 0, m = 0;
+    for (const i of members) {
+      const c = cellOf(i);
+      if (Math.abs(Math.floor(c / grid) - bx) <= 1 && Math.abs((c % grid) - by) <= 1) { ax += x[i]; ay += y[i]; m++; }
+    }
+    return { x: ax / m, y: ay / m };
+  };
+  // Two cells of the grid: people closer than this are in one cluster.
+  const eps = 2 * Math.max(sx, sy);
+  const main = [], more = [];
+  for (const [key, members] of groups) {
+    const parts = groupClusters(x, y, members, eps).filter(c => c.length >= clusterMin(members.length));
+    if (parts.length < 2) { main.push({ key, ...anchor(members), n: members.length, m: members.length, part: 0 }); continue; }
+    parts.forEach((c, j) => (j ? more : main).push({ key, ...anchor(c), n: members.length, m: c.length, part: j }));
   }
-  for (let i = 0; i < n; i++) {
-    const k = keyOf(i);
-    const b = k == null || k === '' ? null : best.get(k);
-    if (!b) continue;
-    const c = cellOf(i);
-    if (Math.abs(Math.floor(c / grid) - b.cx) <= 1 && Math.abs((c % grid) - b.cy) <= 1) { b.sx += x[i]; b.sy += y[i]; b.m++; }
+  const byKey = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  main.sort((a, b) => b.n - a.n || byKey(a, b));
+  more.sort((a, b) => b.m - a.m || byKey(a, b) || a.part - b.part);
+  return main.concat(more);
+}
+
+// The smallest cluster of a group that gets its own name: a quarter of the
+// group, at least 3 people, so stragglers and a small group's loose ends
+// never add a name.
+export function clusterMin(groupSize) {
+  return Math.max(3, Math.ceil(groupSize * 0.25));
+}
+
+// Split members (node indices) into clusters by distance in layout space:
+// single linkage, two people closer than eps are in the same cluster.
+// Points are bucketed in eps-sized cells so only neighboring cells are
+// compared. Returns arrays of node indices, largest first (ties by the node
+// index of their first member).
+export function groupClusters(x, y, members, eps) {
+  const m = members.length;
+  if (m < 2 || !(eps > 0)) return m ? [members.slice()] : [];
+  const parent = Int32Array.from({ length: m }, (_, i) => i);
+  const find = a => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  const cells = new Map();
+  const cx = Math.floor, e2 = eps * eps;
+  for (let a = 0; a < m; a++) {
+    const i = members[a];
+    const X = cx(x[i] / eps), Y = cx(y[i] / eps);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const list = cells.get(`${X + dx},${Y + dy}`);
+      if (!list) continue;
+      for (const b of list) {
+        const j = members[b], ddx = x[i] - x[j], ddy = y[i] - y[j];
+        if (ddx * ddx + ddy * ddy <= e2) { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+      }
+    }
+    const k = `${X},${Y}`;
+    if (!cells.has(k)) cells.set(k, []);
+    cells.get(k).push(a);
   }
-  return [...groups.entries()].map(([key, g]) => { const b = best.get(key); return { key, x: b.sx / b.m, y: b.sy / b.m, n: g.n }; })
-    .sort((a, b) => b.n - a.n || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  const out = new Map();
+  for (let a = 0; a < m; a++) { const r = find(a); if (!out.has(r)) out.set(r, []); out.get(r).push(members[a]); }
+  return [...out.values()].sort((p, q) => q.length - p.length || p[0] - q[0]);
 }
 
 // Small or hand-drawn maps (L5): every person keeps their name, so a group's

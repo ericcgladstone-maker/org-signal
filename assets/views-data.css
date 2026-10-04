@@ -109,11 +109,16 @@
 .dv-totals__v{font-size:1.125rem;color:var(--text)}
 .dv-notes{list-style:none;margin:0 0 .5rem;padding:0;display:grid;gap:.35rem;font-size:var(--fs-small);color:var(--text-2);max-width:72ch}
 .dv-notes li{display:flex;gap:.5rem;align-items:baseline}
+.dv-report__totals{padding-top:1.1rem;border-top:1px solid var(--rule)}
 .dv-source .src__title{overflow-wrap:anywhere}
 .dv-sub{font-weight:400}
 .dv-files-line{margin-top:.25rem;overflow-wrap:anywhere}
 .dv-kv{max-width:36rem;margin-top:.6rem}
 .dv-kv dd{white-space:normal}
+/* A long value (1,020 (26 public, ...)) wraps instead of taking the name's
+   column on a phone, where the two ran over each other. */
+.dv-kv:not(.kv--wide){grid-template-columns:minmax(7.5rem,1fr) minmax(0,auto)}
+.dv-source .src__cols + .dv-kv{margin-top:1rem}
 .dv-gone{margin-top:.6rem;max-width:72ch}
 .dv-warn{margin-top:.9rem}
 .dv-chats .tbl{margin-top:.25rem}

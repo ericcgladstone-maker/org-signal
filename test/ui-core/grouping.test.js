@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { groupColoring, otherGroupsLabel, groupLabelMin, OTHER, MISSING, NOT_RECORDED, HUES } from '../../src/ui/lib/grouping.js';
 import { categoricalScale, tokens } from '../../src/ui/lib/palette.js';
 import { defaultGroupAttr, preferredAttributes } from '../../src/ui/lib/dsutil.js';
-import { groupAnchors } from '../../src/ui/lib/labels.js';
+import { groupAnchors, groupClusters, clusterMin } from '../../src/ui/lib/labels.js';
 
 const groups = k => Array.from({ length: k }, (_, i) => ({ value: `g${i}`, count: 100 - i }));
 
@@ -115,4 +115,62 @@ test('group anchors sit where most of the group is, not at its mean', () => {
   assert.equal(a.n, 24);
   assert.ok(a.x < 1 && a.y < 1, `anchor at ${a.x},${a.y}`);
   assert.ok(Math.abs(anchors[1].x - 10) < 0.5);
+});
+
+// Points for the cluster tests: `count` people of group `key` in a tight
+// 0.1-spaced block at (cx, cy).
+function blob(pts, key, count, cx, cy) {
+  for (let i = 0; i < count; i++) pts.push({ x: cx + (i % 4) * 0.1, y: cy + Math.floor(i / 4) * 0.1, key });
+}
+const anchorsOf = pts => groupAnchors(Float64Array.from(pts, p => p.x), Float64Array.from(pts, p => p.y), i => pts[i].key);
+
+test('group clusters: single linkage by distance in layout space', () => {
+  const x = Float64Array.from([0, 0.5, 1.0, 5, 5.4, 20]), y = new Float64Array(6);
+  // A chain of close steps is one cluster; a gap wider than eps splits.
+  assert.deepEqual(groupClusters(x, y, [0, 1, 2, 3, 4, 5], 0.6), [[0, 1, 2], [3, 4], [5]]);
+  assert.deepEqual(groupClusters(x, y, [0, 1, 2, 3, 4, 5], 5), [[0, 1, 2, 3, 4], [5]]);
+  // Only the listed members count; equal sizes go in node order.
+  assert.deepEqual(groupClusters(x, y, [3, 0], 0.6), [[0], [3]]);
+  assert.deepEqual(groupClusters(x, y, [], 1), []);
+  assert.equal(clusterMin(4), 3);
+  assert.equal(clusterMin(44), 11);
+  assert.equal(clusterMin(45), 12);
+});
+
+test('a group split into two substantial clusters is named on each', () => {
+  // Operations-like: 30 people bottom right, 14 top middle, far apart;
+  // other groups fill the map between them.
+  const pts = [];
+  blob(pts, 'ops', 30, 10, 10);
+  blob(pts, 'ops', 14, 5, 0);
+  blob(pts, 'eng', 15, 10, 0);
+  blob(pts, 'sales', 16, 0, 10);
+  const a = anchorsOf(pts);
+  const ops = a.filter(c => c.key === 'ops');
+  assert.equal(ops.length, 2);
+  assert.deepEqual(ops.map(c => [c.part, c.n, c.m]), [[0, 44, 30], [1, 44, 14]]);
+  // The main name goes on the larger cluster, the second on the smaller.
+  assert.ok(Math.abs(ops[0].x - 10.15) < 0.3 && Math.abs(ops[0].y - 10.35) < 0.5, `main at ${ops[0].x},${ops[0].y}`);
+  assert.ok(Math.abs(ops[1].x - 5.15) < 0.3 && ops[1].y < 1, `second at ${ops[1].x},${ops[1].y}`);
+  // Every group's main anchor comes before any second one, so a second name
+  // never takes the place of another group's first.
+  assert.deepEqual(a.map(c => `${c.key}:${c.part}`), ['ops:0', 'sales:0', 'eng:0', 'ops:1']);
+});
+
+test('stragglers and small loose ends do not add a name', () => {
+  const pts = [];
+  // 20 together and 4 elsewhere: 4 is under a quarter of 24 (6).
+  blob(pts, 'a', 20, 0, 0);
+  blob(pts, 'a', 4, 10, 10);
+  // A small group in 2 + 2 + 2: no part reaches 3 people.
+  blob(pts, 'b', 2, 10, 0);
+  blob(pts, 'b', 2, 0, 10);
+  blob(pts, 'b', 2, 5, 5);
+  // The same small size in 3 + 3 does: two parts of at least 3 people.
+  blob(pts, 'c', 3, 3, 8);
+  blob(pts, 'c', 3, 8, 3);
+  const a = anchorsOf(pts);
+  assert.deepEqual(a.filter(c => c.key === 'a').map(c => [c.part, c.m]), [[0, 24]]);
+  assert.deepEqual(a.filter(c => c.key === 'b').map(c => [c.part, c.m]), [[0, 6]]);
+  assert.deepEqual(a.filter(c => c.key === 'c').map(c => [c.part, c.m]), [[0, 3], [1, 3]]);
 });

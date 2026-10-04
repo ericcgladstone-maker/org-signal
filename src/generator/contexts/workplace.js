@@ -229,7 +229,16 @@ export function build(spec, rng, span) {
     ego: -1,
   };
 
-  // Planted affect: department climates differ.
+  // Planted affect: department climates differ. They are drawn from the seed
+  // alone (their own fork, before the preset), so every structure with the
+  // same seed plants the same climate per department. The planted gap in
+  // ground truth is message-weighted, so it moves a little with the public
+  // and private mix of each structure (0.55 vs 0.549 at seed 7), and the
+  // measured mean tone per department, over thousands of messages drawn
+  // from the same climates with the same content stream (also seeded by the
+  // seed alone), can agree to the third decimal across structures (the
+  // recovery check reads Engineering 0.386, Design -0.012 for both siloed and
+  // bridge-dependent at seed 7) even though the messages themselves differ.
   const ar = r.fork('affect');
   for (let d = 0; d < D; d++) world.affect.setGroup(d, round(ar.range(-0.15, 0.5), 2));
   if (params.affectGap > 0) world.affect.addRule({ visibility: 'private', delta: -params.affectGap, label: 'private talk is more negative than public talk' });
