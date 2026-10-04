@@ -9,7 +9,7 @@
 //   - Body: contents [{ role: 'user'|'model', parts }], systemInstruction
 //     { parts: [{ text }] }, tools [{ functionDeclarations: [{ name,
 //     description, parametersJsonSchema }] }], generationConfig
-//     { maxOutputTokens, responseFormat: { text: { mimeType, schema } } }.
+//     { maxOutputTokens, responseMimeType, responseJsonSchema } (JSON output; checked live 2026-10-04).
 //   - Each SSE data line is a GenerateContentResponse: { candidates: [{
 //     content: { role, parts }, finishReason }], promptFeedback,
 //     usageMetadata: { promptTokenCount, candidatesTokenCount,
@@ -127,7 +127,10 @@ export const gemini = {
     const body = { contents: toContents(messages), generationConfig: { maxOutputTokens: maxTokens || this.defaultMaxTokens } };
     if (system) body.systemInstruction = { parts: [{ text: system }] };
     if (tools?.length) body.tools = toolsToWire(tools);
-    if (json?.schema) body.generationConfig.responseFormat = { text: { mimeType: 'application/json', schema: json.schema } };
+    // JSON output: responseMimeType + responseJsonSchema (a JSON Schema). The
+    // newer responseFormat.text.mimeType takes an enum, not a MIME string, and
+    // returned 400 for 'application/json' in a live test on 2026-10-04.
+    if (json?.schema) { body.generationConfig.responseMimeType = 'application/json'; body.generationConfig.responseJsonSchema = json.schema; }
     // Gemini 3 thinking levels are low/medium/high; map the shared effort names onto them.
     if (effort) body.generationConfig.thinkingConfig = { thinkingLevel: ({ low: 'low', medium: 'medium', high: 'high', xhigh: 'high', max: 'high' })[effort] || 'medium' };
 

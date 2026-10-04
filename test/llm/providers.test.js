@@ -268,5 +268,8 @@ test('gemini: safety finish becomes refusal, structured output config', async ()
   const fetch = fakeFetch([{ sse: true, body }]);
   const r = await gemini.chat({ key: KEY_G, messages: [{ role: 'user', content: 'x' }], json: { schema: { type: 'object' } }, fetch });
   assert.equal(r.stopReason, 'refusal');
-  assert.deepEqual(fetch.calls[0].body.generationConfig.responseFormat, { text: { mimeType: 'application/json', schema: { type: 'object' } } });
+  // Verified live against generateContent on 2026-10-04 (responseFormat.text.mimeType: 'application/json' is a 400).
+  assert.equal(fetch.calls[0].body.generationConfig.responseMimeType, 'application/json');
+  assert.deepEqual(fetch.calls[0].body.generationConfig.responseJsonSchema, { type: 'object' });
+  assert.equal(fetch.calls[0].body.generationConfig.responseFormat, undefined);
 });
