@@ -256,11 +256,16 @@ export function describe(contexts, form) {
   const native = m.files
     ? `Native files: ${m.files}${m.importer ? `, read back by the ${m.importer} importer` : ''}.`
     : 'Native files in the real export layout for this medium, read back by its importer.';
+  // The files hold only what the real format records, so after import the
+  // counts can differ from the generated world loaded directly (src/generator/native.js).
+  const nativeLimit = form.medium === 'slack'
+    ? ' A Slack export lists each person once per emoji on a message, so a repeated reaction is counted once after import, and the event count can be slightly lower than the generated world\'s.'
+    : ' The files hold only what this export format records, so the counts after import can differ from the generated world\'s.';
   const nv = String(m.nativeView || '');
   const nativeCaution = nv && !/^full/.test(nv)
     ? `A real ${m.label} export is one person's view (${nv}), so the files show only that person's ties, whatever you chose above; the planted groups will not show as communities.`
     : null;
-  return { what, export: exportText, caution, native, nativeCaution, nativeAvailable: m.native !== false };
+  return { what, export: exportText, caution, native: native + nativeLimit, nativeCaution, nativeAvailable: m.native !== false };
 }
 
 // Error text from a failed run -> what to tell the user. Out-of-memory

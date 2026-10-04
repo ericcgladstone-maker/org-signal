@@ -5,6 +5,7 @@
 
 import { EVENT_TYPES, ROLES, VISIBILITY } from '../../core/model.js';
 import { defaultGrouping } from '../../analysis/groups.js';
+import { evidenceCounts } from '../../analysis/construct.js';
 
 export const RULES = ['reply', 'mention', 'dm', 'to', 'cc', 'bcc', 'adjacency', 'copresence', 'declared', 'repost', 'like', 'follow', 'reaction'];
 
@@ -184,31 +185,24 @@ export function textCoverage(ds) {
   return m ? n / m : 0;
 }
 
-// How many events could feed each construction rule. Used to grey out rules
-// with no evidence in the drawer. One pass over events and targets.
+// How many pieces of evidence each construction rule has in the data: the
+// engine's own count (src/analysis/construct.js evidenceCounts, the numbers
+// defaultSettings records), so the import review and Construction settings
+// state the same counts, and both match what the network is built from.
 export function ruleEvidence(ds) {
-  const out = Object.fromEntries(RULES.map(r => [r, 0]));
-  if (!ds) return out;
+  if (!ds) return Object.fromEntries(RULES.map(r => [r, 0]));
+  return evidenceCounts(ds);
+}
+
+// Messages in shared conversations, the sequence turn-taking would be read
+// from. The engine derives turn-taking only for some data (evidenceCounts);
+// when it does not, the drawer says so instead of "no source records this".
+export function sequencedMessages(ds) {
+  if (!ds) return 0;
   const e = ds.events;
-  const typeName = EVENT_TYPES;
-  for (let i = 0; i < e.count; i++) {
-    const ty = typeName[e.type[i]];
-    const a = e.tOff[i], b = e.tOff[i + 1];
-    if (ty === 'copresence') out.copresence++;
-    else if (ty === 'declared') out.declared++;
-    else if (ty === 'repost') out.repost++;
-    else if (ty === 'like') out.like++;
-    else if (ty === 'follow') out.follow++;
-    else if (ty === 'reaction') out.reaction++;
-    if (ty === 'message' && e.context[i] >= 0) out.adjacency++;
-    for (let j = a; j < b; j++) {
-      const r = ROLES[e.role[j]];
-      if (r in out && ty === 'message') out[r]++;
-      else if (r === 'attendee') out.copresence++;
-      else if (r === 'declared' && ty !== 'declared') out.declared++;
-    }
-  }
-  return out;
+  let n = 0;
+  for (let i = 0; i < e.count; i++) if (EVENT_TYPES[e.type[i]] === 'message' && e.context[i] >= 0) n++;
+  return n;
 }
 
 export function visibilityPresent(ds) {
@@ -244,7 +238,7 @@ export const VIEW_TEXT = {
   },
   chat: {
     name: 'Single conversation',
-    can: 'Who speaks to whom inside this one conversation and how that changes over time.',
+    can: 'The structure of communication within this one conversation, and how it changes over time.',
     cannot: 'Anything about relationships outside this conversation.',
   },
   sample: {

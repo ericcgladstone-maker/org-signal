@@ -83,15 +83,18 @@ export function ReportView({ report, pending = false, excludeBots = true, datase
   // has to judge, so the source cards (which lead with it) come before the
   // totals: under the review's sticky action bar the totals had pushed it
   // below the first screen, even on a laptop.
-  const rules = dataset ? html`<${TieRules} ds=${dataset} />` : null;
+  const rules = dataset ? html`<${TieRules} ds=${dataset} pending=${pending} />` : null;
   return pending
     ? html`<div class="dv-report dv-report--pending">${cards}${rules}<div class="dv-report__totals"><h3 class="dv-h3">${report.sources.length > 1 ? 'All sources together' : 'In total'}</h3>${totals}</div></div>`
     : html`<div class="dv-report">${totals}${cards}${rules}</div>`;
 }
 
 // Which ties these records can build: each construction rule with evidence,
-// and how much. The same counts as Construction settings, before any choice.
-function TieRules({ ds }) {
+// and how much. The same counts as Construction settings (the engine's
+// evidenceCounts), before any choice. Before loading, the counts are of the
+// records as read: merging two accounts of one person can turn a few of their
+// pieces of evidence into ties with themselves, which make no tie.
+function TieRules({ ds, pending = false }) {
   const ev = ruleEvidence(ds);
   const found = RULES.filter(r => ev[r] > 0);
   if (!found.length) return null;
@@ -99,7 +102,7 @@ function TieRules({ ds }) {
   const list = items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}` : items[0];
   return html`<section class="dv-rules" aria-labelledby="dv-rules-h">
     <p class="label" id="dv-rules-h">Records available for tie construction</p>
-    <p class="small text2">These records support tie construction from ${list}. Each rule can be enabled, disabled, or weighted under Construction settings. The network is rebuilt from the selected rules.</p>
+    <p class="small text2">These records support tie construction from ${list}. The counts are pieces of evidence, as in Construction settings${pending ? ', before any duplicate accounts are merged' : ''}. Each rule can be enabled, disabled, or weighted under Construction settings. The network is rebuilt from the selected rules.</p>
   </section>`;
 }
 

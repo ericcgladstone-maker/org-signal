@@ -8,7 +8,7 @@ import { html, useState, useEffect, useRef, useMemo } from '../../../vendor/prea
 import { store, useStore } from '../store.js';
 import { Icon, Flag, Select, ErrorLine, Term } from '../components/common.js';
 import { Histogram } from '../components/charts.js';
-import { RULES, RULE_TEXT, ruleEvidence, activityHistogram, visibilityPresent, mediaPresent, botCount, timeExtent } from '../lib/dsutil.js';
+import { RULES, RULE_TEXT, ruleEvidence, sequencedMessages, activityHistogram, visibilityPresent, mediaPresent, botCount, timeExtent } from '../lib/dsutil.js';
 import { fmtInt, isoDay, fmtDate } from '../lib/format.js';
 import { RULE_LABEL } from '../actions.js';
 import { inferEventAttributeSchema, twoModeOf } from '../../core/model.js';
@@ -22,8 +22,8 @@ const MEDIA_TEXT = { chat: 'Chat', email: 'Email', meeting: 'Meetings', calendar
 // the engine only offers it when many messages in shared conversations are
 // unaddressed (src/analysis/construct.js defaultSettings). Saying "none of the
 // sources records this" for a Slack export was wrong (D10).
-function noEvidenceReason(r, ds, evidence) {
-  if (r === 'adjacency' && evidence.adjacency > 0) {
+function noEvidenceReason(r, ds) {
+  if (r === 'adjacency' && sequencedMessages(ds) > 0) {
     return 'Not derived for this data. Turn-taking is inferred from message order only where many messages in shared conversations are unaddressed (30% or more) or there are group chats; here most messages are replies, mentions or direct messages. Plain channel posts with no reply, mention or reaction create no tie.';
   }
   return 'None of the imported sources records this.';
@@ -72,7 +72,9 @@ export function SettingsDrawer() {
 
   const rule = (r) => s.rules?.[r] || { on: false, weight: 1 };
   const setRule = (r, patch) => setS(x => ({ ...x, rules: { ...x.rules, [r]: { ...rule(r), ...patch } } }));
-  const ev = (r) => s.rules?.[r]?.evidence ?? evidence[r] ?? 0;
+  // Counted from the data now, not read from the settings: settings saved in
+  // a project keep whatever count was current when they were made.
+  const ev = (r) => evidence[r] ?? s.rules?.[r]?.evidence ?? 0;
   const toMs = (d) => (d ? Date.parse(`${d}T00:00:00Z`) : null);
   const visSel = new Set(s.visibility || vis);
   const mediaSel = s.media ? new Set(s.media) : null;
@@ -109,7 +111,7 @@ export function SettingsDrawer() {
         </div>`)}
         ${!rulesWith.length && html`<p class="small text2">No construction evidence was found in this data.</p>`}
         ${rulesWithout.length > 0 && html`<details class="disclose"><summary>Rules with no evidence here (${rulesWithout.length})</summary>
-          <ul class="can-list">${rulesWithout.map(r => html`<li><span style="color:var(--text)">${ruleName(r)}</span> (${RULE_TEXT[r]}). ${noEvidenceReason(r, ds, evidence)}</li>`)}</ul></details>`}
+          <ul class="can-list">${rulesWithout.map(r => html`<li><span style="color:var(--text)">${ruleName(r)}</span> (${RULE_TEXT[r]}). ${noEvidenceReason(r, ds)}</li>`)}</ul></details>`}
       </div>
 
       <div class="section">

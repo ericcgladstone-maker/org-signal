@@ -74,7 +74,7 @@ export function readmeText({ spec = {}, groundTruth: gt = {}, files = [], descri
     'How it was made',
     '---------------',
     `Setting: ${spec.context}; medium: ${spec.medium}; scenario: ${spec.structure || 'default'}; seed: ${spec.seed}.`,
-    `People: ${gt.people?.count ?? spec.size}; time span: ${iso(gt.timespan?.start)} to ${iso(gt.timespan?.end)}; message text: ${spec.content || 'light'}.`,
+    `People: ${gt.people?.count ?? spec.size}; time span: ${iso(gt.timespan?.start)} to ${iso(gt.timespan?.end - 1)} (inclusive); message text: ${spec.content || 'light'}.`,
     'The same settings and seed always give the same world.',
     description.what ? `\n${description.what}` : '',
     '',

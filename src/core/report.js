@@ -70,7 +70,7 @@ function tzStatus(tz) {
 
 const VIEW_LINES = {
   [VIEWS.FULL]: {
-    can: ['Structure of the whole group in this export: who talks to whom, brokers, clusters, and how central each person is.'],
+    can: ["The structure of communication among everyone in this export: brokers, clusters, and each person's position."],
     cannot: ['Interaction that happened outside this export (other tools, meetings, hallways), or in conversations the export left out.'],
   },
   [VIEWS.EGO]: {
@@ -78,7 +78,7 @@ const VIEW_LINES = {
     cannot: ["Ties among the owner's contacts, except where they appear together on the same messages or meetings with the owner.", 'Whole-network measures such as centrality or brokerage for anyone but the owner: every tie runs through the owner, so these are biased toward them.'],
   },
   [VIEWS.CHAT]: {
-    can: ['Who talks to whom within this one conversation, and how that changes over time.'],
+    can: ['The structure of communication within this one conversation, and how it changes over time.'],
     cannot: ["Relationships outside this conversation; people's positions in any wider network."],
   },
   [VIEWS.SAMPLE]: {

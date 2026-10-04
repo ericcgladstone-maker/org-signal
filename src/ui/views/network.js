@@ -934,7 +934,7 @@ function NetworkSummary({ open = null }) {
     ${twoModeView && html`<${TwoModeSummary} m=${m} net=${net} communities=${communities} />`}
     ${communities && html`<div class="metric-row"><span><${MetricName} metric="modularity" gloss=${true} /></span><span class="metric-row__val">${fmtNum(communities.modularity)}</span>
       <span class="metric-row__sub">${communityWords(communities)}.
-        ${tiny && html`<br />With only ${fmtInt(net.n)} people, community detection still partitions the network (a chain of six people is split into three pairs). These communities are provisional until modularity exceeds the random-network comparison.`}</span>
+        ${tiny && html`<br />With only ${fmtInt(net.n)} people, community detection still partitions the network, whether or not it has groups. These communities are provisional until modularity exceeds the random-network comparison.`}</span>
       ${nm?.modularity && html`<${NullVerdict} stat="modularity" x=${nm.modularity} reps=${reps} shown=${communities.modularity} />`}</div>`}
     ${keys.map(k => html`<div class="metric-row"><span><${MetricName} metric=${k === 'reciprocity' ? 'reciprocityNetwork' : k} gloss=${true} /></span><span class="metric-row__val">${k === 'largestComponentShare' ? `${Math.round(m[k] * 100)}%` : fmtNum(m[k])}</span>
       ${nm?.[k] && html`<${NullVerdict} stat=${k} x=${nm[k]} reps=${reps} />`}</div>`)}

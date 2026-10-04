@@ -44,12 +44,22 @@ const GROUP_CHAT_KINDS = new Set(['group_dm', 'chat']);
 
 // ---- defaults ----------------------------------------------------------------
 
-// Turn on only the rules whose evidence exists in this dataset, with counts so
-// the settings drawer can say why each rule is on or off.
-export function defaultSettings(ds) {
+// How many pieces of evidence each rule has in this dataset, counted as
+// forEachEvidence emits them before any filter (bots, time, visibility,
+// broadcast cutoff): a target who is the actor makes no tie, and a message
+// whose importer named the parent's author as its `reply` target is one reply,
+// not two. The parent fallback counts only messages without a reply target
+// whose parent was written by someone else. (Counting reply targets plus every
+// message with a parent double-counted threaded replies and counted replies in
+// one's own thread: 32,183 "replies" in a Slack world whose network is built
+// from 13,709.) The settings drawer and the import review show these counts.
+export function evidenceCounts(ds) {
+  return countEvidence(ds).evidence;
+}
+
+function countEvidence(ds) {
   const ev = ds.events;
   const roleCount = new Float64Array(ROLES.length);
-  for (let j = 0; j < ev.tgt.length; j++) roleCount[ev.role[j]]++;
   const typeCount = new Float64Array(EVENT_TYPES.length);
   let parentReplies = 0, untargetedShared = 0, untargetedGroupChat = 0, messages = 0, timed = 0;
   // Evidence from sources that declare their ties undirected (source.directed === false).
@@ -58,12 +68,19 @@ export function defaultSettings(ds) {
   for (let i = 0; i < ev.count; i++) {
     const ty = ev.type[i];
     typeCount[ty]++;
-    const nT = ev.tOff[i + 1] - ev.tOff[i];
+    const a0 = ev.tOff[i], a1 = ev.tOff[i + 1], nT = a1 - a0;
+    const actor = ev.actor[i];
+    let hasReplyTarget = false;
+    for (let j = a0; j < a1; j++) {
+      if (ev.role[j] === R.reply) hasReplyTarget = true;
+      if (ev.tgt[j] !== actor) roleCount[ev.role[j]]++;
+    }
     if (undirectedSource[ev.source[i]] && ty !== T.copresence) undirectedEvidence += nT;
     if (Number.isFinite(ev.t[i])) timed++;
     if (ty !== T.message) continue;
     messages++;
-    if (ev.parent[i] >= 0) parentReplies++;
+    const p = ev.parent[i];
+    if (p >= 0 && !hasReplyTarget && ev.actor[p] !== actor) parentReplies++;
     const c = ev.context[i];
     if (nT === 0 && c >= 0 && !NO_ADJACENCY_KINDS.has(ds.contexts.kinds[c])) {
       untargetedShared++;
@@ -83,6 +100,13 @@ export function defaultSettings(ds) {
     declared: typeCount[T.declared],
     repost: typeCount[T.repost], like: typeCount[T.like], follow: typeCount[T.follow], reaction: typeCount[T.reaction],
   };
+  return { evidence, undirectedSource, undirectedEvidence };
+}
+
+// Turn on only the rules whose evidence exists in this dataset, with counts so
+// the settings drawer can say why each rule is on or off.
+export function defaultSettings(ds) {
+  const { evidence, undirectedSource, undirectedEvidence } = countEvidence(ds);
   const rules = {};
   for (const r of RULES) rules[r] = { on: evidence[r] > 0, weight: DEFAULT_WEIGHT[r] ?? 1, evidence: evidence[r] };
   rules.adjacency.windowMin = 10;

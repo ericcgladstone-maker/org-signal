@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatasetBuilder, VIEWS } from '../../src/core/model.js';
-import { buildNetwork, defaultSettings, edgeEvidence, RULES } from '../../src/analysis/construct.js';
+import { buildNetwork, defaultSettings, evidenceCounts, edgeEvidence, RULES } from '../../src/analysis/construct.js';
 
 const MIN = 60000;
 const T0 = Date.UTC(2026, 0, 5, 9);
@@ -325,4 +325,43 @@ test('group chats without per-message targets turn adjacency on', () => {
   assert.equal(s.rules.adjacency.on, true);
   const net = buildNetwork(ds, s);
   assert.deepEqual(tie(net, B, A).byRule, { adjacency: 1 });
+});
+
+// Regression: defaultSettings counted reply evidence as reply targets plus
+// every message with a parent, so a threaded reply whose importer named the
+// parent's author (Slack) counted twice and a reply in one's own thread
+// counted once though it makes no tie. The Slack walkthrough world showed
+// 32,183 replies in Construction settings for a network built from 13,709.
+test('rule evidence counts are the pieces of evidence the network is built from', () => {
+  const b = new DatasetBuilder({ source: { format: 't', view: VIEWS.FULL } });
+  const [A, B, C] = people(b, 3);
+  const ch = b.context('c1', { kind: 'channel', visibility: 'public' });
+  b.event({ actor: B, t: T0, context: ch, key: 'm1', text: 'hi' });
+  b.event({ actor: A, t: T0 + MIN, context: ch, parentKey: 'm1', targets: [[B, 'reply']] }); // target and parent: one reply
+  b.event({ actor: C, t: T0 + 2 * MIN, context: ch, parentKey: 'm1' });                    // parent only: one reply
+  b.event({ actor: B, t: T0 + 3 * MIN, context: ch, parentKey: 'm1' });                    // own thread: none
+  b.event({ actor: A, t: T0 + 4 * MIN, context: ch, targets: [[A, 'mention'], [C, 'mention']] }); // self-mention: none
+  const ds = b.build();
+  const ev = evidenceCounts(ds);
+  assert.equal(ev.reply, 2);
+  assert.equal(ev.mention, 1);
+  const s = defaultSettings(ds);
+  assert.equal(s.rules.reply.evidence, 2);
+  const net = buildNetwork(ds, { ...s, excludeBots: false });
+  assert.equal(net.summary.byRule.reply.evidence, ev.reply);
+  assert.equal(net.summary.byRule.mention.evidence, ev.mention);
+});
+
+test('rule evidence counts match the network for a generated Slack export', async () => {
+  const { generate } = await import('../../src/generator/index.js');
+  const { dataset: ds } = generate({ context: 'workplace', medium: 'slack', structure: 'bridge-dependent', size: 30, seed: 7, timespan: { days: 30 }, output: 'native' });
+  const ev = evidenceCounts(ds);
+  const s = defaultSettings(ds);
+  const net = buildNetwork(ds, { ...s, excludeBots: false });
+  for (const r of RULES) {
+    if (!(ev[r] > 0)) continue;
+    assert.equal(s.rules[r].evidence, ev[r], r);
+    assert.equal(net.summary.byRule[r]?.evidence, ev[r], r);
+  }
+  assert.ok(ev.reply > 0 && ev.reaction > 0);
 });

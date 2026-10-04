@@ -71,3 +71,18 @@ test('survey weight notes from the builders are informational', async () => {
   assert.equal(warningSeverity({ code: 'roster-tie-weight' }), 'info');
   assert.equal(warningSeverity({ code: 'css-consensus-weight' }), 'info');
 });
+
+// Eric's copy pass (2026-10-04): what a full or single-conversation export
+// supports is the structure of communication, not "who talks to whom".
+test('full and single-conversation views describe the structure of communication', () => {
+  for (const view of ['full', 'chat']) {
+    const b = new DatasetBuilder({ name: view });
+    b.beginSource({ format: 'slack', family: 'workplace', medium: 'chat', view, context: 'workplace', fileNames: ['x.json'] });
+    const a = b.node('s:a', { label: 'A' }), c = b.node('s:c', { label: 'C' });
+    b.event({ type: 'message', t: Date.UTC(2025, 0, 1), actor: a, targets: [[c, 'mention']], text: 'hi' });
+    const src = importReport(b.build()).sources[0];
+    const can = src.canShow.join(' ');
+    assert.match(can, /structure of communication/);
+    assert.doesNotMatch(can, /who talks to whom/i);
+  }
+});

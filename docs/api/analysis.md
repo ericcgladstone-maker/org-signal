@@ -79,11 +79,15 @@ Every method returns a Promise. Positional arguments follow the pure function, m
 
 ## Construction
 
+### `evidenceCounts(ds)`
+
+`{ [rule]: number }`: how many pieces of evidence each rule has in the dataset, before any filter (bots included). Addressed rules (reply, mention, dm, to, cc, bcc) count targets other than the actor, and a message with both a `reply` target and a parent is one reply; a parent alone counts when someone else wrote the parent. Event rules (copresence, declared, repost, like, follow, reaction) count events. Adjacency counts the unaddressed messages turn-taking would read, and is 0 where it is not derived. For the addressed rules this equals `net.summary.byRule[rule].evidence` of a network built with the rule on, `excludeBots: false` and no filters (a target repeated within one event aside). The import review and Construction settings show these counts.
+
 ### `defaultSettings(ds)`
 
 ```js
 {
-  rules: { [rule]: { on, weight, evidence } },  // evidence = count found in this dataset
+  rules: { [rule]: { on, weight, evidence } },  // evidence = evidenceCounts(ds)[rule]: pieces of evidence as the rule emits them before filters
   //   rules.adjacency.windowMin (10), rules.copresence.normalize (true), rules.copresence.maxSize (default maxRecipients)
   directed, weighting: 'count' | 'log' | 'binary', minWeight: 0, maxRecipients: 25,
   time: { start: null, end: null },   // ms, [start, end)
