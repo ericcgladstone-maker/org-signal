@@ -668,3 +668,9 @@ pre.code{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);fon
 /* With a sticky first column, the left fade would dim it; the sticky column
    already shows that the table has scrolled. */
 .people-table .vt--more-left::before,.people-table.vt--more-left::before{display:none}
+
+/* Learn: About and limits */
+.learn-about h3{margin-top:1.75rem}
+.learn-about__list{margin:.4rem 0 0;padding-left:1.1rem}
+.learn-about__list li{margin-bottom:.4rem}
+.learn-about__group{margin-top:1rem}

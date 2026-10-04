@@ -34,6 +34,7 @@ import { JoinSetup, ProfileJoin } from './data/join.js';
 import { isProjectInput, readProject, projectSummary, openProject } from './data/project.js';
 import { rederivableSource, rederiveSurvey, RULE_NAME } from '../../importers/survey-response.js';
 import { ClassicList, ClassicCard } from './learn/classic.js';
+import { openAbout } from './learn/about.js';
 
 export { ReportView };
 
@@ -262,7 +263,7 @@ function EmptyState({ onFiles }) {
         </button>
       </li>`)}
     </ul>
-    <p class="dv-learn">New to network analysis? <a class="tlink tlink--arrow" href="#learn" onClick=${e => { e.preventDefault(); store.actions.setView('learn'); }}>Learn the ideas</a></p>
+    <p class="dv-learn">New to network analysis? <a class="tlink tlink--arrow" href="#learn" onClick=${e => { e.preventDefault(); store.actions.setView('learn'); }}>Learn the ideas</a> <span class="small text2">· <a class="linkish" href="#learn" onClick=${e => { e.preventDefault(); openAbout(); }}>About Org Signal, your data and its known limits</a></span></p>
     <div class="dv-classic" style="margin-top:2.25rem"><${ClassicList} level=${3} headingId="dv-classic-h" /></div>
     <p class="small text2 dv-gen">Or <button type="button" class="tlink" onClick=${() => store.actions.setView('generate')}>generate a synthetic organization</button> with planted structure, to test what the measures recover.</p>
     <section class="dv-import" id="dv-import" aria-labelledby="dv-import-h" tabindex="-1">

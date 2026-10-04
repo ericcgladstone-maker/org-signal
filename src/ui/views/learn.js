@@ -14,6 +14,7 @@ import { viewInfo } from '../actions.js';
 import { SECTIONS, TEACH, TASKS, EXAMPLES } from './learn/concepts.js';
 import { DIAGRAMS } from './learn/diagrams.js';
 import { ClassicList, ClassicCard } from './learn/classic.js';
+import { About } from './learn/about.js';
 
 // Every glossary key appears once: in its section, or under "More measures".
 function allSections() {
@@ -119,6 +120,7 @@ export function LearnView() {
       <a class="tlink" href="#learn-examples" onClick=${e => { e.preventDefault(); document.getElementById('learn-examples')?.scrollIntoView({ block: 'start' }); }}>Worked examples</a>
       <a class="tlink" href="#learn-classic" onClick=${e => { e.preventDefault(); document.getElementById('learn-classic')?.scrollIntoView({ block: 'start' }); }}>Classic datasets</a>
       <a class="tlink" href="#learn-concepts" onClick=${e => { e.preventDefault(); document.getElementById('learn-concepts')?.scrollIntoView({ block: 'start' }); }}>Concepts</a>
+      <a class="tlink" href="#learn-about" onClick=${e => { e.preventDefault(); document.getElementById('learn-about')?.scrollIntoView({ block: 'start' }); }}>About and limits</a>
       <span class="small text2 learn__explain">Explanations are ${explain ? 'on' : 'off'}: they show "How to read this" under numbers in every view. <button type="button" class="tlink tlink--quiet" onClick=${() => store.actions.setExplain(!explain)}>Turn ${explain ? 'off' : 'on'}</button></span>
     </nav>
 
@@ -153,5 +155,7 @@ export function LearnView() {
         ${s.keys.map(k => html`<${Concept} k=${k} key=${k} target=${k === key} />`)}
       </div>`)}
     </section>
+
+    <${About} />
   </div>`;
 }
