@@ -16,9 +16,16 @@ function useWidth(ref, fallback = 600) {
   const [w, setW] = useState(fallback);
   useEffect(() => {
     if (!ref.current) return;
-    const ro = new ResizeObserver(([e]) => setW(Math.max(160, Math.floor(e.contentRect.width))));
+    // Next frame, and only on a real change: the SVG's height follows its width,
+    // so setting it inside the callback looped in WebKit ("ResizeObserver loop").
+    let raf = 0;
+    const ro = new ResizeObserver(([e]) => {
+      const next = Math.max(160, Math.floor(e.contentRect.width));
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setW(p => (p === next ? p : next)));
+    });
     ro.observe(ref.current);
-    return () => ro.disconnect();
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, []);
   return w;
 }

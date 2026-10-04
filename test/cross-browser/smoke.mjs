@@ -82,6 +82,8 @@ for (const size of SIZES) {
       let t = m.text();
       // Firefox prints objects (Errors) as JSHandle@object: ask the page for the message and stack.
       if (/JSHandle@/.test(t)) t = (await Promise.all(m.args().map(a => a.evaluate(x => (x && (x.stack || x.message)) ? `${x.name || 'Error'}: ${x.message} ${x.stack || ''}`.slice(0, 600) : typeof x === 'object' ? JSON.stringify(x) : String(x)).catch(() => '?')))).join(' ');
+      // A font request cut off by navigation (NS_BINDING_ABORTED) is a test artifact.
+      if (/downloadable font: download failed.*status=2152398850/.test(t)) return;
       if (IGNORE.test(t)) { envNotes.add(`console (${m.type()}): ${t.replace(/\{file:.*$/, '').slice(0, 260)}`); return; }
       if (m.type() === 'error' && !/^Failed to load resource/.test(t)) note(`console.error: ${t}`);
       else if (/Content[- ]Security[- ]Policy|CSP/i.test(t)) note(`csp: ${t}`);
@@ -189,10 +191,21 @@ async function overflow(page) {
 let loads = 0;
 async function open(T, hash = '', query = '') {
   const p = T.page;
+  await settle(T);
   // A distinct query string forces a real load (a hash-only change would keep the loaded data).
   await p.goto(`${BASE}/?${query ? query + '&' : ''}_=${++loads}${hash ? '#' + hash : ''}`, { waitUntil: 'load', timeout: 60000 });
   await p.waitForSelector('#app > *', { timeout: 30000 });
   await p.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});
+}
+
+// Let lazy view modules finish loading before navigating away: Firefox and
+// WebKit reject a dynamic import cut off by navigation, and the shell logs it
+// with console.error (a test artifact, not a user-facing failure).
+async function settle(T) {
+  const p = T.page;
+  if (!p || p.url() === 'about:blank') return;
+  await p.waitForFunction(() => !/Opening view/.test(document.querySelector('main')?.innerText || ''), null, { timeout: 15000 }).catch(() => {});
+  await p.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 }
 
 // Switch views the way the nav does (the shell listens to hashchange).
@@ -200,7 +213,7 @@ async function go(T, view) {
   const p = T.page;
   await p.evaluate(v => { location.hash = v; }, view);
   await p.waitForFunction(v => (document.title || '').startsWith(v), VIEW_TITLES[view] || view, { timeout: 20000 });
-  await p.waitForTimeout(300);
+  await settle(T);
 }
 const VIEW_TITLES = { data: 'Data', build: 'Build', generate: 'Generate', network: 'Network', people: 'People', groups: 'Groups', content: 'Content', time: 'Time', methods: 'Methods', ask: 'Ask', learn: 'Learn' };
 
@@ -354,6 +367,7 @@ const FLOWS = [
     await T.check('Learn link opens Learn', async () => {
       await clickText(T, '.dv-learn a', /Learn the ideas/);
       await T.page.waitForFunction(() => document.title.startsWith('Learn'), null, { timeout: 20000 });
+      await settle(T);
     });
     if (T.phone) await T.check('phone menu opens and navigates', async () => {
       await T.page.locator('.menu-btn').tap();
@@ -623,6 +637,7 @@ const FLOWS = [
       await open(T, 'build?example=two-cliques-broker');
       await T.page.waitForSelector('.ob-canvas svg [data-node]', { timeout: 30000 });
       await T.page.locator('.ob-canvas').scrollIntoViewIfNeeded();
+      await T.page.waitForTimeout(500); // smooth scrolling settles before measuring
       const centres = async () => T.page.$$eval('[data-node]', els => els.map(el => { const c = el.querySelector('circle:not(.focus-ring)').getBoundingClientRect(); return { id: el.getAttribute('data-node'), x: c.left + c.width / 2, y: c.top + c.height / 2, t: el.getAttribute('transform') }; }));
       let ns = await centres();
       assert(ns.length > 3, `example has ${ns.length} nodes`);

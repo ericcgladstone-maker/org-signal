@@ -134,8 +134,12 @@ export function DrawEditor({ example = null } = {}) {
   function fit(d = st.current.doc) {
     const { w, h } = st.current.size.w ? st.current.size : size;
     if (!w) return;
-    const b = D.bounds(d.nodes);
-    if (!b) { setView({ x: w / 2, y: h / 2, k: 1 }); return; }
+    const b0 = D.bounds(d.nodes);
+    if (!b0) { setView({ x: w / 2, y: h / 2, k: 1 }); return; }
+    // Group outlines and their names are drawn around the people, so frame
+    // those too (the worked example's second team was cut off at the edge).
+    const g = d.groups?.length ? 48 : 0;
+    const b = { x: b0.x - g, y: b0.y - g - (g ? 18 : 0), w: b0.w + 2 * g, h: b0.h + 2 * g + (g ? 18 : 0) };
     const pad = w < 600 ? 36 : 60;
     // Names sit under each person, and the status line and zoom buttons along
     // the bottom edge, so leave more room below than above.
@@ -282,7 +286,9 @@ export function DrawEditor({ example = null } = {}) {
     apply(() => d, label);
     setSel({ nodes: [], edges: [] });
     setFocus(null);
+    // Fit now, and again once the canvas has settled to its final size.
     setTimeout(() => fit(d), 0);
+    setTimeout(() => fit(d), 300);
   }
 
   // Replacing a drawing asks first (Undo also brings it back, M12).

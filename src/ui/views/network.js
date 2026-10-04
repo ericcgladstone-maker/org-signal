@@ -559,9 +559,12 @@ function SigmaCanvas({ ref_, data, ds, coloring, sizes, selection, focusCat, rul
     };
     // The canvas height follows the viewport and the status bar; keep sigma's
     // idea of its size in step so the graph stays fitted.
-    const ro = new ResizeObserver(() => { try { renderer.resize(); renderer.refresh(); } catch { /* killed */ } });
+    // On the next frame, so the resize cannot loop inside the observer (WebKit).
+    let raf = 0;
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { try { renderer.resize(); renderer.refresh(); } catch { /* killed */ } }); });
     ro.observe(box.current);
     return () => {
+      cancelAnimationFrame(raf);
       ro.disconnect();
       for (const ev of ['touchstart', 'touchmove', 'touchend']) wrap.removeEventListener(ev, onTouch, { capture: true });
       renderer.kill(); sig.current = null; ref_.current = null;

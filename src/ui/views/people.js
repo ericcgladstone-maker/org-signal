@@ -116,6 +116,9 @@ function PeopleInner({ ds, net }) {
   const mlabel = k => metricLabel(k, net.directed);
   const formats = useMemo(() => Object.fromEntries(Object.keys(node || {}).map(k => [k, measureFormat(k, node[k])])), [node]);
   const sortMetric = sort.key.startsWith('m:') ? sort.key.slice(2) : null;
+  // The phone ranked list opens on contacts with no sort chosen, so the
+  // stability check uses contacts (degree) there until a measure is picked.
+  const stabMetric = sortMetric || (phone && !showTable ? 'degree' : null);
 
   // Every column that can be shown; `cols` decides which are.
   const allColumns = [
@@ -221,12 +224,12 @@ function PeopleInner({ ds, net }) {
     download(lines.join('\n'), 'people.csv', 'text/csv');
   };
   const runStability = async () => {
-    if (!sortMetric) return;
+    if (!stabMetric) return;
     setStabBusy(true);
-    try { await checkStability(net, sortMetric); } catch (e) { if (e.name !== 'AbortError') store.actions.notify('error', e.message); } finally { setStabBusy(false); }
+    try { await checkStability(net, stabMetric); } catch (e) { if (e.name !== 'AbortError') store.actions.notify('error', e.message); } finally { setStabBusy(false); }
   };
   const filterValues = filterAttr ? (attrs.find(a => a.key === filterAttr)?.values || []) : [];
-  const canStab = sortMetric && RESAMPLABLE.includes(sortMetric) && ap[sortMetric]?.level !== 'na';
+  const canStab = stabMetric && RESAMPLABLE.includes(stabMetric) && ap[stabMetric]?.level !== 'na';
   const profileHidden = profile != null && !rows.some(v => ids[v] === profile);
   const hiddenNa = naKeys.filter(k => !cols.has(`m:${k}`));
   const sortCol = [...allColumns, { key: 'name', title: 'Name' }].find(c => c.key === sort.key);
@@ -247,13 +250,13 @@ function PeopleInner({ ds, net }) {
         <div class="row row--between" style="margin-bottom:.4rem;gap:.5rem 1.5rem">
           <p class="meta" style="margin:0">${fmtInt(rows.length)} of ${fmtInt(ids.length)} ${twoModeView ? 'nodes' : 'people'}</p>
           <div class="tlinks">
-            ${canStab && !stability[sortMetric] && html`<button type="button" class="tlink" onClick=${runStability} disabled=${stabBusy}>${stabBusy ? 'Resampling' : `Check how stable the ${mlabel(sortMetric).split(' (')[0].toLowerCase()} ranking is`}</button>`}
+            ${canStab && !stability[stabMetric] && html`<button type="button" class="tlink" onClick=${runStability} disabled=${stabBusy}>${stabBusy ? 'Resampling' : `Check how stable the ${mlabel(stabMetric).split(' (')[0].toLowerCase()} ranking is`}</button>`}
             ${!(phone && !showTable) && html`<${ColumnChooser} columns=${allColumns} cols=${cols} setCols=${setCols} />`}
           </div>
         </div>
         <p class="small text2 people-sorted">${sortedBy} <${DotKey} coloring=${dots} /></p>
         ${twoModeView && html`<p class="small text2 people-twomode">A two-mode network: ${fmtInt(tm.counts[0])} ${tm.labels[0].toLowerCase()} and ${fmtInt(tm.counts[1])} ${tm.labels[1].toLowerCase()}. Two-mode measures are scaled to what is possible for each kind (Borgatti and Everett 1997), so ${modeSel === '' ? html`rank each kind among its own: <button type="button" class="tlink" onClick=${() => setModeSel('0')}>${tm.labels[0]} only</button> or <button type="button" class="tlink" onClick=${() => setModeSel('1')}>${tm.labels[1].toLowerCase()} only</button>.` : `this list ranks the ${tm.labels[Number(modeSel)].toLowerCase()} among themselves.`}</p>`}
-        ${sortMetric && stability[sortMetric] && html`<${TopStability} ds=${ds} metric=${sortMetric} label=${mlabel(sortMetric)} result=${stability[sortMetric]} n=${ids.length} values=${node[sortMetric]} fmt=${formats[sortMetric]} net=${net} left=${left} />`}
+        ${stabMetric && stability[stabMetric] && html`<${TopStability} ds=${ds} metric=${stabMetric} label=${mlabel(stabMetric)} result=${stability[stabMetric]} n=${ids.length} values=${node[stabMetric]} fmt=${formats[stabMetric]} net=${net} left=${left} />`}
         ${phone && !showTable ? html`<${RankedList} ds=${ds} ids=${ids} node=${node} rows=${rows} metric=${listMetric} keys=${metricKeys.filter(k => ap[k]?.level !== 'na')} label=${mlabel} fmt=${formats} dot=${dot} badges=${badges}
               onMetric=${k => setSort({ key: `m:${k}`, dir: 'desc' })} onOpen=${open} />
             <button type="button" class="tlink" style="margin-top:.6rem" onClick=${() => setShowTable(true)}>Show the full table (scrolls sideways)</button>`

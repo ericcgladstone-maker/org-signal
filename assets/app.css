@@ -195,6 +195,9 @@ main:focus{outline:none}
 .input::placeholder{color:var(--text-muted);font-family:var(--sans)}
 .input:disabled,.select:disabled{color:var(--text-muted);border-color:var(--rule);cursor:not-allowed}
 textarea.input{min-height:5rem;resize:vertical;line-height:1.45}
+/* Number fields look the same in every engine (WebKit and Firefox drew spinners). */
+.input[type=number]{appearance:textfield;-moz-appearance:textfield}
+.input[type=number]::-webkit-inner-spin-button,.input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .check{display:inline-flex;align-items:center;gap:.55rem;cursor:pointer;font-size:var(--fs-small);color:var(--text-2);min-height:1.75rem}
 .check input{margin:0}
 /* Checkboxes and radios, drawn (design rule 5): no OS grey anywhere. */

@@ -28,9 +28,10 @@ export function VirtualTable({ columns, rows, rowKey, cell, onActivate, selected
   useEffect(checkEdge);
   useLayoutEffect(() => {
     if (!box.current) return;
-    const ro = new ResizeObserver(([e]) => setHeight(e.contentRect.height));
+    let raf = 0;
+    const ro = new ResizeObserver(([e]) => { const h = e.contentRect.height; cancelAnimationFrame(raf); raf = requestAnimationFrame(() => setHeight(p => (p === h ? p : h))); });
     ro.observe(box.current);
-    return () => ro.disconnect();
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, []);
   useEffect(() => { if (focus >= rows.length) setFocus(Math.max(0, rows.length - 1)); }, [rows.length]);
   const template = columns.map(c => c.width || 'minmax(6rem,1fr)').join(' ');
