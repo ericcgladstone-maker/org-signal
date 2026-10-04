@@ -100,8 +100,12 @@ test('class friendships: homophily by major, communities are the majors', () => 
     if (!byCommunity.has(k)) byCommunity.set(k, new Set());
     byCommunity.get(k).add(ds.nodes.labels[d]);
   });
-  assert.equal(byCommunity.size, 3);
-  for (const s of byCommunity.values()) assert.equal(s.size, 4);
+  // The three majors, plus Nora Quinn, the isolate, alone (no community to share).
+  const groups = [...byCommunity.values()].sort((x, y) => y.size - x.size);
+  assert.equal(groups.length, 4);
+  assert.deepEqual(groups.map(g => g.size), [4, 4, 4, 1]);
+  assert.ok(groups[3].has('Nora Quinn'));
+  assert.equal(computeNetworkMetrics(a.net).components, 2);
 });
 
 test('the ego example: size, density, effective size and constraint by Burt\'s binary formula', () => {

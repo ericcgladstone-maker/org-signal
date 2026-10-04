@@ -68,11 +68,12 @@ export const EXAMPLES = [
   },
   {
     id: 'class-friendships', kind: 'draw', title: 'Class friendships with majors',
-    summary: 'Twelve students in three majors; who is friends with whom.',
+    summary: 'Thirteen students in three majors; who is friends with whom. One has no friendships in the class yet.',
     lookFor: [
       'Groups, by major: 15 of the 18 friendships stay within a major, so the E-I index is (3 − 15) / 18 = −0.667 (−1 = all inside, +1 = all across).',
       'Assortativity by major is 0.750 (0 = no preference, 1 = only within), far above what random networks with the same number of ties per person give: friendship follows major (homophily).',
       'The three communities found in Network are exactly the three majors.',
+      'Nora Quinn transferred in this term and has no friendships in the class yet: an isolate. Her contacts, betweenness and closeness are all 0, and she is a component on her own, so the network has 2 components. An isolate belongs to no community; it is still part of the network.',
     ],
   },
   {
@@ -166,6 +167,8 @@ function classMajors() {
     const cx = [-260, 260, 0][g], cy = [-110, -110, 190][g];
     people.forEach(([id, label], i) => nodes.push(node(id, label, cx + [-60, 60, -60, 60][i], cy + [-55, -55, 55, 55][i], gid)));
   });
+  // An isolate: a Sociology transfer student with no friendships in the class yet.
+  nodes.push(node('nora', 'Nora Quinn', 300, 245, 'soc'));
   return {
     groupKey: 'major',
     groups: majors.map(([id, name]) => ({ id, name })),

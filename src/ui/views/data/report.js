@@ -10,7 +10,8 @@
 import { html } from '../../../../vendor/preact.js';
 import { Flag } from '../../components/common.js';
 import { fmtInt, fmtRange, plural } from '../../lib/format.js';
-import { VIEW_TEXT } from '../../lib/dsutil.js';
+import { VIEW_TEXT, RULES, ruleEvidence } from '../../lib/dsutil.js';
+import { RULE_LABEL } from '../../lib/rebuild.js';
 
 const TYPE_WORDS = {
   message: ['message', 'messages'], copresence: ['shared meeting or call', 'shared meetings or calls'], declared: ['reported tie', 'reported ties'],
@@ -49,7 +50,9 @@ function sumCounts(list) {
 // excludeBots: the construction leaves bots out (the default), so the
 // People total says how many of them the Network view will not show (L16:
 // "97 people (1 bot left out of the network)").
-export function ReportView({ report, pending = false, excludeBots = true }) {
+// dataset (optional): the imported data, so the review can say which ties its
+// records can build (the construction rules with evidence, as in Settings).
+export function ReportView({ report, pending = false, excludeBots = true, dataset = null }) {
   if (!report) return html`<p class="small text2">No import report is available for this data.</p>`;
   const t = report.totals;
   const reported = report.sources.some(s => s.reported) && report.sources.every(s => s.reported || s.counts.events === 0);
@@ -80,9 +83,24 @@ export function ReportView({ report, pending = false, excludeBots = true }) {
   // has to judge, so the source cards (which lead with it) come before the
   // totals: under the review's sticky action bar the totals had pushed it
   // below the first screen, even on a laptop.
+  const rules = dataset ? html`<${TieRules} ds=${dataset} />` : null;
   return pending
-    ? html`<div class="dv-report dv-report--pending">${cards}<div class="dv-report__totals"><h3 class="dv-h3">${report.sources.length > 1 ? 'All sources together' : 'In total'}</h3>${totals}</div></div>`
-    : html`<div class="dv-report">${totals}${cards}</div>`;
+    ? html`<div class="dv-report dv-report--pending">${cards}${rules}<div class="dv-report__totals"><h3 class="dv-h3">${report.sources.length > 1 ? 'All sources together' : 'In total'}</h3>${totals}</div></div>`
+    : html`<div class="dv-report">${totals}${cards}${rules}</div>`;
+}
+
+// Which ties these records can build: each construction rule with evidence,
+// and how much. The same counts as Construction settings, before any choice.
+function TieRules({ ds }) {
+  const ev = ruleEvidence(ds);
+  const found = RULES.filter(r => ev[r] > 0);
+  if (!found.length) return null;
+  const items = found.map(r => `${RULE_LABEL[r] || r} (${fmtInt(ev[r])})`);
+  const list = items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}` : items[0];
+  return html`<section class="dv-rules" aria-labelledby="dv-rules-h">
+    <p class="label" id="dv-rules-h">Ties these records can build</p>
+    <p class="small text2">Ties can be built from ${list}. Each is a rule you can switch on or off, and weigh, in Construction settings; the network is only what those rules make of these records.</p>
+  </section>`;
 }
 
 function Counts({ s, counts }) {

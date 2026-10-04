@@ -213,7 +213,7 @@ export const EXAMPLES = [
   { id: 'two-cliques-broker', what: 'The broker is the only route between the teams: highest betweenness, though not the most contacts.', learn: ['betweenness', 'contacts'] },
   { id: 'path-and-star', what: 'In the path the middle people score highest and the ends 0. Then open the star (File, Start from an example): its center has betweenness 1. Compare with your hand values.', learn: ['betweenness', 'closeness', 'degree'] },
   { id: 'ring-small-world', what: 'Then open the small world (File, Start from an example): a few shortcuts cut the average path length sharply while clustering barely moves.', learn: ['avgPathLength', 'clustering'] },
-  { id: 'class-friendships', what: 'Friendships mostly within majors: positive assortativity, far from what random networks give.', learn: ['assortativity', 'eiIndex', 'nullModel'] },
+  { id: 'class-friendships', what: 'Friendships mostly within majors: positive assortativity, far from what random networks give; and one student with no friendships yet, an isolate.', learn: ['assortativity', 'eiIndex', 'nullModel', 'isolate'] },
   { id: 'clubs-two-mode', what: 'Six students and four clubs. Compare plain and two-mode degree, find the two bridging students by two-mode betweenness, then project onto students: Ana and Ben share two clubs.', learn: ['twoMode', 'projection', 'borgattiEverett', 'twoModeBetweenness'] },
   { id: 'ego-10', what: 'Two circles that do not know each other: low constraint, effective size close to size.', learn: ['constraint', 'effectiveSize', 'ego'] },
 // The title is the one the example opens under in Build, so Learn and the

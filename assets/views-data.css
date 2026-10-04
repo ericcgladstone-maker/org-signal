@@ -138,3 +138,7 @@
 /* Methods & Export: the contact-details option above the file list (N19). */
 .mx-privacy{display:flex;align-items:flex-start;gap:.55rem;margin:.1rem 0 .9rem;max-width:72ch;color:var(--text)}
 .mx-privacy input{margin-top:.2rem;accent-color:var(--accent)}
+
+/* Ties these records can build (import review) */
+.dv-rules{margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--rule)}
+.dv-rules .label{margin-bottom:.35rem}

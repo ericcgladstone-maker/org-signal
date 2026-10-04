@@ -364,7 +364,7 @@ function PendingReview({ pending, busy, hasData, onLoad, onDiscard }) {
     <label class="field dv-name"><span>Name for this data</span><input class="input" value=${name} maxlength="120" onInput=${e => setName(e.currentTarget.value)} /></label>
     ${empty && html`<div class="notice-line" role="alert"><${Flag} level="error">Nothing to analyze</${Flag}><span class="grow">These files produced no messages, ties or other events, so there is no network to build. Check the problems listed below, or choose another importer.</span></div>`}
     ${pending.owners.length >= 2 && html`<${Owners} owners=${pending.owners} checked=${owners} onToggle=${(k, v) => setOwners(prev => { const s = new Set(prev); if (v) s.add(k); else s.delete(k); return s; })} />`}
-    <${ReportView} report=${pending.report} pending excludeBots=${store.get().settings?.excludeBots !== false} />
+    <${ReportView} report=${pending.report} pending dataset=${pending.dataset} excludeBots=${store.get().settings?.excludeBots !== false} />
     <div class="section">
       <h3 class="dv-h3">Who is who</h3>
       <${MatchList} matches=${matches} accepted=${accepted} onToggle=${toggle} onAll=${v => setAccepted(new Set(v ? matches.map((_, i) => i) : []))} />
@@ -424,7 +424,7 @@ function CurrentData({ dataset, report, tab: forced, onTab }) {
     </div>
     <div role="tabpanel" id="dv-panel" aria-labelledby=${`dv-tab-${tab}`}>
       ${tab === 'report' && html`<${SurveyRule} dataset=${dataset} />`}
-      ${tab === 'report' && html`<${ReportView} report=${report} excludeBots=${settings?.excludeBots !== false} />`}
+      ${tab === 'report' && html`<${ReportView} report=${report} dataset=${dataset} excludeBots=${settings?.excludeBots !== false} />`}
       ${tab === 'identity' && html`<${IdentityPanel} ds=${dataset} />`}
       ${tab === 'profile' && html`<${ProfileJoin} ds=${dataset} />`}
     </div>
