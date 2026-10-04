@@ -4,6 +4,10 @@
 name = "orgsignal"
 compatibility_date = "2026-10-02"
 
+# Own domain (graystoneindustries.co is on this account). The workers.dev
+# address keeps working too.
+routes = [{ pattern = "orgsignal.graystoneindustries.co", custom_domain = true }]
+
 [assets]
 directory = "./_deploy"
 not_found_handling = "404-page"

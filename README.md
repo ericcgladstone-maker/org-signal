@@ -1,6 +1,6 @@
 # Org Signal
 
-**Open it: <https://orgsignal.eric-c-gladstone.workers.dev>**. It runs in the browser, with nothing to install and no account.
+**Open it: <https://orgsignal.graystoneindustries.co>**. It runs in the browser, with nothing to install and no account.
 
 Org Signal is a browser-based tool for teaching network analysis that is also built to support research-grade work.
 
