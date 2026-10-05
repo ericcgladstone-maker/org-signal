@@ -173,7 +173,7 @@ export function DataView() {
   };
 
   const showInputs = inputs.length > 0 && !pending;
-  // The landing page opens with its own orientation ("Start with a network").
+  // The landing page opens with its own orientation ("About Org Signal").
   const landing = !hasData && !inputs.length && !pending && !projects.length;
   return html`<div class="view view--col dv">
     <${ViewHead} title="Data" intro=${landing ? null : DATA_INTRO}
@@ -280,7 +280,7 @@ function EmptyState({ onFiles }) {
   const ext = (href, text, cls = 'tlink') => html`<a class=${cls} href=${href} target="_blank" rel="noopener">${text} <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>`;
   return html`<div class="empty dv-empty">
     <section class="dv-orient" aria-labelledby="dv-orient-h">
-      <h2 id="dv-orient-h">Start with a network</h2>
+      <h2 id="dv-orient-h">About Org Signal</h2>
       <div class="prose dv-orient__text">
         <p>I built Org Signal as a browser-based environment for teaching and conducting social network analysis. You can construct a network directly, generate one whose underlying structure is known, work with a published network, or import empirical records and define how those records become ties.</p>
         <p>The same analysis environment then provides network visualization, person- and group-level measures, comparisons with random networks, uncertainty in rankings, change over time, content analysis, and export of networks, figures, tables, and methods documentation.</p>
@@ -321,7 +321,7 @@ function EmptyState({ onFiles }) {
       <p><button type="button" class="tlink tlink--arrow" onClick=${() => store.actions.setView('generate')}>Open Generate</button></p>
     </section>
     <section class="dv-about" aria-labelledby="dv-about-h">
-      <h3 id="dv-about-h" class="dv-h3">About Org Signal</h3>
+      <h3 id="dv-about-h" class="dv-h3">Research context and documentation</h3>
       <p class="prose">Org Signal is part of the Networks Lab at Graystone Industries. The Networks Lab page describes the research logic behind the system, validation procedures, current limitations, teaching materials, and source documentation.</p>
       <p class="tlinks">${ext(LAB, 'Read about Org Signal in the Networks Lab')}${ext(REPO, 'Source and documentation')}</p>
     </section>
