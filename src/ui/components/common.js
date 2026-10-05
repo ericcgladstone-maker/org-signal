@@ -291,7 +291,10 @@ export function termGloss(k) {
 // Interpretive notes off. The prop names are the original ones (means, scale,
 // example, mistake) so callers did not change.
 export const HOWTO_PARTS = { means: 'Definition.', scale: 'Scale.', example: 'In this network.', mistake: 'Caution.' };
-export function HowToRead({ title = 'Interpretation', means, scale, example, mistake, open = false, children, className = '' }) {
+// Open by default (2026-10-04): with the switch on, the notes are visible, so
+// turning it off and on makes a difference a reader can see. A reader can
+// still close any one of them.
+export function HowToRead({ title = 'Interpretation', means, scale, example, mistake, open = true, children, className = '' }) {
   const explain = useExplain();
   if (!explain) return null;
   return html`<details class=${`disclose howto ${className}`} open=${open}>

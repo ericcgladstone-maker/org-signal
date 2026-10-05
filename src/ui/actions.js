@@ -244,6 +244,7 @@ function setExplain(on) {
   store.set({ explain: !!on });
   writeExplainPref(!!on);
   announce(on ? 'Interpretive notes on.' : 'Interpretive notes off.');
+  notify('info', on ? 'Interpretive notes shown in every view.' : 'Interpretive notes hidden in every view. Turn them back on from the masthead.');
 }
 
 // The sample organization (the Data view's preset of Generate), loadable from
