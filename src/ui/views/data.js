@@ -250,6 +250,8 @@ const HOWTO = [
 // organization stays one click away from every analysis view's empty state
 // (store.actions.loadSample) and from Generate.
 const LAB = 'https://graystoneindustries.co/lab/';
+// The narrated walkthrough talk (full size; also on graystoneindustries.co/talks/).
+const WALKTHROUGH = 'https://orgsignalwalkthrough.eric-c-gladstone.workers.dev';
 const REPO = 'https://github.com/ericcgladstone-maker/org-signal';
 const START = [
   { id: 'build', title: 'Draw or construct a network', text: 'Draw people and ties directly, conduct an ego-network interview, collect a roster or perceived-network survey, or paste a tie list.', action: 'Open Build' },
@@ -286,6 +288,7 @@ function EmptyState({ onFiles }) {
         <p>Files are read locally in the browser.</p>
       </div>
       <p class="dv-orient__lab">${ext(LAB, 'Research context, validation, and current limits', 'tlink dv-lab')}</p>
+      <p class="dv-orient__lab dv-orient__walk">${ext(WALKTHROUGH, 'Narrated walkthrough: learning social network analysis by doing it', 'tlink dv-lab')}</p>
     </section>
     <section class="dv-ways" aria-labelledby="dv-ways-h">
       <h2 id="dv-ways-h" class="section__title">Choose a way in</h2>
