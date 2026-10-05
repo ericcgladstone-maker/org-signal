@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+  <graph id="G" edgedefault="undirected">
+    <node id="a"/><node id="b"/><node id="c"/><node id="d"/>
+    <edge source="a" target="b"/>
+    <hyperedge><endpoint node="a"/><endpoint node="c"/><endpoint node="d"/></hyperedge>
+    <hyperedge><endpoint node="b"/><endpoint node="c"/><endpoint node="d"/></hyperedge>
+  </graph>
+</graphml>

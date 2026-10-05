@@ -24,6 +24,7 @@
 
 import ICAL from '../../vendor/ical.js';
 import { localToUtc, isValidZone } from './tabular.js';
+import { UploadError } from '../core/upload.js';
 
 const EXT = /\.(ics|ical|ifb)$/i;
 
@@ -34,6 +35,20 @@ async function headText(entry, n = 512) {
   return new TextDecoder('utf-8').decode((value || new Uint8Array()).subarray(0, n));
 }
 
+// Outlook (classic) "Export to a file > Comma Separated Values" of a calendar
+// folder. English headers; translated Outlook versions are not recognised.
+async function outlookCsv(fs) {
+  const out = [];
+  for (const e of fs.entries) {
+    if (!/\.csv$/i.test(e.rel)) continue;
+    const first = (await headText(e, 1024)).replace(/^﻿/, '').split(/\r?\n/)[0].replace(/"/g, '');
+    if (/(^|,)Subject,/.test(first) && /,Start Date,/.test(first) && /,(Required Attendees|Meeting Organizer)(,|$)/.test(first)) out.push(e);
+  }
+  return out;
+}
+
+const ICS_STEPS = 'Export the calendar as an iCalendar (.ics) file instead: in Outlook (classic), File > Save Calendar; in the new Outlook or Outlook on the web, Settings > Calendar > Shared calendars > Publish a calendar, then download the ICS link; in Google Calendar, Settings > Import & export > Export. Then load the .ics file.';
+
 async function detect(fs) {
   const files = [];
   for (const e of fs.entries) {
@@ -41,7 +56,11 @@ async function detect(fs) {
     const h = (await headText(e)).replace(/^﻿/, '').replace(/^\s+/, '');
     if (/^BEGIN:VCALENDAR/i.test(h)) files.push(e.rel);
   }
-  if (!files.length) return { score: 0, reason: '' };
+  if (!files.length) {
+    const csv = await outlookCsv(fs);
+    if (csv.length) return { score: 0.7, reason: 'Outlook calendar exported as CSV (needs an .ics export)', files: csv.map(e => e.rel) };
+    return { score: 0, reason: '' };
+  }
   const takeout = files.some(f => /(^|\/)Calendar\/[^/]+\.ics$/i.test(f));
   return { score: 0.9, reason: takeout ? 'Google Takeout calendar (.ics)' : 'iCalendar file (.ics)', files };
 }
@@ -108,6 +127,10 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
     if (!EXT.test(e.rel)) continue;
     const h = (await headText(e)).replace(/^﻿/, '').replace(/^\s+/, '');
     if (/^BEGIN:VCALENDAR/i.test(h)) entries.push(e);
+  }
+  const csv = await outlookCsv(fs);
+  if (!entries.length && csv.length) {
+    throw new UploadError('calendar-csv-unsupported', `${csv[0].rel.split('/').pop()} is an Outlook calendar exported as CSV. That export lists attendees by display name only, with no addresses and no responses, so meetings cannot be matched to people reliably. ${ICS_STEPS}`);
   }
   const defaultTz = resolveZone(opt.defaultTz) || 'UTC';
   builder.beginSource({ format: 'calendar', family: 'workplace', medium: 'calendar', view: 'ego', context: 'workplace', tz: defaultTz,
@@ -304,6 +327,13 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
     }
     if (organizer) egoVotes.set(organizer, (egoVotes.get(organizer) || 0) + 1);
     rows.push({ o, organizer, people, invited: invited.size, declinedOrganizer, summary: prop1(c, 'summary'), cls: String(prop1(c, 'class') || '').toUpperCase() });
+  }
+
+  // A calendar with no events (an empty calendar, or a date range with none):
+  // say so rather than that the owner is unknown.
+  if (!rows.length && !builder.source.warnings.some(w => w.code === 'parse-error')) {
+    builder.warn('calendar-empty', `No events were found in ${entries.length === 1 ? entries[0].rel.split('/').pop() : `these ${entries.length} calendar files`}. The calendar is empty, or the export covered a period without events. Export it again with the full date range, or choose the calendar that holds your meetings.`);
+    return;
   }
 
   // Ego: option, else owner evidence from file names / X-WR-CALNAME (heavily

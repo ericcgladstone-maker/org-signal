@@ -1,0 +1,173 @@
+{
+    "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#chats(members())",
+    "@odata.count": 3,
+    "value": [
+        {
+            "id": "19:5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b@thread.v2",
+            "topic": "Launch crew",
+            "createdDateTime": "2024-03-02T09:00:00.120Z",
+            "lastUpdatedDateTime": "2024-03-04T16:02:11.48Z",
+            "chatType": "group",
+            "webUrl": "https://teams.microsoft.com/l/chat/19%3A5a1c9e7b3d2f4a6c8e0b1d3f5a7c9e1b%40thread.v2/0?tenantId=f0e1d2c3-b4a5-4697-8899-aabbccddeeff",
+            "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff",
+            "onlineMeetingInfo": null,
+            "viewpoint": {
+                "isHidden": false,
+                "lastMessageReadDateTime": "2024-03-04T16:02:11.48Z"
+            },
+            "isHiddenForAllMembers": false,
+            "members": [
+                {
+                    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                    "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6NWExYzllN2IzZDJmNGE2YzhlMGIxZDNmNWE3YzllMWJAdGhyZWFkLnYyIzNjOWYxYTJlLTViN2QtNGU4YS05YzFmLTJkM2U0ZjVhNmI3Yw==",
+                    "roles": [
+                        "owner"
+                    ],
+                    "displayName": "Ana Ruiz",
+                    "visibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+                    "userId": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                    "email": "ana.ruiz@contoso.example",
+                    "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                },
+                {
+                    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                    "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6NWExYzllN2IzZDJmNGE2YzhlMGIxZDNmNWE3YzllMWJAdGhyZWFkLnYyIzdkMmU0ZjZhLThiMWMtNGQzZS1hNWY3LTliMGMxZDJlM2Y0YQ==",
+                    "roles": [
+                        "owner"
+                    ],
+                    "displayName": "Ben Okafor",
+                    "visibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+                    "userId": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                    "email": "ben.okafor@contoso.example",
+                    "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                },
+                {
+                    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                    "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6NWExYzllN2IzZDJmNGE2YzhlMGIxZDNmNWE3YzllMWJAdGhyZWFkLnYyI2ExYjJjM2Q0LWU1ZjYtNGE3Yi04YzlkLTBlMWYyYTNiNGM1ZA==",
+                    "roles": [
+                        "owner"
+                    ],
+                    "displayName": "Chen Li",
+                    "visibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+                    "userId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+                    "email": "chen.li@contoso.example",
+                    "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                },
+                {
+                    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                    "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6NWExYzllN2IzZDJmNGE2YzhlMGIxZDNmNWE3YzllMWJAdGhyZWFkLnYyI2U5ZjhhN2I2LWM1ZDQtNGUzZi1hMmIxLWMwZDllOGY3YTZiNQ==",
+                    "roles": [
+                        "guest"
+                    ],
+                    "displayName": "Dana Park",
+                    "visibleHistoryStartDateTime": "2024-03-03T10:00:00Z",
+                    "userId": "e9f8a7b6-c5d4-4e3f-a2b1-c0d9e8f7a6b5",
+                    "email": "dana.park@fabrikam.example",
+                    "tenantId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                }
+            ]
+        },
+        {
+            "id": "19:3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c_7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a@unq.gbl.spaces",
+            "topic": null,
+            "createdDateTime": "2024-02-11T08:00:00Z",
+            "lastUpdatedDateTime": "2024-03-05T12:00:00.3Z",
+            "chatType": "oneOnOne",
+            "webUrl": "https://teams.microsoft.com/l/chat/19%3A3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c_7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a%40unq.gbl.spaces/0?tenantId=f0e1d2c3-b4a5-4697-8899-aabbccddeeff",
+            "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff",
+            "onlineMeetingInfo": null,
+            "viewpoint": {
+                "isHidden": false,
+                "lastMessageReadDateTime": "0001-01-01T00:00:00Z"
+            },
+            "isHiddenForAllMembers": false,
+            "members": [
+                {
+                    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                    "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6M2M5ZjFhMmUtNWI3ZC00ZThhLTljMWYtMmQzZTRmNWE2YjdjXzdkMmU0ZjZhLThiMWMtNGQzZS1hNWY3LTliMGMxZDJlM2Y0YUB1bnEuZ2JsLnNwYWNlcyMzYzlmMWEyZS01YjdkLTRlOGEtOWMxZi0yZDNlNGY1YTZiN2M=",
+                    "roles": [
+                        "owner"
+                    ],
+                    "displayName": "Ana Ruiz",
+                    "visibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+                    "userId": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                    "email": "ana.ruiz@contoso.example",
+                    "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                },
+                {
+                    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                    "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6M2M5ZjFhMmUtNWI3ZC00ZThhLTljMWYtMmQzZTRmNWE2YjdjXzdkMmU0ZjZhLThiMWMtNGQzZS1hNWY3LTliMGMxZDJlM2Y0YUB1bnEuZ2JsLnNwYWNlcyM3ZDJlNGY2YS04YjFjLTRkM2UtYTVmNy05YjBjMWQyZTNmNGE=",
+                    "roles": [
+                        "owner"
+                    ],
+                    "displayName": "Ben Okafor",
+                    "visibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+                    "userId": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                    "email": "ben.okafor@contoso.example",
+                    "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                }
+            ]
+        },
+        {
+            "id": "19:meeting_ZmljdGlvbmFsLW1lZXRpbmctMDAwMS1hYmNkZWY0NTY3ODk@thread.v2",
+            "topic": "Weekly sync",
+            "createdDateTime": "2024-03-06T13:55:00Z",
+            "lastUpdatedDateTime": "2024-03-06T15:01:00Z",
+            "chatType": "meeting",
+            "webUrl": "https://teams.microsoft.com/l/chat/19%3Ameeting_ZmljdGlvbmFsLW1lZXRpbmctMDAwMS1hYmNkZWY0NTY3ODk%40thread.v2/0?tenantId=f0e1d2c3-b4a5-4697-8899-aabbccddeeff",
+            "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff",
+            "onlineMeetingInfo": {
+                "calendarEventId": "AAMkAGZpY3Rpb25hbA=",
+                "joinWebUrl": "https://teams.microsoft.com/l/meetup-join/fictional",
+                "organizer": {
+                    "id": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                    "displayName": null,
+                    "userIdentityType": "aadUser"
+                }
+            },
+            "viewpoint": {
+                "isHidden": false,
+                "lastMessageReadDateTime": "2024-03-06T15:01:00Z"
+            },
+            "isHiddenForAllMembers": false,
+            "members": [
+                {
+                    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                    "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6bWVldGluZ19abWxqZEdsdmJtRnNMVzFsWlhScGJtY3RNREF3TVMxaFltTmtaV1kwTlRZM09Ea0B0aHJlYWQudjIjM2M5ZjFhMmUtNWI3ZC00ZThhLTljMWYtMmQzZTRmNWE2Yjdj",
+                    "roles": [
+                        "owner"
+                    ],
+                    "displayName": "Ana Ruiz",
+                    "visibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+                    "userId": "3c9f1a2e-5b7d-4e8a-9c1f-2d3e4f5a6b7c",
+                    "email": "ana.ruiz@contoso.example",
+                    "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                },
+                {
+                    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                    "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6bWVldGluZ19abWxqZEdsdmJtRnNMVzFsWlhScGJtY3RNREF3TVMxaFltTmtaV1kwTlRZM09Ea0B0aHJlYWQudjIjN2QyZTRmNmEtOGIxYy00ZDNlLWE1ZjctOWIwYzFkMmUzZjRh",
+                    "roles": [
+                        "owner"
+                    ],
+                    "displayName": "Ben Okafor",
+                    "visibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+                    "userId": "7d2e4f6a-8b1c-4d3e-a5f7-9b0c1d2e3f4a",
+                    "email": "ben.okafor@contoso.example",
+                    "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                },
+                {
+                    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                    "id": "MCNmMGUxZDJjMy1iNGE1LTQ2OTctODg5OS1hYWJiY2NkZGVlZmYjMTk6bWVldGluZ19abWxqZEdsdmJtRnNMVzFsWlhScGJtY3RNREF3TVMxaFltTmtaV1kwTlRZM09Ea0B0aHJlYWQudjIjYTFiMmMzZDQtZTVmNi00YTdiLThjOWQtMGUxZjJhM2I0YzVk",
+                    "roles": [
+                        "owner"
+                    ],
+                    "displayName": "Chen Li",
+                    "visibleHistoryStartDateTime": "0001-01-01T00:00:00Z",
+                    "userId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+                    "email": "chen.li@contoso.example",
+                    "tenantId": "f0e1d2c3-b4a5-4697-8899-aabbccddeeff"
+                }
+            ]
+        }
+    ]
+}

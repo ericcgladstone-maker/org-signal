@@ -1,0 +1,4 @@
+nodeID,networkCanvasEgoUUID,networkCanvasUUID,name,nickname,role,closeness,support_type_emotional,support_type_advice,layout_x,layout_y
+1,6f1c0000-0000-4000-8000-000000000001,a1100000-0000-4000-8000-000000000001,Avery,Av,manager,4,false,true,0.31,0.40
+2,6f1c0000-0000-4000-8000-000000000001,b2200000-0000-4000-8000-000000000002,Jordan,ENCRYPTED,'+contractor,5,true,true,0.62,0.24
+3,6f1c0000-0000-4000-8000-000000000001,c3300000-0000-4000-8000-000000000003,Sam,,peer,2,false,false,0.5,0.5

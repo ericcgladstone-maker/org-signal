@@ -26,7 +26,7 @@ import { store, useStore } from '../store.js';
 import { ViewHead, Flag, ErrorLine, Seg } from '../components/common.js';
 import { importReport, suggestMatches, applyMerges, mergeDatasets, joinProfiles, pipelineMode, filesForRels } from '../services/pipeline.js';
 import { fmtInt, plural } from '../lib/format.js';
-import { inputsFromDrop, inputsFromPicker, detect, importOne, tableKindOf, shortName, browserZone, isCSV, blobOf, pathOf, groupSharedResponses } from './data/io.js';
+import { inputsFromDrop, inputsFromPicker, detect, importGroups, importGroup, tableKindOf, shortName, browserZone, isCSV, blobOf, pathOf, groupSharedResponses } from './data/io.js';
 import { InputList, effectiveImporters, isRecognized, inputUse } from './data/inputs.js';
 import { ReportView } from './data/report.js';
 import { ownersOf, ownerPairs, Owners, MatchList, ManualMerge, IdentityPanel } from './data/identity.js';
@@ -105,12 +105,23 @@ export function DataView() {
     }
     setBusy(true);
     try {
+      // Parts of one export and repeated files are read together (io.js importGroups).
+      const groups = importGroups(toImport);
+      const failed = [];
       const results = await store.actions.runJob(toImport.length > 1 ? `Importing ${toImport.length} inputs` : `Importing ${toImport[0].name}`, async (signal, progress) => {
         const out = [];
-        for (let k = 0; k < toImport.length; k++) {
-          const inp = toImport[k];
-          out.push(await importOne(inp, { signal, onProgress: (f, msg) => progress((k + (f || 0)) / toImport.length, msg) }));
+        for (let k = 0; k < groups.length; k++) {
+          const g = groups[k];
+          try {
+            out.push(await importGroup(g, { signal, onProgress: (f, msg) => progress((k + (f || 0)) / groups.length, msg) }));
+          } catch (e) {
+            // One unreadable input (an HTML export, a truncated zip) does not
+            // stop the others; it is named in the review instead.
+            if (e?.name === 'AbortError' || groups.length === 1) throw e;
+            failed.push({ name: g.map(i => i.name).join(', '), message: e?.message || String(e) });
+          }
         }
+        if (!out.length && failed.length) throw new Error(failed.map(f => `${f.name}: ${f.message}`).join(' '));
         return out;
       });
       const fresh = results.length > 1 ? await mergeDatasets(results.map(r => r.dataset)) : results[0].dataset;
@@ -122,6 +133,7 @@ export function DataView() {
       const rep = add ? await importReport(ds) : freshReport;
       const unclaimed = results.flatMap(r => r.unclaimed || r.report?.unclaimed || []);
       if (rep) rep.unclaimed = unclaimed.filter(r => !isCSV({ path: r }));
+      if (rep && failed.length) rep.notes = [...failed.map(f => `Could not read ${f.name}: ${f.message}`), ...(rep.notes || [])];
       const matches = await suggestMatches(ds).catch(() => null);
       // Tables no importer claimed (an HR export inside the Slack zip) and
       // tables marked "add details to people" are offered for joining.

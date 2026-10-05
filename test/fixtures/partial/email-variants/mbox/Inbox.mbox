@@ -1,0 +1,118 @@
+From 1790123456789012345@xxx Mon Mar 04 11:20:34 +0000 2024
+X-GM-THRID: 1790120000000000001
+X-Gmail-Labels: Sent,Opened,Projects/Apollo
+MIME-Version: 1.0
+Date: Mon, 4 Mar 2024 12:20:34 +0100
+From: Ana Ruiz <ana.ruiz@example.org>
+To: "Okafor, Ben" <ben.okafor@example.org>, chen.li@example.org
+Cc: =?UTF-8?Q?Jos=C3=A9_P=C3=A9rez?= <jose.perez@example.com>
+Bcc: dana.park@example.org
+Subject: Apollo draft
+Message-ID: <root000@mail.example.org>
+Content-Type: text/plain; charset="UTF-8"
+
+Draft is up.
+From the desk of Ana: this line follows a non-blank line and must not split.
+>From now on, use the new template.
+
+From here we go (not a separator: no date).
+
+From 1790123456789012399@xxx Mon Mar 04 13:05:00 +0000 2024
+X-GM-THRID: 1790120000000000001
+X-Gmail-Labels: Inbox,Opened
+Delivered-To: ana.ruiz@example.org
+Date: Mon, 4 Mar 2024 08:05:00 -0500
+From: "Okafor, Ben" <Ben.Okafor@Example.org>
+To: Ana Ruiz <ana.ruiz@example.org>
+Cc: chen.li@example.org
+Subject: Re: Apollo draft
+Message-ID: <reply111@mail.example.org>
+In-Reply-To: <root000@mail.example.org>
+References: <root000@mail.example.org>
+Content-Type: multipart/alternative; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset="UTF-8"
+
+Looks good, merging.
+--b1
+Content-Type: text/html; charset="UTF-8"
+
+<p>Looks good, merging.</p>
+--b1--
+
+From 1790123456789012398@xxx Mon Mar 04 14:00:00 +0000 2024
+X-GM-THRID: 1790120000000000555
+X-Gmail-Labels: Spam
+Delivered-To: ana.ruiz@example.org
+Date: Mon, 4 Mar 2024 14:00:00 +0000
+From: Prize Desk <winner@spam.example.net>
+To: ana.ruiz@example.org
+Subject: You won
+Message-ID: <spam1@spam.example.net>
+
+Click.
+
+From 1790123456789012400@xxx Tue Mar 05 09:00:00 +0000 2024
+X-GM-THRID: 1790120000000000777
+X-Gmail-Labels: Inbox
+Delivered-To: ana.ruiz@example.org
+Date: Tue, 05 Mar 2024 09:00:00 +0000
+From: Chen Li <chen.li@example.org>
+To: apollo-dev@lists.example.org
+List-Id: Apollo developers <apollo-dev.lists.example.org>
+List-Post: <mailto:apollo-dev@lists.example.org>
+Precedence: list
+Subject: Build is green
+Message-ID: <list222@mail.example.org>
+
+All green.
+
+From 1790123456789012401@xxx Wed Mar 06 15:15:00 +0000 2024
+X-GM-THRID: 1790120000000000888
+X-Gmail-Labels: Inbox
+Delivered-To: ana.ruiz@example.org
+Date: Wed, 6 Mar 24 10:15 EST
+From: =?ISO-8859-1?Q?Zo=EB_Ng?= <zoe.ng@example.net>
+To: Apollo core: ana.ruiz@example.org, "Okafor, Ben" <ben.okafor@example.org>;
+Subject: Re: a very long subject line that the sender's client
+ decided to fold onto a second line
+Message-ID: <e555@example.net>
+In-Reply-To: <missing999@mail.example.org>
+
+Replying to something we never saw.
+
+From 1790123456789012402@xxx Thu Mar 07 16:30:00 +0000 2024
+X-GM-THRID: 1790120000000000999
+X-Gmail-Labels: Inbox
+Delivered-To: ana.ruiz@example.org
+Date: Thu, 7 Mar 2024 09:30:00 -0700 (PDT)
+From: Dana Park <dana.park@example.org>
+To: Ana Ruiz <ana.ruiz@example.org>
+Subject: coffee
+Message-ID: <f666@example.org>
+
+Coffee?
+
+From 1790123456789012403@xxx Fri Mar 08 10:00:00 +0000 2024
+X-GM-THRID: 1790120000000001000
+X-Gmail-Labels: Sent
+Date: Fri, 8 Mar 2024 10:00:00 -0000
+From: Ana Ruiz <ana.ruiz@example.org>
+To: Ana Ruiz <ana.ruiz@example.org>
+Subject: note to self
+Message-ID: <g777@mail.example.org>
+
+Remember the milk.
+
+From 1790123456789012404@xxx Sat Mar 09 12:00:00 +0000 2024
+X-GM-THRID: 1790120000000001001
+X-Gmail-Labels: Inbox
+Delivered-To: ana.ruiz@example.org
+Date: sometime soon
+From: Ben Okafor <ben.okafor@example.org>
+To: ana.ruiz@example.org
+Subject: undated
+Message-ID: <h888@example.org>
+
+No usable date header.

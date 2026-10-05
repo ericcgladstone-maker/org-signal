@@ -296,9 +296,9 @@ function headerBlock(bytes) {
   return bytes;
 }
 
-const PST_ADVICE = 'Outlook PST/OST/MSG files cannot be read in the browser yet (no parser is available here). Convert the file to mbox first, '
-  + 'for example with readpst ("readpst -r -o out mailbox.pst", from libpst), or by importing it into Thunderbird and exporting the folders '
-  + 'as mbox with the ImportExportTools NG add-on, then import the mbox files.';
+const PST_ADVICE = 'Outlook data files (.pst, .ost, .msg) cannot be read here: their format needs a parser that does not run in the browser. Convert them to mbox first, '
+  + 'with readpst from libpst ("readpst -r -o out mailbox.pst") or by importing the file into Thunderbird and saving each folder '
+  + 'as mbox with the ImportExportTools NG add-on, then load the mbox files.';
 
 // ---- import -----------------------------------------------------------------
 

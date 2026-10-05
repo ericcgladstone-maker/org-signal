@@ -1,0 +1,124 @@
+[
+ {
+  "type": "message",
+  "user": "U01ANARUIZ0",
+  "text": "Draft is up, <@W01BENOKAF0> can you review? R&amp;D &lt;3 <!here>",
+  "ts": "1709551234.001200",
+  "thread_ts": "1709551234.001200",
+  "reply_count": 2,
+  "reply_users": [
+   "W01BENOKAF0",
+   "U01CHENLI00"
+  ],
+  "reply_users_count": 2,
+  "latest_reply": "1709600100.000400",
+  "client_msg_id": "3f6a1c2e-0000-4000-8000-000000000001",
+  "team": "T01EXAMPLE0",
+  "user_profile": {
+   "real_name": "Ana Ruiz",
+   "display_name": "ana",
+   "name": "ana.ruiz",
+   "team": "T01EXAMPLE0"
+  },
+  "blocks": [
+   {
+    "type": "rich_text",
+    "block_id": "x1",
+    "elements": [
+     {
+      "type": "rich_text_section",
+      "elements": [
+       {
+        "type": "text",
+        "text": "Draft is up, "
+       },
+       {
+        "type": "user",
+        "user_id": "W01BENOKAF0"
+       },
+       {
+        "type": "text",
+        "text": " can you review?"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "reactions": [
+   {
+    "name": "eyes",
+    "users": [
+     "U01CHENLI00"
+    ],
+    "count": 1
+   },
+   {
+    "name": "+1",
+    "users": [
+     "W01BENOKAF0",
+     "U01CHENLI00"
+    ],
+    "count": 5
+   }
+  ]
+ },
+ {
+  "type": "message",
+  "user": "W01BENOKAF0",
+  "text": "On it",
+  "ts": "1709552100.002300",
+  "thread_ts": "1709551234.001200",
+  "parent_user_id": "U01ANARUIZ0"
+ },
+ {
+  "type": "message",
+  "subtype": "channel_join",
+  "user": "U01DANAPARK",
+  "text": "<@U01DANAPARK> has joined the channel",
+  "ts": "1709554000.000100"
+ },
+ {
+  "type": "message",
+  "subtype": "bot_message",
+  "bot_id": "B01DEPLOYBOT",
+  "username": "deploybot",
+  "text": "Deploy #42 succeeded",
+  "ts": "1709555000.000200"
+ },
+ {
+  "type": "message",
+  "user": "U01CHENLI00",
+  "text": "Following up <@U01ANARUIZ0|ana.ruiz>",
+  "ts": "1709600000.000300",
+  "thread_ts": "1709500000.000100",
+  "parent_user_id": "W01BENOKAF0"
+ },
+ {
+  "type": "message",
+  "subtype": "thread_broadcast",
+  "user": "U01CHENLI00",
+  "text": "Also posting to channel",
+  "ts": "1709600100.000400",
+  "thread_ts": "1709551234.001200"
+ },
+ {
+  "type": "message",
+  "subtype": "message_changed",
+  "hidden": true,
+  "ts": "1709600200.000500",
+  "message": {
+   "type": "message",
+   "user": "W01BENOKAF0",
+   "text": "On it!",
+   "ts": "1709552100.002300"
+  }
+ },
+ {
+  "type": "message",
+  "subtype": "channel_topic",
+  "user": "U01ANARUIZ0",
+  "text": "set the channel topic",
+  "ts": "1709600300.000600"
+ }
+]

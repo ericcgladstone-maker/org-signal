@@ -1,0 +1,74 @@
+[
+ {
+  "id": "U01ANARUIZ0",
+  "team_id": "T01EXAMPLE0",
+  "name": "ana.ruiz",
+  "real_name": "Ana Ruiz",
+  "deleted": false,
+  "is_bot": false,
+  "is_admin": true,
+  "tz": "America/Los_Angeles",
+  "tz_offset": -28800,
+  "profile": {
+   "real_name": "Ana Ruiz",
+   "display_name": "ana",
+   "title": "Engineer",
+   "email": "Ana.Ruiz@example.org"
+  }
+ },
+ {
+  "id": "W01BENOKAF0",
+  "team_id": "T01EXAMPLE0",
+  "name": "ben.okafor",
+  "real_name": "Ben Okafor",
+  "deleted": false,
+  "is_bot": false,
+  "profile": {
+   "real_name": "Ben Okafor",
+   "display_name": "ben",
+   "email": "ben.okafor@example.org"
+  }
+ },
+ {
+  "id": "U01CHENLI00",
+  "team_id": "T01EXAMPLE0",
+  "name": "chen.li",
+  "real_name": "Chen Li",
+  "is_restricted": true,
+  "is_ultra_restricted": false,
+  "profile": {
+   "real_name": "Chen Li",
+   "display_name": ""
+  }
+ },
+ {
+  "id": "U01DANAPARK",
+  "team_id": "T01EXAMPLE0",
+  "name": "dana.park",
+  "real_name": "Dana Park",
+  "deleted": true,
+  "profile": {
+   "real_name": "Dana Park"
+  }
+ },
+ {
+  "id": "U01BOTUSER0",
+  "team_id": "T01EXAMPLE0",
+  "name": "deploybot",
+  "is_bot": true,
+  "profile": {
+   "real_name": "deploybot",
+   "bot_id": "B01DEPLOYBO2"
+  }
+ },
+ {
+  "id": "USLACKBOT",
+  "team_id": "T01EXAMPLE0",
+  "name": "slackbot",
+  "real_name": "Slackbot",
+  "is_bot": false,
+  "profile": {
+   "real_name": "Slackbot"
+  }
+ }
+]

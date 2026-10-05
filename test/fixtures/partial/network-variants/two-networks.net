@@ -1,0 +1,15 @@
+*Network friendship
+*Vertices 3
+1 "Ana"
+2 "Ben"
+3 "Chen"
+*Arcs
+1 2
+2 3
+*Network advice
+*Vertices 3
+1 "Ana"
+2 "Ben"
+3 "Chen"
+*Arcs
+3 1

@@ -44,6 +44,7 @@ Org Signal turns raw relational traces (exports, surveys, hand-drawn networks, s
   - Example (Davis's Southern Women): `const b = new DatasetBuilder({ name: 'Southern Women' }); b.beginSource({ format: 'classic', view: 'full', context: 'custom', directed: false }); declareTwoMode(b, ['Women', 'Events']); addAffiliation(b, 'davis:evelyn', 'davis:e1', { actorLabel: 'Evelyn', eventLabel: 'June 27', t: Date.UTC(1936, 5, 27) });`
   - Construction (`settings.twoMode = { view: 'two-mode' | 'mode0' | 'mode1', projection: 'count' | 'newman' | 'binary', minShared }`) and the two-mode measures are in `docs/api/analysis.md` ("Two-mode networks").
 - `detect()` may return `files` (the entries it claims) so the pipeline can hand unclaimed files (e.g. an HR CSV dropped next to a Slack export) to the profile join.
+- An importer may export `partKey(fs, { root })` -> string | null: equal keys under two dropped items mean two parts of one export (see "Incomplete and wrong uploads").
 
 ## Module ownership
 
@@ -64,6 +65,25 @@ Each owner writes only inside their paths plus `test/<area>/` and `test/fixtures
 ## Importer contract
 
 See `src/importers/registry.js`. `detect(fs)` must be cheap (file names, `peek()` of a few KB). `import(fs, { builder, options, progress, signal })` must stream anything that can be large, call `builder.beginSource({ format, family, medium, view, context, tz, fileNames, egoKey })`, count what it read with `builder.stat()`, and record every skipped or suspicious thing with `builder.warn(code, message, count)`. Bots: set `isBot`. Each importer has tests against synthetic fixtures that follow its spec, including the quirks the spec lists.
+
+## Incomplete and wrong uploads
+
+People upload partial exports and the wrong variant: one part of a split archive, an export made with the HTML option, a zip with its key file missing, a download that stopped early, the same file twice. Every importer and the pipeline meet this standard for every such upload:
+
+- **Either (a)** read what is there and say precisely what is missing and how to get it: which file or export option, and where in the platform's settings;
+- **or (b)** say clearly why the upload cannot be read and what to do instead.
+- **Never** fail silently, throw an unexplained error, misdetect the platform (a Discord package read as an edge list, an Outlook calendar CSV as a spreadsheet), count anything twice, or produce a network that is smaller than the export without saying so.
+
+Messages follow the methods register of `docs/ux/copy-audit-eric-2026-10-04.md`: plain, precise, no exclamations, apologies or classroom phrasing; name the file, the missing content and the consequence for the network, then the step that fixes it.
+
+Mechanics:
+
+- **Upload checks** (`src/core/upload.js`, run by `FileSet.from`): zips are recognised by their first bytes (so a browser-renamed `export.zip (1)` opens, with an info note); truncated zips (`zip-truncated`), password-protected entries (`zip-encrypted`), files named `.zip` that are not zips (`not-a-zip`, saying what they are), unfinished downloads (`.crdownload`, `.part`: `download-unfinished`), `.tgz`/`.7z`/`.rar` (`archive-unsupported`) and empty loose files (`empty-upload`) are skipped and recorded in `fs.problems`. The same item dropped twice (equal file list and content; a zip and the folder it unzips to) is read once (`duplicate-upload`). `fs.roots` lists the folder each dropped item occupies.
+- **Refusals** are `UploadError(code, message)` (`src/core/upload.js`). An importer throws one when it recognises the upload but cannot read it (`meta-html-format`, `telegram-html-format`, `teams-no-messages`, `purview-no-items`, `calendar-csv-unsupported`, `meta-no-messages`). The pipeline records it on the source as a warning with that code (other errors stay `import-failed`); when nothing in the drop could be read, `runImport` throws an `UploadError` with the code, and the worker passes `code` through `importInWorker`. When the upload itself is unreadable, detection fails with the same error, so the Data view shows the reason on the input card.
+- **Recognise to explain.** An importer whose platform is identifiable but whose key file is missing still detects it (score ≥ 0.5, usually 0.6 to 0.8) so that the import can say what is missing, instead of "no importer recognized": Slack channel folders without `users.json`/`channels.json`, a Discord package without `Messages/`, a Meta export without messages, Telegram HTML, a Teams chat list without messages, an eDiscovery summary without `Items.csv`, an Outlook calendar CSV.
+- **Parts of one export** dropped together are read as one export (`src/core/pipeline.js` `combineParts`): plan steps of the same importer under different dropped items merge when their names carry the same numbered stem (`takeout-…-001`/`-002`, `…-part1`/`-part2`, `… - part 1`) or when the importer's optional `partKey(fs, { root })` gives both the same key (LinkedIn: the Profile.csv name; X: account and generation date of a partial archive; Meta: `facebook|instagram-<user>-<date>`). The importer then sees one overlaid tree; a file present in several parts is read once, and the source notes `parts-combined`. Steps of the same importer that claim identical files under two items are the same export twice and are read once. A numbered part loaded without its siblings gets `export-parts-missing` (a gap) or `export-part-one` (part 1 alone), unless the importer said so more precisely (`missing-part`, `meta-thread-part-missing`, `linkedin-profile-only`).
+- **Data view**: inputs that are parts of one export (numbered names, or an importer with `partKey`) and repeated downloads are imported in one `importInWorker` call (`src/ui/views/data/io.js` `importGroups`); one unreadable input among several does not stop the others and is named in the review.
+- Every new warning code gets its severity in `src/core/report.js` (`CODES`). Fixtures for each case, with their real-world source: `test/fixtures/partial/README.md`; tests: `test/importers-partial/`.
 
 ## Analysis contract (implemented by analysis; consumed by ui, llm, generator)
 

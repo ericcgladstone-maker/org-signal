@@ -1,0 +1,48 @@
+[
+ {
+  "type": "message",
+  "user": "W01BENOKAF0",
+  "text": "On it",
+  "ts": "1709552100.002300",
+  "thread_ts": "1709551234.001200",
+  "parent_user_id": "U01ANARUIZ0"
+ },
+ {
+  "type": "message",
+  "subtype": "channel_leave",
+  "user": "U01DANAPARK",
+  "text": "<@U01DANAPARK> has left the channel",
+  "ts": "1709650000.000600"
+ },
+ {
+  "type": "message",
+  "subtype": "bot_message",
+  "user": "U01BOTUSER0",
+  "bot_id": "B01DEPLOYBO2",
+  "text": "Build ok",
+  "ts": "1709650100.000700",
+  "attachments": [
+   {
+    "text": "cc <@U01CHENLI00>"
+   }
+  ]
+ },
+ {
+  "type": "message",
+  "subtype": "huddle_thread",
+  "user": "U01ANARUIZ0",
+  "text": "",
+  "ts": "1709650200.000800",
+  "room": {
+   "id": "R01",
+   "participants": [
+    "U01ANARUIZ0",
+    "W01BENOKAF0",
+    "U01CHENLI00"
+   ],
+   "created_by": "U01ANARUIZ0",
+   "date_start": 1709650210,
+   "date_end": 1709652000
+  }
+ }
+]

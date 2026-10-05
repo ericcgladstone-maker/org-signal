@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gexf xmlns="http://gexf.net/1.3" version="1.3">
+  <graph mode="dynamic" defaultedgetype="directed" timeformat="date">
+    <nodes>
+      <node id="a" label="Ana"><spells><spell start="2024-01-01" end="2024-06-30"/></spells></node>
+      <node id="b" label="Ben"/>
+      <node id="c" label="Chen"/>
+    </nodes>
+    <edges>
+      <edge id="0" source="a" target="b"><spells><spell start="2024-01-01" end="2024-02-01"/><spell start="2024-04-01" end="2024-05-01"/></spells></edge>
+      <edge id="1" source="b" target="c" start="2024-03-01"/>
+    </edges>
+  </graph>
+</gexf>
