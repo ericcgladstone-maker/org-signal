@@ -288,7 +288,7 @@ function EmptyState({ onFiles }) {
         <p>Files are read locally in the browser.</p>
       </div>
       <p class="dv-orient__lab">${ext(LAB, 'Research context, validation, and current limits', 'tlink dv-lab')}</p>
-      <p class="dv-orient__lab dv-orient__walk">${ext(WALKTHROUGH, 'Narrated walkthrough: learning social network analysis by doing it', 'tlink dv-lab')}</p>
+      <p class="dv-orient__lab dv-orient__walk">${ext(WALKTHROUGH, 'Interactive walkthrough: Analyzing Social Network Data', 'tlink dv-lab')}</p>
     </section>
     <section class="dv-ways" aria-labelledby="dv-ways-h">
       <h2 id="dv-ways-h" class="section__title">Choose a way in</h2>
