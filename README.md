@@ -132,8 +132,8 @@ This is a new tool. These are the limits we know of. Please report others (see b
   - **Professional (LinkedIn-style) and community (Reddit, Discord) worlds:** planted groups are not recovered. By design, these groups are labels (current employer, home space), not what generates the ties.
   - **Discord, Reddit, calendar and chat worlds:** the observed network matches the true one less closely.
   - **Calendar worlds:** planted silos, consolidations and reorganizations are missed in 60-80% of runs.
-  - **Bot campaigns** on X, Bluesky and Mastodon, and the LinkedIn layoff wave, are usually missed (70-100% of runs).
-  - A planted date counts as found only when the detected shifts do not cover most of the period, so a match by chance is not counted.
+  - **Bot campaigns** on X, Bluesky and Mastodon are missed in about half of runs.
+  - A planted date counts as found only when a date picked at random would not lie as close to a detected shift as often, so a match by chance is not counted.
 - Generated people, messages and HR records are fictional. They are realistic in structure, not in individual detail.
 
 **Data and ethics**

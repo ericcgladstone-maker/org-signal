@@ -94,9 +94,14 @@ test('shift check: a match does not count when detected shifts cover most of the
   assert.ok(one.baseline < 0.5);
   const every = [];
   for (let t = start; t < end; t += 7 * 86400000) every.push({ t });
-  const many = recoveryCheck(T, ds, { shifts: every }).checks.find(c => c.id === 'shift-silo');
+  // A shift every day: every date lies within a day of one.
+  const every2 = [];
+  for (let t = start; t < end; t += 86400000) every2.push({ t });
+  const many = recoveryCheck(T, ds, { shifts: every2 }).checks.find(c => c.id === 'shift-silo');
   assert.equal(many.baseline, 1);
   assert.equal(many.verdict, 'missed', many.says);
+  // The chance is taken at the distance found: one shift on the day is rare by chance.
+  assert.ok(one.baseline < 0.05, String(one.baseline));
 });
 
 test('survey recall: the verdict follows the planted direction and can be missed', () => {

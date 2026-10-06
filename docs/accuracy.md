@@ -280,7 +280,7 @@ There were 1,858 generator runs, at default sizes:
 The analysis is that of `test/integration/representation.test.js`. Numbers below are from the 2026-10-06 rerun, after these fixes:
 
 - **Generator.** Department heads were also tied as teammates (the CEO's reports are the heads), so the bridge-dependent preset's leadership team was dense despite its low leadership-tie chance; the leadership loop alone now decides head-to-head ties. LinkedIn conversations drew the two speakers independently, so about half were a person writing to themselves. The dataset output wrote a group chat's audience as `member` targets, which no chat export holds and which switched turn-taking off. The online follow graph written as a network file was marked undirected. A reorg's new tie to someone whose old tie had just ended was dropped.
-- **Recovery check.** A planted date now counts as found only when the detected shifts do not cover most of the period (the baseline is the share of the period within the tolerance of some detected shift): with hundreds of person-level series, a random date was often "found". The survey recall check tests the planted direction (two-proportion test) and can be missed. Betweenness fidelity compares a directed network with the directed true network. The professional and community contexts say that their planted groups are a label, not what generates the ties.
+- **Recovery check.** A planted date now counts as found only when a date picked at random would not lie as close to a detected shift as often: the baseline is the share of the period within the distance found (at least a day) of some detected shift, and it must be at most half, as the verdict rule asks of scores (at least twice chance). With hundreds of person-level series, a close match can otherwise come from chance. The survey recall check tests the planted direction (two-proportion test) and can be missed. Betweenness fidelity compares a directed network with the directed true network. The professional and community contexts say that their planted groups are a label, not what generates the ties.
 
 Mean betweenness fidelity (Spearman, measured vs true network) by medium:
 
@@ -318,10 +318,11 @@ Across all runs: median 0.995, 5th percentile 0.54. The chat media stay near 0.6
 
 - **Professional and community:** planted groups are not recovered, by design (above).
 - **Calendar:** planted silo, consolidation, reorg and quiet team are missed in 60-80% of seeds, the departure in 40%.
-- **Email:** the departure on bridge-dependent is missed in 8 of 10 seeds, the consolidation in 4.
-- **Bot campaigns** on X, Bluesky, Mastodon and network files are missed in 70-90% of seeds; the LinkedIn layoff wave in 10 of 10. Before the chance baseline these were often counted as found because some of the many detected shifts fell near the date.
+- **Email:** the departure on bridge-dependent is missed in 8 of 10 seeds, the consolidation and reorg in 3.
+- **Bot campaigns** on X, Bluesky and Mastodon are missed in 50-60% of seeds, on network files in 8 of 10.
+- **Network files** carry no time for ties present all period, so planted shifts there are missed by construction.
 
-Verdicts over the whole matrix: 2,166 recovered, 350 partly, 464 missed (2,177, 353 and 450 before the fixes; the difference is the stricter shift and survey rules).
+Verdicts over the whole matrix: 2,202 recovered, 354 partly, 424 missed (2,177, 353 and 450 before the fixes).
 
 ## 8. Two-mode networks
 

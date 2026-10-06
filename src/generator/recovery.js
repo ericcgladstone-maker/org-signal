@@ -31,7 +31,7 @@ const DAY = 86400000;
 
 // One verdict rule for every check (J9). Scores run from 0 to 1 (1 = what
 // was planted, exactly); differences and dates have their own clear cut-off.
-export const RULE = 'Recovered: the analysis finds most of what was planted, a score of at least 0.6 where 1 is a perfect match (for a difference: in the planted direction and clear, p < 0.05; for a date: within the tolerance). Partly: some of it, a score of at least 0.25 and at least twice what chance alone gives (for a difference: the right direction but not clear; for a date: within twice the tolerance). A date counts only when the detected shifts lie within that distance of at most half the period, so that a date picked at random would not be found as often. Missed: anything less.';
+export const RULE = 'Recovered: the analysis finds most of what was planted, a score of at least 0.6 where 1 is a perfect match (for a difference: in the planted direction and clear, p < 0.05; for a date: within the tolerance). Partly: some of it, a score of at least 0.25 and at least twice what chance alone gives (for a difference: the right direction but not clear; for a date: within twice the tolerance). A date counts only when at most half the period lies as close to a detected shift as the planted date does, so that a date picked at random would not match as often. Missed: anything less.';
 export function scoreVerdict(score, chance = 0) {
   if (score == null || !Number.isFinite(score)) return 'not checked';
   if (score >= 0.6) return 'recovered';
@@ -465,8 +465,9 @@ function shiftChecks(ctx) {
   const uniq = [];
   for (const e of planted) if (!uniq.some(u => Math.abs(u.t - e.t) < DAY && u.type === e.type)) uniq.push(e);
   // Chance: the share of the period within d of some detected shift, i.e. how
-  // often a date picked at random would count as found. Many detected shifts
-  // (hundreds of people's series) can cover most of the period.
+  // often a date picked at random would lie as close to one. It is taken at the
+  // distance actually found (at least a day): a few shifts make a close match
+  // rare, while hundreds of people's series can put every date near one.
   const S = truth.timespan.start, E = truth.timespan.end;
   const cover = (d) => {
     if (!det?.length) return 0;
@@ -476,17 +477,19 @@ function shiftChecks(ctx) {
     len += b - a > 0 ? b - a : 0;
     return len / (E - S);
   };
-  const chance1 = cover(tol), chance2 = cover(2 * tol);
   for (const e of uniq) {
     if (!det) { add(ctx, { id: 'shift-' + e.type, name: `Planted ${e.type} on ${day(e.t)}`, area: 'time', planted: e.description, recovered: null, metric: 'days from nearest detected shift', value: null, verdict: 'not checked', says: 'No detected shifts were given.' }); continue; }
     const near = det.length ? Math.min(...det.map(t => Math.abs(t - e.t))) : Infinity;
     const nd = Math.round(near / DAY), td = Math.round(tol / DAY);
+    const chance = Number.isFinite(near) ? cover(Math.max(DAY, near)) : 1;
+    const dd = Math.max(1, nd);
     add(ctx, { id: 'shift-' + e.type, name: `Planted ${e.type} on ${day(e.t)}`, area: 'time', planted: e.description, recovered: Number.isFinite(near) ? `nearest detected shift ${days(nd)} away` : 'no shift detected',
-      metric: `days to the nearest detected shift (tolerance ${td}); baseline: share of the period that close to some detected shift`, value: Number.isFinite(near) ? r3(near / DAY) : null, baseline: r3(chance1),
-      // Found only if a random date would not be found as often (the score of 1 at least twice chance).
-      verdict: near <= tol && chance1 <= 0.5 ? 'recovered' : near <= 2 * tol && chance2 <= 0.5 ? 'partly' : 'missed',
+      metric: `days to the nearest detected shift (tolerance ${td}); baseline: share of the period that close to some detected shift`, value: Number.isFinite(near) ? r3(near / DAY) : null, baseline: r3(chance),
+      // As for scores: the match counts only at least twice what chance gives
+      // (a random date lies as close at most half the time).
+      verdict: chance > 0.5 ? 'missed' : near <= tol ? 'recovered' : near <= 2 * tol ? 'partly' : 'missed',
       says: (near <= tol ? `A shift was detected ${nd ? `within ${days(nd)}` : 'on the day'} of the planted ${e.type} (tolerance ${days(td)}).` : `No detected shift falls within ${days(td)} of the planted ${e.type}.`)
-        + ` ${det.length} shifts were detected in all; ${pct(chance1)} of the period lies within ${days(td)} of one${chance1 > 0.5 ? ', so a date picked at random would be found as often, and the match does not count' : ''}.` });
+        + (Number.isFinite(near) && near <= 2 * tol ? ` ${det.length} ${det.length === 1 ? 'shift was' : 'shifts were'} detected in all; ${pct(chance)} of the period lies within ${days(dd)} of one${chance > 0.5 ? ', so a date picked at random would lie as close as often, and the match does not count' : ''}.` : '') });
   }
 }
 
