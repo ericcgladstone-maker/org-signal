@@ -2,6 +2,8 @@
 
 What was verified, against what, how often, how tightly, and what was found. The campaign was run on 2026-10-03 (Node 24.19, networkx 3.2.1, numpy 2.0.2, Apple silicon). Everything here can be rerun; see the last section.
 
+**Rerun 2026-10-06** (seed 1, full scale) before and after the generator and recovery-check fixes of that day (section 7). The reference, closed-form, invariance, statistics, construction, round-trip, content and two-mode checks gave identical results before and after, with 0 failures; consistency differs only in the seed spread of Louvain modularity on its generated datasets, and approx only in timings. Section 7 has the new recovery numbers.
+
 ## Summary
 
 | Check | What | Cases (seed 1) | Comparisons | Failures |
@@ -12,7 +14,7 @@ What was verified, against what, how often, how tightly, and what was found. The
 | consistency | inline and worker engine vs pure functions, determinism, one time window, window additivity | 20 generated datasets | 17,787 | 0 |
 | approx | pivot betweenness and closeness, sampled path length | 40 graphs, n = 800-5,000 | 120 runs | see below |
 | stats | null-model degrees, p calibration, power, bootstrap coverage, shift detection, before/after | 1,275 trials (4,000 null replicates, 600 null draws, 300 bootstrap datasets, 27,000 simulated series, 300 before/after datasets) | 4,218 | 0 |
-| construction | buildNetwork vs a naive reimplementation of every rule | 2,000 datasets x 3 settings | 38,394 | 0 unexplained (5 reported differences) |
+| construction | buildNetwork vs a naive reimplementation of every rule | 2,000 datasets x 3 settings | 38,394 | 0 unexplained (2 doc readings; 3 bugs reported then fixed) |
 | roundtrip | export, re-import, recompute: GraphML, GEXF, GML, Pajek, UCINET DL (2 layouts), Gephi CSV, edge CSV | 500 graphs x 8 formats | 4,000 round trips | 0 |
 | twomode | two-mode degree, betweenness, closeness, clustering, density, Robins-Alexander, projections (count, Newman, binary, minimum shared), Barber modularity, Davis Southern Women, against networkx.algorithms.bipartite | 1,000 datasets + Davis | 2,052,529 | 0 |
 | content | VADER per message and aggregated, keyword counts and TF-IDF, tokenizer | 300 datasets | 414,205 | 0 |
@@ -130,7 +132,7 @@ Louvain is seeded but visits nodes in index order, so relabeling changed the par
 
 **Time series.** A single window spanning the data equals `buildNetwork` with `includeIsolates: false` and `time` set to the data span, for every node measure and every network measure. Undated events are left out of windows. With count weighting and no turn-taking, weekly strength sums to the whole-period strength, and weekly activity sums to the dated events.
 
-**Exports.** All 4,000 round trips through the real exporters and importers preserve nodes, ties, weights (the float64 text survives, but the core model stores event weights as float32; largest drift 5.9e-8), 14 node measures, every network measure, and attribute, weighted, E-I and numeric assortativity. These format losses are expected and counted, not failures:
+**Exports.** All 4,000 round trips through the real exporters and importers preserve nodes, ties, weights (event weights are float64 throughout; drift 0 in the 2026-10-06 rerun), 14 node measures, every network measure, and attribute, weighted, E-I and numeric assortativity. These format losses are expected and counted, not failures:
 
 | Format | Loss | Cases of 500 |
 |---|---|---|
@@ -244,13 +246,13 @@ A deliberately naive reimplementation of every documented rule, written from thi
 
 The comparison ran on 2,000 random datasets x 3 random settings (44,407 events, 23,242 ties) per seed, with 0 unexplained differences. A mutation probe confirms the check catches a wrong normalisation or cutoff.
 
-Five differences between the doc and `construct.js`. `construct.js` was being edited by another engineer, so they are reported rather than fixed; minimal datasets are in `tools/accuracy/checks/construction.mjs` (`KNOWN`) and `test/accuracy/construction.test.js`.
+Five differences between the doc and `construct.js` were found on 2026-10-03; minimal datasets are in `tools/accuracy/checks/construction.mjs` (`KNOWN`) and `test/accuracy/construction.test.js`. Items 1 and 2 are readings of the doc, now corrected in the doc; items 3 to 5 have since been fixed in `construct.js`, and the 2026-10-06 rerun counts only the first two (84 and 560 occurrences in 6,000 settings).
 
 1. **Turn-taking ties from a `directed: false` source keep their direction** (`construct.js:346` passes `sym = false`). The doc said such sources give both directions. The doc was wrong and is corrected.
 2. **A declared event with no target ties to the author of its resolved parent** (`construct.js:317-322`, `subjectRule(declared)`). The doc did not say so; it is corrected.
-3. **Bug: a declared event naming the parent's author as a target counts the tie twice** (raw 2 instead of 1; `construct.js:317-322`, where the fallback skips the de-duplication at 312). Seen in 15 of 6,000 settings.
-4. **Bug: a reply whose reply target is an excluded person (a bot) falls back to the parent's author although a target was given.** `construct.js:298` skips excluded targets before `hasReplyTarget` / `hasSubject` are set. The same happens for repost, like, follow and reaction.
-5. **Summary count: with `excludeBots: false` and a bot in `excludeNodes`, its events are counted as `bots`, not `excluded`** (`construct.js:251`). Ties are unaffected.
+3. **Fixed. Bug: a declared event naming the parent's author as a target counted the tie twice** (raw 2 instead of 1; `construct.js:317-322`, where the fallback skips the de-duplication at 312). Seen in 15 of 6,000 settings.
+4. **Fixed. Bug: a reply whose reply target was an excluded person (a bot) fell back to the parent's author although a target was given.** `construct.js:298` skips excluded targets before `hasReplyTarget` / `hasSubject` are set. The same happens for repost, like, follow and reaction.
+5. **Fixed. Summary count: with `excludeBots: false` and a bot in `excludeNodes`, its events were counted as `bots`, not `excluded`** (`construct.js:251`). Ties are unaffected.
 
 Conventions confirmed where the doc was silent:
 
@@ -265,7 +267,7 @@ Conventions confirmed where the doc was silent:
 Also reported:
 
 - **`networkFromEdges` accepts node indices >= n without complaint** (`construct.js:578`). The network is corrupt until Louvain throws "target node not found".
-- **Event weights are stored as float32** (`src/core/model.js`, `build()`): a weight of 0.1 becomes 0.10000000149.
+- **Event weights were stored as float32** (`src/core/model.js`, `build()`): a weight of 0.1 became 0.10000000149. They are now float64.
 
 ## 7. End to end: generator and recovery
 
@@ -275,49 +277,51 @@ There were 1,858 generator runs, at default sizes:
 - **Content:** each medium with light text and each preset, 2 seeds each.
 - **Shift study:** 1,050 runs.
 
-The analysis is that of `test/integration/representation.test.js`. Mean betweenness fidelity (Spearman, measured vs true network) by medium:
+The analysis is that of `test/integration/representation.test.js`. Numbers below are from the 2026-10-06 rerun, after these fixes:
+
+- **Generator.** Department heads were also tied as teammates (the CEO's reports are the heads), so the bridge-dependent preset's leadership team was dense despite its low leadership-tie chance; the leadership loop alone now decides head-to-head ties. LinkedIn conversations drew the two speakers independently, so about half were a person writing to themselves. The dataset output wrote a group chat's audience as `member` targets, which no chat export holds and which switched turn-taking off. The online follow graph written as a network file was marked undirected. A reorg's new tie to someone whose old tie had just ended was dropped.
+- **Recovery check.** A planted date now counts as found only when the detected shifts do not cover most of the period (the baseline is the share of the period within the tolerance of some detected shift): with hundreds of person-level series, a random date was often "found". The survey recall check tests the planted direction (two-proportion test) and can be missed. Betweenness fidelity compares a directed network with the directed true network. The professional and community contexts say that their planted groups are a label, not what generates the ties.
+
+Mean betweenness fidelity (Spearman, measured vs true network) by medium:
 
 | Medium | Fidelity |
 |---|---|
+| network files (workplace, personal, community, survey, professional) | 1.00 |
 | workplace Slack | 1.00 |
-| online network | 0.95 |
-| X / Bluesky / Mastodon | 0.94 |
+| online network | 0.99 |
+| X / Bluesky / Mastodon | 0.95 |
 | workplace email | 0.93 |
-| LinkedIn | 0.88 |
-| workplace calendar | 0.74 |
-| workplace network file | 0.70 (see below) |
-| personal network | 0.67 |
-| WhatsApp / Telegram | 0.66 |
-| community network | 0.66 |
+| LinkedIn | 0.92 (0.88 before the conversation fix) |
+| workplace calendar | 0.73 |
+| WhatsApp / Telegram | 0.66-0.67 |
 | survey | 0.66 |
-| iMessage | 0.64 |
-| professional network | 0.62 |
+| iMessage | 0.65 |
 | Discord | 0.61 |
 | Reddit | 0.53 |
 
-Across all runs: median 0.94, 5th percentile 0.54.
+Across all runs: median 0.995, 5th percentile 0.54. The chat media stay near 0.66 with turn-taking available: in group chats it ties each speaker to the previous one, which over-connects (`docs/api/generator.md`).
 
 **Communities** (NMI with planted groups):
 
 | Context | NMI | Seeds recovered |
 |---|---|---|
-| workplace | 0.94-0.99 | 10/10 |
-| online | 0.97-1.00 | 10/10 (influencer-hub 0.66-0.77) |
-| personal | 0.71-0.81 | |
+| workplace | 0.93-0.98 | 10/10 |
+| online | 0.66-1.00 | 10/10 (influencer-hub lowest) |
+| personal | 0.70-0.81 | |
 | survey | 0.81-1.00 | |
-| professional (LinkedIn and network) | 0.41-0.44 | 0/10 |
-| community (Reddit, Discord) | 0.10-0.14 | 0/10 |
+| professional (LinkedIn and network) | 0.37-0.44 | 0/10 (by design: ties come from careers, cohorts and recruiters, not the current employer) |
+| community (Reddit, Discord) | 0.10-0.14 | 0/10 (by design: ties form around the active core across spaces, not in each home space) |
 
-**Brokers.** Planted brokers on bridge-dependent workplaces are found with precision 1.00 on Slack and calendar, and 0.86 on email and network files.
+**Brokers.** On bridge-dependent workplaces the planted brokers are recovered in 10 of 10 seeds on every medium; median precision 1.00 on Slack, calendar and network files, 0.86 on email.
 
-**Presets where recovery is poorer than the docs say:**
+**Where recovery is poor** (the check says so in each report):
 
-- **Professional:** communities are never recovered (NMI about 0.43); not documented.
-- **Discord:** fidelity 0.60-0.62, and calendar 0.70-0.81, neither in the generator doc's table.
-- **Calendar:** planted silo, consolidation, reorg and quiet team are missed in 50-80% of seeds.
-- **Email:** the reorg is recovered in 5/10 seeds and the departure on bridge-dependent in 3/10.
-- **Bot campaigns** on X / Bluesky / Mastodon are missed in 50-60% of seeds.
-- **Generator bug (reported, `src/generator/**`):** with `medium: 'network'` and `output: 'dataset'` the source does not set `directed: false`. Default construction then builds undirected true ties one way, and fidelity drops to 0.60-0.72. Built undirected, it is 1.00; the native GraphML round trip is correct. Pinned as a `todo` in `test/accuracy/recovery.test.js`.
+- **Professional and community:** planted groups are not recovered, by design (above).
+- **Calendar:** planted silo, consolidation, reorg and quiet team are missed in 60-80% of seeds, the departure in 40%.
+- **Email:** the departure on bridge-dependent is missed in 8 of 10 seeds, the consolidation in 4.
+- **Bot campaigns** on X, Bluesky, Mastodon and network files are missed in 70-90% of seeds; the LinkedIn layoff wave in 10 of 10. Before the chance baseline these were often counted as found because some of the many detected shifts fell near the date.
+
+Verdicts over the whole matrix: 2,166 recovered, 350 partly, 464 missed (2,177, 353 and 450 before the fixes; the difference is the stricter shift and survey rules).
 
 ## 8. Two-mode networks
 

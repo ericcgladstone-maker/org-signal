@@ -508,7 +508,7 @@ const FLOWS = [
       await b.click();
       await waitText(T, /Rank stability/, 120000);
       await T.page.waitForFunction(() => ![...document.querySelectorAll('main button')].some(b => /Resampling|Check how stable/.test(b.textContent)), null, { timeout: 120000 });
-      await waitText(T, /hold up|not a finding|could drop/, 10000);
+      await waitText(T, /hold up|hold: every one|not a finding|could drop/, 10000); // every verdict branch (src/ui/lib/stability.js)
       await T.shot('3-stability');
     });
     await T.check('People: profile opens', async () => {

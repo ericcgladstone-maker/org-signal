@@ -75,7 +75,7 @@ test('window dates agree with the data: inclusive last day and partial windows (
 
 test('shift detection, before/after and diffusion are described with parameters and results (N5, N6)', () => {
   assert.match(md, /robust z-score: each window's value against the median and median absolute deviation \(MAD\) of the 8 preceding windows, flagged at \|z\| ≥ 3\.5 for whole-network series, 4\.5 for each group and 5 for each person/);
-  assert.match(md, /2 shifts were flagged; the largest: [^;]+ \(total ties \(in \+ out\), drop in the week starting 24 Feb 2025, z -5\.12\)/);
+  assert.match(md, /1 shift was flagged; the largest: [^;]+ \(total ties \(in \+ out\), drop in the week starting 3 Mar 2025, z -5\.27\)/);
   assert.match(md, new RegExp(`Before and after ${day(date)}: two periods of equal length`));
   assert.match(md, /every event in the two periods was reassigned to before or after at random, 2,000 times|every event in the two periods was reassigned to before or after at random, 200 times/);
   assert.doesNotMatch(md, /sign-flip|paired/i);
@@ -85,7 +85,7 @@ test('shift detection, before/after and diffusion are described with parameters 
   const t0 = df.terms[0];
   assert.ok(md.includes(`- "${t0.term}": ${t0.adopters} adopters; ${t0.exposed} of ${t0.eligible} (100%) had an earlier-adopting contact, against ${Math.round(t0.null.mean * 100)}% in the shuffled timelines`), md);
   assert.match(md, /The shuffled baseline is already near 100%, so this test has little room to show spread along ties: inconclusive/);
-  assert.match(md, /p-values were adjusted for the 2 terms tested with Holm's step-down method/);
+  assert.ok(md.includes(`p-values were adjusted for the ${df.terms.length} terms tested with Holm's step-down method`), md);
   assert.match(md, /Holm-adjusted p = /);
 });
 

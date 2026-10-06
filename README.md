@@ -10,7 +10,7 @@ The same tool can then be used with empirical data, including exports from Slack
 
 Org Signal explains measures where they appear: what they mean, whether they make sense for the data currently loaded, and how much of an observed result might be explained by chance or resampling. Tie construction is treated as a choice rather than a given. Users can change how ties are defined and trace any tie back to the events that produced it. The point is to make visible something network analysis often hides: a network is constructed from observations and decisions. It is not simply sitting in the data waiting to be found.
 
-Built by [Eric Gladstone](https://graystoneindustries.co).
+Built by [Eric Gladstone](https://graystoneindustries.co). A narrated walkthrough of the analyses, from a drawn network to a claim that can be defended, is the talk [Analyzing Social Network Data](https://orgsignalwalkthrough.eric-c-gladstone.workers.dev).
 
 ## Start here
 
@@ -62,6 +62,7 @@ Built by [Eric Gladstone](https://graystoneindustries.co).
   - **Network files:** GraphML, GEXF, GML, Pajek, UCINET DL, Gephi tables.
   - **Surveys:** Network Canvas and roster surveys.
   - **Anything else:** any CSV of who-to-whom.
+  - **Incomplete or wrong uploads** (a truncated or encrypted zip, an unfinished download, one part of a split export, an HTML export where the reader needs JSON) are recognised and explained rather than misread. Parts of one export are read together, and the same file loaded twice counts once.
   - Formats are documented in [`docs/formats/`](docs/formats/).
 - **Measures:**
   - **Tie rules** you can see and change: replies, mentions, recipients, co-presence, declared ties, reactions, broadcast cutoffs, weights and filters on tie fields.
@@ -88,7 +89,7 @@ Built by [Eric Gladstone](https://graystoneindustries.co).
   - names, unless "Replace names with codes" is on
   - short excerpts of messages when it looks up the evidence behind a tie
 
-  Ask shows the full list before you use it. The key is kept only for the session unless you ask the browser to remember it.
+  Ask shows the full list before you use it. The key is kept only for the session unless you ask the browser to remember it; a remembered key is stored unencrypted in this browser's local storage.
 - Work in Build is saved in this browser's storage only. Clearing site data, or switching browser or device, loses it. Download a project file or the network to keep it.
 - Exports leave out contact details (email addresses, handles, platform ids) by default.
 - Org Signal describes network structure and reported ties. It does not evaluate individuals.
@@ -112,10 +113,10 @@ Full report: [`docs/accuracy.md`](docs/accuracy.md).
 This is a new tool. These are the limits we know of. Please report others (see below).
 
 **Not yet tested in real use**
-- **Browsers.** Automated tests run in Chrome. Safari and Firefox have not yet been tested systematically, and the network map uses WebGL, where browsers differ most.
+- **Browsers.** Browser QA runs in Chrome. A cross-browser smoke test (WebKit, Firefox and Chromium; eleven flows at desktop and phone sizes) found no broken flows on 2026-10-04, but Safari and Firefox are not part of routine testing, and the network map uses WebGL, where browsers differ most.
 - **Real use.** Usability testing so far used simulated students and instructors working through the Networks 101 assignments. It has not yet been used in a real class.
-- **Ask with real keys.** It has been tested end to end with an offline stand-in provider, not yet against each provider's live API.
-- **Real exports.** Importers were built from each platform's published format documentation and public sample files. Microsoft Teams and LinkedIn exports have not yet been tested on real user exports. Platforms change their exports without notice, and the import report says when a file was not understood.
+- **Ask with real keys.** Ask is tested end to end with an offline stand-in provider. A live test against Anthropic, OpenAI and Gemini (a question, a report and a coding run each) passed on 2026-10-04; it is run by hand, and providers change their APIs and models.
+- **Real exports.** Importers were built from each platform's published format documentation and public sample files. Microsoft Teams and LinkedIn importers were checked against the structure of real exports (rebuilt with fictional content) but not yet on real user exports. Platforms change their exports without notice, and the import report says when a file was not understood.
 
 **Measurement**
 - **Approximate measures above 3,000 people.** Betweenness and closeness are estimated by sampling and labelled approximate.
@@ -128,10 +129,11 @@ This is a new tool. These are the limits we know of. Please report others (see b
 
 **Synthetic data (Generate)**
 - The recovery check works well for workplaces and online communities. It is weaker in some cases, and the check itself reports when recovery is poor:
-  - **Professional (LinkedIn-style) worlds:** planted communities are not recovered.
-  - **Discord and calendar worlds:** the observed network matches the true one less closely.
-  - **Calendar worlds:** planted silos and reorganizations are missed in half or more of runs.
-  - **Bot campaigns** on X, Bluesky and Mastodon are missed in about half of runs.
+  - **Professional (LinkedIn-style) and community (Reddit, Discord) worlds:** planted groups are not recovered. By design, these groups are labels (current employer, home space), not what generates the ties.
+  - **Discord, Reddit, calendar and chat worlds:** the observed network matches the true one less closely.
+  - **Calendar worlds:** planted silos, consolidations and reorganizations are missed in 60-80% of runs.
+  - **Bot campaigns** on X, Bluesky and Mastodon, and the LinkedIn layoff wave, are usually missed (70-100% of runs).
+  - A planted date counts as found only when the detected shifts do not cover most of the period, so a match by chance is not counted.
 - Generated people, messages and HR records are fictional. They are realistic in structure, not in individual detail.
 
 **Data and ethics**
@@ -171,7 +173,11 @@ node --test 'test/accuracy/*.test.js'                     # accuracy regressions
 QA_URL=http://localhost:8787 node test/ui-core/qa.mjs     # browser QA (needs Chromium and puppeteer-core)
 node test/ui-build/qa.mjs --port=8787
 node tools/accuracy/campaign.mjs                          # the full accuracy campaign (needs python3 with networkx)
+node test/cross-browser/smoke.mjs --browser webkit --url http://localhost:8787   # WebKit/Firefox/Chromium smoke test (needs playwright-core)
+ORG_SIGNAL_KEYS_ENV=/path/.env node test/live/ask-live.mjs <out-dir>             # live Ask test (needs provider keys; costs a few cents)
 ```
+
+The browser scripts default to tool paths on the author's machine. Elsewhere, set `PUPPETEER` (path to puppeteer-core), `CHROME` (a Chrome binary), `PLAYWRIGHT_CORE` (cross-browser test) and `QA_OUT` (screenshot folder); `test/ui-build/qa.mjs` looks for Chrome for Testing in Playwright's cache only.
 
 | Path | Contents |
 |---|---|
