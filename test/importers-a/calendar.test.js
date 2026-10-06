@@ -147,3 +147,22 @@ test('unfold happens before UTF-8 decoding', () => {
   const b = Uint8Array.from([...Buffer.from('SUMMARY:R'), 0xc3, 13, 10, 32, 0xa9, ...Buffer.from('sum'), 10, 9, ...Buffer.from('x')]);
   assert.equal(unfoldBytes(b), 'SUMMARY:Résumx');
 });
+
+// 2026-10-06: the occurrence cap counts occurrences inside the window, so a
+// weekly series that began years before the window still reaches it.
+test('occurrence cap: a long series that starts before the window still reaches it', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'oscal-'));
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//test//EN', 'BEGIN:VEVENT', 'UID:weekly-1@test', 'DTSTAMP:20150101T000000Z',
+    'DTSTART:20150105T150000Z', 'DTEND:20150105T153000Z', 'RRULE:FREQ=WEEKLY', 'SUMMARY:Weekly sync',
+    'ORGANIZER:mailto:ana@example.com', 'ATTENDEE;PARTSTAT=ACCEPTED:mailto:ana@example.com', 'ATTENDEE;PARTSTAT=ACCEPTED:mailto:bo@example.com',
+    'END:VEVENT', 'END:VCALENDAR', ''].join('\r\n');
+  writeFileSync(join(dir, 'cal.ics'), ics);
+  // About 470 weeks lie between 2015 and the window; the cap is 50.
+  const { ds, source } = await runImporter(calendar, join(dir, 'cal.ics'), { windowStart: '2024-01-01', windowEnd: '2024-03-31', maxOccurrences: 50, egoAddress: 'ana@example.com' });
+  const n = events(ds).length;
+  assert.ok(n >= 12 && n <= 14, `${n} weekly meetings in the first quarter of 2024`);
+  assert.equal(warning(source, 'occurrence-cap'), null);
+});

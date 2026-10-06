@@ -48,11 +48,17 @@ test('errors, comments, blanks, self-ties with line numbers', () => {
 test('toDataset', () => {
   const ds = toDataset(parseTies('Ann - Bo\nBo -> Cy, 2\nAnn - Bo'));
   assert.equal(ds.nodes.count, 3);
-  assert.equal(ds.events.count, 3);
+  // With an arrow in the paste the network is directed, so each undirected
+  // line is written both ways (Ann->Bo, Bo->Ann), as Draw does.
+  assert.equal(ds.events.count, 5);
   const s = ds.meta.sources[0];
   assert.equal(s.view, 'full'); assert.equal(s.context, 'custom'); assert.equal(s.format, 'paste'); assert.equal(s.directed, true);
   assert.equal(ds.nodes.keys[0], 'paste:ann');
-  assert.equal(ds.events.weight[1], 2);
-  assert.deepEqual(eventTargets(ds, 1), [[2, 'declared']]);
+  assert.deepEqual([ds.events.actor[0], ...eventTargets(ds, 0)[0]], [0, 1, 'declared']);
+  assert.deepEqual([ds.events.actor[1], ...eventTargets(ds, 1)[0]], [1, 0, 'declared']);
+  assert.equal(ds.events.weight[2], 2);
+  assert.deepEqual(eventTargets(ds, 2), [[2, 'declared']]);
+  // An all-undirected paste stays one event per line.
+  assert.equal(toDataset(parseTies('Ann - Bo\nBo - Cy')).events.count, 2);
   assert.throws(() => toDataset(parseTies('')), /no ties/);
 });

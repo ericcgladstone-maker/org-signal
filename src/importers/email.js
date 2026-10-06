@@ -465,7 +465,7 @@ async function handleMessage(st, bytes, fromLine) {
   if (self) builder.stat('self-messages');
   if (nRecip > opt.maxRecipients) {
     builder.stat('broadcast-messages');
-    builder.warn('broadcast-messages', `Messages with more than ${opt.maxRecipients} recipients. They are in the data, but at the default broadcast cutoff of ${DEFAULT_BROADCAST_CUTOFF} they create no ties, since each would tie the sender to everyone addressed. Raise "Broadcast cutoff" in Construction settings to include them.`);
+    builder.warn('broadcast-messages', `Messages with more than ${opt.maxRecipients} recipients. They are in the data; whether they create ties is set by "Broadcast cutoff" in Construction settings (${DEFAULT_BROADCAST_CUTOFF} by default): a message above the cutoff ties no one, since it would tie the sender to everyone addressed. Raise the cutoff to include them.`);
   }
 
   // Thread context and parent.

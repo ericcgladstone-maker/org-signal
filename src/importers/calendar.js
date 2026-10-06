@@ -248,12 +248,15 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
       const masterTz = tzidOf(g.master, 'dtstart');
       if (!ev.isRecurring()) { pushOcc(ev, g.master, null); continue; }
       const it = ev.iterator();
-      let n = 0, next, capped = false;
+      // The cap counts occurrences inside the window, so a long series that
+      // started years before it still reaches it; a much larger bound on the
+      // occurrences stepped over keeps an unbounded series from running on.
+      let n = 0, skipped = 0, next, capped = false;
       while ((next = it.next())) {
         const rid = ridMs(next, masterTz);
         if (rid > winEnd) { builder.stat('beyond-window'); break; }
+        if (rid < winStart) { if (++skipped > 100 * opt.maxOccurrences) { capped = true; break; } continue; }
         if (++n > opt.maxOccurrences) { capped = true; break; }
-        if (rid < winStart) continue;
         let d;
         try { d = ev.getOccurrenceDetails(next); } catch { builder.stat('bad-occurrence'); continue; }
         const item = d.item;
@@ -368,7 +371,7 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
     const participants = others.length + 1;
     if (participants > opt.maxAttendees) {
       builder.stat('large-meetings');
-      builder.warn('large-meetings', `Meetings with more than ${opt.maxAttendees} participants. They are in the data, but at the default broadcast cutoff of ${DEFAULT_BROADCAST_CUTOFF} they create no ties, since each would tie every attendee to every other. Raise "Broadcast cutoff" in Construction settings to include them.`);
+      builder.warn('large-meetings', `Meetings with more than ${opt.maxAttendees} participants. They are in the data; whether they create ties is set by "Broadcast cutoff" in Construction settings (${DEFAULT_BROADCAST_CUTOFF} by default): a meeting above the cutoff ties no one, since it would tie every attendee to every other. Raise the cutoff to include them.`);
     }
     const actor = person(actorAddr);
     const targets = others.map(a => [person(a), 'attendee']);

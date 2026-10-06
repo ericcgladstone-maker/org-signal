@@ -52,7 +52,7 @@ const FORMAT_LABELS = {
   meta: 'Messenger or Instagram', messenger: 'Messenger', instagram: 'Instagram', discord: 'Discord', reddit: 'Reddit',
   tabular: 'Spreadsheet', 'google-forms': 'Google Forms survey', qualtrics: 'Qualtrics survey', 'egor-long': 'egor survey',
   'egor-wide': 'egor survey', egoweb: 'EgoWeb survey', 'network-canvas': 'Network Canvas interview', 'ego-interview': 'Ego interview',
-  roster: 'Roster', 'shared-survey': 'Shared survey', drawn: 'Drawn network', perceived: 'Perceived networks', graphml: 'GraphML', gexf: 'GEXF', gml: 'GML',
+  roster: 'Roster', 'shared-survey': 'Shared survey', drawn: 'Drawn network', draw: 'Drawn network', perceived: 'Perceived networks', css: 'Perceived networks', paste: 'Pasted ties', graphml: 'GraphML', gexf: 'GEXF', gml: 'GML',
   pajek: 'Pajek', ucinet: 'UCINET', dl: 'UCINET', 'ucinet-dl': 'UCINET', edgelist: 'Edge list', 'csv-edgelist': 'Edge list', 'gephi-csv': 'Edge list', 'csv-matrix': 'Adjacency matrix',
   fullmatrix: 'Adjacency matrix', synthetic: 'Synthetic',
 };

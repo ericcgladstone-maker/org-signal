@@ -98,11 +98,13 @@ test('Qualtrics: roster matrix is a full network, free recall a separate ego sou
   assert.equal(jose.attrs.responseId, 'R_2bbb');
   const ev = events(ds);
   const rosterEv = ev.filter(e => e.context === 'survey:advice_survey.csv#Q5');
-  // EndDate is America/Denver wall time per the import row (MST, UTC-7)
+  // EndDate is America/Denver wall time per the import row (MST, UTC-7).
+  // Union, as the Roster builder: a pair who named each other shares the
+  // larger answer between its two reports, so the tie weighs 1, not 2.
   assert.deepEqual(rosterEv.map(e => [e.actor, e.targets[0][0], e.weight, e.t]), [
     ['survey:avery lin', 'survey:jordan pike', 1, Date.UTC(2024, 2, 4, 18, 20, 34)],
-    ['survey:avery lin', 'survey:jose perez', 1, Date.UTC(2024, 2, 4, 18, 20, 34)],
-    ['survey:jose perez', 'survey:avery lin', 1, Date.UTC(2024, 2, 5, 16, 12)],
+    ['survey:avery lin', 'survey:jose perez', 0.5, Date.UTC(2024, 2, 4, 18, 20, 34)],
+    ['survey:jose perez', 'survey:avery lin', 0.5, Date.UTC(2024, 2, 5, 16, 12)],
     ['survey:morgan lee', 'survey:avery lin', 1, Date.UTC(2024, 2, 6, 23, 5)],
   ]);
   assert.equal(ctx(ds, 'survey:advice_survey.csv#Q5').name, 'Who do you go to for advice?');
