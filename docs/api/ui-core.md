@@ -84,7 +84,7 @@ Tokens live in `assets/theme.css` (type, frame, site colors) and the data palett
 | `announce(text)` | Speak through the shell's permanent polite live region (`#announcer`). Jobs announce start, quarter marks, phase changes (at most every 2.5 s) and the end on their own. |
 | `focus(target, { fallback, scroll })` | After an action, move focus to a selector or element once the view has re-rendered; falls back to the view heading. The shell also moves focus to the heading whenever the focused control is removed and focus would drop to the page body. |
 | `startOver()` | Clear everything loaded in this tab (dataset, network, results, `generated`, notices), remount the views and return to Data. The masthead's "Clear loaded data" asks first. Builders say "New ..." for their own drafts. |
-| `setExplain(on)` | The Interpretive notes switch: sets `store.explain` and keeps the choice as the one localStorage preference (`orgsignal.explain`, wrapped in try/catch; default on). |
+| `setExplain(on)` | The Interpretive notes switch: sets `store.explain` and keeps the choice in localStorage (`orgsignal.explain`, wrapped in try/catch; default on). Build drafts, the Generate form and an opted-in API key are kept there too (`docs/api/ui-build.md`). |
 | `loadSample()` | Load the sample organization (the Data view's `SAMPLE_SPEC` through Generate's `generateAndAnalyze`, with its recovery check). Returns to the view it was called from (Generate hands off to Network). Resolves `true` when loaded. Use it for every "explore the sample" link. |
 | `runJob(label, fn(signal, progress))` | Status-bar entry with progress and a Cancel button that aborts `signal`. |
 | `openDrawer()` / `closeDrawer()` | Construction settings drawer. |

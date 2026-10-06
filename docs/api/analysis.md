@@ -205,7 +205,7 @@ Representation (`src/core/model.js`, CONTRACTS.md): node attribute `bipartite` 0
 
 ## Network metrics
 
-`computeNetworkMetrics(net, { pathSources, pathSampleThreshold = 2000, seed })` -> `{ nodes, ties, directed, density, reciprocity, transitivity, avgClustering, isolates, components, strongComponents (directed), largestComponentShare, avgPathLength, diameter, pathLengthSampled, degreeCentralization, strengthGini, meanDegree, degreeAssortativity }`.
+`computeNetworkMetrics(net, { pathSources, pathSampleThreshold = 2000, seed })` -> `{ nodes, ties, directed, density, reciprocity, transitivity, avgClustering, isolates, components, strongComponents (directed), largestComponentShare, avgPathLength, diameter, pathLengthSampled, degreeCentralization, strengthGini, meanDegree, degreeAssortativity }`. `meanDegree` is 2m/n undirected and m/n directed (the mean out-degree; a node's `degree` on a directed network counts in + out).
 `avgPathLength` is the mean over reachable ordered pairs: exact up to 2,000 nodes, 500 sampled sources above that.
 
 ## Communities

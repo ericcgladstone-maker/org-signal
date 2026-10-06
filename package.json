@@ -6,6 +6,6 @@
   "description": "Org Signal: raw relational traces in, a network you can defend out.",
   "scripts": {
     "test": "node --test --test-reporter=dot 'test/**/*.test.js'",
-    "serve": "python3 -m http.server 8787"
+    "serve": "node tools/serve.mjs . 8787"
   }
 }

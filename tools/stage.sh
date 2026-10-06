@@ -16,7 +16,7 @@ cd "$(dirname "$0")/.."
 
 rm -rf _deploy
 mkdir -p _deploy
-cp _headers index.html _deploy/
+cp _headers index.html 404.html _deploy/
 for item in assets src vendor; do cp -R "$item" _deploy/; done
 # Classic datasets: only data/classic/ (the bundled ones and the manifest).
 # data/classic-pending/ holds datasets whose redistribution terms are not
