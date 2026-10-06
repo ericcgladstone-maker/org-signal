@@ -25,6 +25,7 @@
 import ICAL from '../../vendor/ical.js';
 import { localToUtc, isValidZone } from './tabular.js';
 import { UploadError } from '../core/upload.js';
+import { DEFAULT_BROADCAST_CUTOFF } from '../core/model.js';
 
 const EXT = /\.(ics|ical|ifb)$/i;
 
@@ -121,7 +122,7 @@ function param(p, name) { const v = p.getParameter(name); return Array.isArray(v
 // ---- import -----------------------------------------------------------------
 
 async function importCalendar(fs, { builder, options = {}, progress = () => {}, signal } = {}) {
-  const opt = { egoAddress: '', defaultTz: 'UTC', windowStart: '', windowEnd: '', maxOccurrences: 500, includeAllDay: false, weightBy: 'count', maxAttendees: 50, ...options };
+  const opt = { egoAddress: '', defaultTz: 'UTC', windowStart: '', windowEnd: '', maxOccurrences: 500, includeAllDay: false, weightBy: 'count', maxAttendees: DEFAULT_BROADCAST_CUTOFF, ...options };
   const entries = [];
   for (const e of fs.entries) {
     if (!EXT.test(e.rel)) continue;
@@ -367,7 +368,7 @@ async function importCalendar(fs, { builder, options = {}, progress = () => {}, 
     const participants = others.length + 1;
     if (participants > opt.maxAttendees) {
       builder.stat('large-meetings');
-      builder.warn('large-meetings', `Meetings with more than ${opt.maxAttendees} participants (kept; they add many weak co-presence ties)`);
+      builder.warn('large-meetings', `Meetings with more than ${opt.maxAttendees} participants. They are in the data, but at the default broadcast cutoff of ${DEFAULT_BROADCAST_CUTOFF} they create no ties, since each would tie every attendee to every other. Raise "Broadcast cutoff" in Construction settings to include them.`);
     }
     const actor = person(actorAddr);
     const targets = others.map(a => [person(a), 'attendee']);
@@ -411,7 +412,7 @@ export default {
     { key: 'maxOccurrences', label: 'Maximum occurrences per series', type: 'number', default: 500 },
     { key: 'includeAllDay', label: 'Include all-day events', type: 'boolean', default: false },
     { key: 'weightBy', label: 'Weight meetings by', type: 'select', default: 'count', choices: [{ value: 'count', label: 'Count (1 per meeting)' }, { value: 'duration', label: 'Duration (minutes)' }] },
-    { key: 'maxAttendees', label: 'Flag meetings larger than', type: 'number', default: 50 },
+    { key: 'maxAttendees', label: 'Flag meetings larger than', type: 'number', default: DEFAULT_BROADCAST_CUTOFF },
   ],
   import: importCalendar,
 };
