@@ -149,7 +149,7 @@ export function ChatThread({ provider, ds, compact = false }) {
         <span class="meta grow" style="text-align:right">${est?.usd != null ? `About ${fmtUSD(est.usd)} to ${fmtUSD(est.usdHigh)} per question` : ''}</span>
       </div>
       ${!compact && est?.note && html`<p class="basis">${est.note}</p>`}
-      ${compact && html`<p class="basis">${provider.id === 'demo' ? 'The offline demo answers inside this tab; nothing is sent.' : html`Sends your question${ctx ? ', the context line above (names and views, no values)' : ''} and the computed results the model requests to ${provider.label}. Names are ${codes ? 'replaced with codes' : 'sent as they are'}. Usage is billed by the provider.`} <a href="#ask" onClick=${e => { e.preventDefault(); store.actions.setView('ask'); }}>What is sent, in full</a>.</p>`}
+      ${compact && html`<p class="basis">${provider.id === 'demo' ? 'The offline demo answers inside this tab; nothing is sent.' : html`Sends your question${ctx ? ', the context line above (names and views, no values)' : ''} and the computed results the model requests to ${provider.label}. Names are ${codes ? 'replaced with codes' : 'sent as they are'}. Usage is billed by the provider.`} <button type="button" class="tlink tlink--quiet" onClick=${() => { store.set({ ui: { ...(store.get().ui || {}), askSetup: true } }); document.querySelector('.askp__body')?.scrollTo({ top: 0, behavior: 'smooth' }); }}>What is sent, in full</button></p>`}
     </form>
   </div>`;
 }

@@ -9,7 +9,9 @@
 // of people in the data; see content/corpus.js) and the view says so.
 
 import { html, useState, useMemo, useRef } from '../../../vendor/preact.js';
-import { useStore } from '../store.js';
+import { store, useStore } from '../store.js';
+import { Coding } from './ask.js';
+import { useProviderKey } from '../components/asksetup.js';
 import { engine } from '../services/engine.js';
 import { ViewHead, NeedsData, Loading, ErrorLine, Select, ConstructionButton, useEngine, Flag, applicabilityReason, Term, HowToRead, nullInWords } from '../components/common.js';
 import { tokens } from '../lib/palette.js';
@@ -34,7 +36,7 @@ export function ContentView() {
   return html`<${ContentInner} ds=${ds} />`;
 }
 
-const TABS = [['affect', 'Tone'], ['keywords', 'Keywords'], ['topics', 'Topics'], ['diffusion', 'Diffusion']];
+const TABS = [['affect', 'Tone'], ['keywords', 'Keywords'], ['topics', 'Topics'], ['diffusion', 'Diffusion'], ['coding', 'Coding (language model)']];
 
 function ContentInner({ ds }) {
   const [tab, setTab] = useState('affect');
@@ -63,6 +65,7 @@ function ContentInner({ ds }) {
       ${tab === 'keywords' && html`<${Keywords} ds=${ds} />`}
       ${tab === 'topics' && html`<${Topics} />`}
       ${tab === 'diffusion' && html`<${Diffusion} ds=${ds} />`}
+      ${tab === 'coding' && html`<${CodingTab} ds=${ds} />`}
     </div>
   </div>`;
 }
@@ -283,4 +286,18 @@ function Diffusion({ ds }) {
       scale="The shuffled share is the exposure expected from the observed network and set of adopters alone. An observed share clearly above it is consistent with spread along ties."
       mistake=${`In a dense network most adopters have an earlier-adopting contact by chance${anyCeiling ? ', as here' : ''}. A high exposed share is interpretable only relative to the shuffled share.`} />`}
   </div>`;
+}
+
+// Content coding with a language model (moved here from the Ask page,
+// docs/ux/ask-panel.md). It uses the key entered in the Ask panel; without
+// one, this tab says so and opens the panel's setup.
+function CodingTab({ ds }) {
+  const { providers, provider, keyState } = useProviderKey();
+  if (providers === null) return html`<${Loading}>Loading providers</${Loading}>`;
+  if (!providers.length) return html`<p class="small text2" style="margin-top:1rem">The language-model layer is not available in this build. The other Content tabs work without it.</p>`;
+  if (!keyState.has) return html`<div class="prose small" style="margin-top:1rem;max-width:var(--w-col)">
+    <p>Coding applies a codebook you write to a sample of messages, using a language model with your own API key. Double-coding estimates agreement, and a cost estimate is shown before anything runs. The sampled message text is sent to the provider.</p>
+    <p style="margin-top:.8rem"><button type="button" class="tlink tlink--arrow" onClick=${() => store.set({ ui: { ...(store.get().ui || {}), askPanel: true, askSetup: true } })}>Set up a key in the Ask panel</button></p>
+  </div>`;
+  return html`<div style="margin-top:1rem;max-width:var(--w-col)"><${Coding} provider=${provider} ds=${ds} /></div>`;
 }

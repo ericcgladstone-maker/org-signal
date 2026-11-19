@@ -54,7 +54,9 @@ export const VIEWS = [
     purpose: 'The network is rebuilt separately for each time window using the current construction settings.',
     shows: ['Network measures by day, week, or month', 'Detected shifts between adjacent periods', 'Before-and-after comparisons around a selected date'] },
   { id: 'methods', label: 'Methods & Export', group: 'report', sep: true, desc: 'Methods, network files, figures, and projects' },
-  { id: 'ask', label: 'Ask', group: 'report', desc: 'Questions, reports, and content coding with an API key' },
+  // The route stays #ask so earlier links keep working; questions are asked in
+  // the docked Ask panel on the analysis views (docs/ux/ask-panel.md).
+  { id: 'ask', label: 'Reports', group: 'report', desc: 'Written reports from computed results, with an API key' },
   { id: 'learn', label: 'Learn', group: 'learn', sep: true, desc: 'Definitions, worked examples, and limitations' },
 ];
 
