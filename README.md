@@ -73,7 +73,7 @@ Built by [Eric Gladstone](https://graystoneindustries.co). A narrated walkthroug
   - **Rank intervals** by resampling.
   - **Change over time:** shift detection and before/after tests.
   - **Content:** tone, keywords, topics and the diffusion of terms.
-- **Interprets (optional).** With your own Anthropic, OpenAI or Gemini key, Ask answers questions and writes reports. It may cite only numbers the engine computed, and any number it states without a source is flagged.
+- **Interprets (optional).** With your own Anthropic, OpenAI or Gemini key, Ask answers questions in a panel beside the Network, People, Groups, Content and Time views, Reports writes reports, and the Content view can code messages. Ask may cite only numbers the engine computed: each citation opens the computed record behind it, and any number stated without a source is flagged.
 - **Exports:**
   - metric tables
   - network files that open in Gephi, networkx and igraph
@@ -115,7 +115,7 @@ This is a new tool. These are the limits we know of. Please report others (see b
 **Not yet tested in real use**
 - **Browsers.** Browser QA runs in Chrome. A cross-browser smoke test (WebKit, Firefox and Chromium; eleven flows at desktop and phone sizes) found no broken flows on 2026-10-04, but Safari and Firefox are not part of routine testing, and the network map uses WebGL, where browsers differ most.
 - **Real use.** Usability testing so far used simulated students and instructors working through the Networks 101 assignments. It has not yet been used in a real class.
-- **Ask with real keys.** Ask is tested end to end with an offline stand-in provider. A live test against Anthropic, OpenAI and Gemini (a question, a report and a coding run each) passed on 2026-10-04; it is run by hand, and providers change their APIs and models.
+- **Ask with real keys.** Ask is tested end to end with an offline stand-in provider. A live test against Anthropic, OpenAI and Gemini (a question, a report and a coding run each) passed on 2026-10-04; it is run by hand, and providers change their APIs and models. The Ask panel that replaced the Ask page (2026-11-19, `docs/ux/ask-panel.md`) has been used by hand with Anthropic but not yet put through that live test.
 - **Real exports.** Importers were built from each platform's published format documentation and public sample files. Microsoft Teams and LinkedIn importers were checked against the structure of real exports (rebuilt with fictional content) but not yet on real user exports. Platforms change their exports without notice, and the import report says when a file was not understood.
 
 **Measurement**
