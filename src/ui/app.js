@@ -279,12 +279,22 @@ function EngineBanner() {
   return html`<div class="frame"><div class="notice-line" style="border-top:0" role="alert"><span class="flag flag--caution">${Icon.caution}<span>Engine unavailable</span></span><span class="grow small">${st.reason} Import and building still work; analysis views will stay empty until it is present.</span></div></div>`;
 }
 
+// The docked Ask panel loads only once a view that can show it is open, so
+// the language-model layer stays out of startup (it is optional).
+function AskDock() {
+  const view = useStore(s => s.view);
+  const [C, setC] = useState(null);
+  useEffect(() => { if (!C && ['network', 'people', 'groups', 'content', 'time'].includes(view)) import('./components/askpanel.js').then(m => setC(() => m.AskPanel), () => {}); }, [view]);
+  return C ? html`<${C} />` : null;
+}
+
 function App() {
   return html`
     <${Header} />
     <${EngineBanner} />
     <main id="main" tabindex="-1"><${ViewHost} /></main>
     <${Drawer} />
+    <${AskDock} />
     <${Notices} />
     <${StatusBar} />
     <div id="announcer" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>`;

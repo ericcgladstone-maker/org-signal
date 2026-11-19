@@ -12,7 +12,7 @@
 // Gemini JSON-output fix.
 import fs from 'node:fs';
 import os from 'node:os';
-const { default: puppeteer } = await import(process.env.PUPPETEER || '/Users/ericgladstone/My Drive (eric.c.gladstone@gmail.com)/Projects/Website Graystone Industries/site/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js');
+const { default: puppeteer } = await import(process.env.PUPPETEER || '/Users/ericgladstone/My Drive (eric.c.gladstone@gmail.com)/Projects/Graystone Industries/site/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js');
 const ENV = process.env.ORG_SIGNAL_KEYS_ENV;
 if (!ENV || !process.argv[2]) { console.error('usage: ORG_SIGNAL_KEYS_ENV=/path/.env node test/live/ask-live.mjs <out-dir> [base-url] [providers]'); process.exit(1); }
 const env = Object.fromEntries(fs.readFileSync(ENV, 'utf8').split('\n').map(l => l.match(/^\s*([A-Z_]+)\s*=\s*"?([^"\n]*)"?/)).filter(Boolean).map(m => [m[1], m[2].trim()]));

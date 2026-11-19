@@ -18,7 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 
-const PUPPETEER = process.env.PUPPETEER || '/Users/ericgladstone/My Drive (eric.c.gladstone@gmail.com)/Projects/Website Graystone Industries/site/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js';
+const PUPPETEER = process.env.PUPPETEER || '/Users/ericgladstone/My Drive (eric.c.gladstone@gmail.com)/Projects/Graystone Industries/site/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js';
 const CHROME = process.env.CHROME || `${os.homedir()}/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`;
 const BASE = (process.env.QA_URL || 'http://localhost:8811').replace(/\/$/, '');
 const OUT = process.env.QA_OUT || path.join(os.tmpdir(), 'org-signal-qa');

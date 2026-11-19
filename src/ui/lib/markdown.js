@@ -23,7 +23,8 @@ function inline(text, opts) {
     const tok = m[0];
     if (tok.startsWith('**')) out.push(html`<strong>${inline(tok.slice(2, -2), opts)}</strong>`);
     else if (tok.startsWith('`')) out.push(html`<code>${tok.slice(1, -1)}</code>`);
-    else if (m[2]) out.push(opts.onCite ? html`<button type="button" class="tlink" style="font-size:.8em;font-weight:500" onClick=${() => opts.onCite(m[2])} aria-label=${`Show computed result ${m[2]}`}>[${m[2]}]</button>` : tok);
+    // Copy the id now: m is reassigned by the loop and is null by click time.
+    else if (m[2]) { const cid = m[2]; out.push(opts.onCite ? html`<button type="button" class="tlink" style="font-size:.8em;font-weight:500" onClick=${() => opts.onCite(cid)} aria-label=${`Show computed result ${cid}`}>[${cid}]</button>` : tok); }
     else if (m[3]) out.push(html`<a href=${m[3]} target="_blank" rel="noopener noreferrer">${tok.slice(1, tok.indexOf(']('))}</a>`);
     else if (tok.startsWith('\u0001')) out.push(html`<mark class="unverified" title="This number does not appear in any computed result for this answer">${tok.slice(1, -1)}</mark>`);
     else if (tok.startsWith('*')) out.push(html`<em>${tok.slice(1, -1)}</em>`);

@@ -18,6 +18,7 @@
 // "Other groups", the legend lists every group, and choosing one lights it
 // up in the accent.
 
+import { AskAbout } from '../components/askpanel.js';
 import { html, useState, useEffect, useRef, useMemo, useCallback } from '../../../vendor/preact.js';
 import { Sigma, NodeCircleProgram } from '../../../vendor/sigma.js';
 import { Graph } from '../../../vendor/graphology.js';
@@ -1138,6 +1139,7 @@ function SelectionPanel({ ds, selection, data, metrics, onEdge }) {
       <button type="button" class="btn btn--sm btn--primary" onClick=${() => { store.set({ ui: { ...store.get().ui, profile: i } }); store.actions.setView('people'); }}>Full profile</button>
       <button type="button" class="tlink tlink--quiet" onClick=${() => store.actions.select([])}>Clear selection</button>
     </div>
+    <${AskAbout} ctx=${{ view: 'Network map', kind: 'person', label: nodeLabel(ds, i), note: selection.length > 1 ? `with ${selection.length} people selected` : '' }} />
   </div>`;
 }
 

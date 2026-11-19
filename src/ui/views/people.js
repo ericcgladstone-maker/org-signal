@@ -6,6 +6,7 @@
 // ties with their evidence, attributes, ego measures, activity and content,
 // and position over time.
 
+import { AskAbout } from '../components/askpanel.js';
 import { html, useState, useMemo, useEffect, useRef } from '../../../vendor/preact.js';
 import { store, useStore } from '../store.js';
 import { engine } from '../services/engine.js';
@@ -255,6 +256,7 @@ function PeopleInner({ ds, net }) {
           </div>
         </div>
         <p class="small text2 people-sorted">${sortedBy} <${DotKey} coloring=${dots} /></p>
+        ${sortCol && sort.key.startsWith('m:') && html`<${AskAbout} label=${`Ask about the ${sortCol.title.split(' (')[0].toLowerCase()} ranking`} ctx=${{ view: 'People', kind: 'measure', label: sortCol.title.split(' (')[0].toLowerCase(), note: 'looking at the ranking table' }} />`}
         ${twoModeView && html`<p class="small text2 people-twomode">A two-mode network: ${fmtInt(tm.counts[0])} ${tm.labels[0].toLowerCase()} and ${fmtInt(tm.counts[1])} ${tm.labels[1].toLowerCase()}. Two-mode measures are scaled to what is possible for each kind (Borgatti and Everett 1997), so ${modeSel === '' ? html`rank each kind among its own: <button type="button" class="tlink" onClick=${() => setModeSel('0')}>${tm.labels[0]} only</button> or <button type="button" class="tlink" onClick=${() => setModeSel('1')}>${tm.labels[1].toLowerCase()} only</button>.` : `this list ranks the ${tm.labels[Number(modeSel)].toLowerCase()} among themselves.`}</p>`}
         ${stabMetric && stability[stabMetric] && html`<${TopStability} ds=${ds} metric=${stabMetric} label=${mlabel(stabMetric)} result=${stability[stabMetric]} n=${ids.length} values=${node[stabMetric]} fmt=${formats[stabMetric]} net=${net} left=${left} />`}
         ${phone && !showTable ? html`<${RankedList} ds=${ds} ids=${ids} node=${node} rows=${rows} metric=${listMetric} keys=${metricKeys.filter(k => ap[k]?.level !== 'na')} label=${mlabel} fmt=${formats} dot=${dot} badges=${badges}
@@ -456,6 +458,7 @@ function Profile({ ds, net, i, hidden }) {
     <p class="meta" style="margin:.2rem 0 .6rem">${[v >= 0 ? modeLabelOf(net, v) : null, key, ds.nodes.isBot[i] ? 'bot' : null].filter(Boolean).join(' · ')}${communities && v >= 0 ? html`${key || ds.nodes.isBot[i] || modeLabelOf(net, v) ? ' · ' : ''}${communityNumber(communities, v) == null ? 'No community (no ties)' : html`<${Swatch} color=${comm.color(String(communities.membership[v]))} /> Community ${communityNumber(communities, v)}`}` : ''}</p>
     ${isDeactivated(ds, i) && html`<p class="small"><${Flag} level="caution">Deactivated account</${Flag}> <span class="text2">This account was deactivated in the source; its ties end when the person left${dep?.last != null ? ` (last active ${fmtDate(dep.last)})` : ''}. Whole-period measures mix the time before and after, and rank stability cannot show that.</span></p>`}
     ${dep?.kind === 'silent' && html`<p class="small"><${Flag} level="caution">Left?</${Flag}> <span class="text2">No activity after ${fmtDate(dep.last)}: silent for the last ${fmtInt(dep.quietDays)} days of the data. Whole-period measures mix the time before and after, and rank stability cannot show that; compare before and after in Time.</span></p>`}
+    ${v >= 0 && html`<${AskAbout} ctx=${{ view: 'People', kind: 'person', label: nodeLabel(ds, i) }} />`}
     ${hidden && html`<p class="small text2"><${Flag} level="info">Not in the table</${Flag}> The current search or filter hides this person.</p>`}
     ${v < 0 && html`<p class="small text2">This person is in the data but not in the current network (filtered out by the construction settings, or without ties).</p>`}
     ${v >= 0 && html`<nav class="profile-skip" aria-label="Profile sections">

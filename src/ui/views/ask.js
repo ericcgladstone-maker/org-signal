@@ -17,8 +17,9 @@ import { html, useState, useEffect, useRef, useMemo } from '../../../vendor/prea
 import { store, useStore } from '../store.js';
 import { ViewHead, Loading, ErrorLine, Select, Flag, download, Icon, Unavailable } from '../components/common.js';
 import { BarList } from '../components/charts.js';
+import { ChatThread } from '../components/chat.js';
 import { renderMarkdown, markUnverified, markdownToHTMLDocument } from '../lib/markdown.js';
-import { providerList, getKey, setKey, forgetKey, isRemembered, canRemember, maskKey, redact, createAnalystSession, writeReport, codingModule, estimateModule, llmModules, pseudonymize, decodeNames } from '../services/llm.js';
+import { providerList, getKey, setKey, forgetKey, isRemembered, canRemember, maskKey, redact, writeReport, codingModule, estimateModule, llmModules, pseudonymize, decodeNames } from '../services/llm.js';
 import { groupableAttributes, hasText, label as nodeLabel } from '../lib/dsutil.js';
 import { fmtInt, fmtNum, fmtPct, humanize } from '../lib/format.js';
 import { tokens } from '../lib/palette.js';
@@ -148,70 +149,10 @@ function WhatIsSent({ provider }) {
 
 // ---- analyst chat ---------------------------------------------------------------------
 
+// The conversation is shared with the docked Ask panel (components/chat.js,
+// services/conversation.js).
 function Chat({ provider, ds }) {
-  const llm = useStore(s => s.llm);
-  const [turns, setTurns] = useState([]); // { role, text, result?, tools: [], streaming }
-  const [q, setQ] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-  const [est, setEst] = useState(null);
-  const session = useRef(null);
-  const ctrl = useRef(null);
-  const net = useStore(s => s.network);
-  const codes = llm.codes !== false;
-  useEffect(() => { session.current = null; setTurns([]); }, [provider.id, llm.model, net?.version, codes]);
-  useEffect(() => {
-    (async () => {
-      const m = await llmModules();
-      if (!m.estimate?.estimateAsk) return setEst(null);
-      setEst(m.estimate.estimateAsk({ provider: provider.id, model: llm.model || provider.defaultModel, systemPrompt: m.analyst?.ANALYST_SYSTEM_PROMPT || '', tools: m.tools?.TOOL_DEFINITIONS || [], steps: 4 }));
-    })();
-  }, [provider.id, llm.model]);
-
-  const ask = async (question) => {
-    if (!question.trim() || busy) return;
-    setErr(null); setBusy(true);
-    const key = await getKey(provider.id);
-    const model = llm.model || provider.defaultModel;
-    const idx = turns.length + 1;
-    setTurns(t => [...t, { role: 'user', text: question }, { role: 'assistant', text: '', tools: [], streaming: true }]);
-    setQ('');
-    ctrl.current = new AbortController();
-    try {
-      if (!session.current) session.current = await createAnalystSession({ provider, key, model, dataset: ds, codes });
-      const upd = fn => setTurns(t => t.map((x, i) => (i === idx ? fn(x) : x)));
-      const r = await session.current.ask(question, {
-        signal: ctrl.current.signal,
-        onText: d => upd(x => ({ ...x, text: x.text + d })),
-        onToolCall: c => upd(x => ({ ...x, tools: [...x.tools, { name: c.name, args: c.arguments, pending: true }] })),
-        onToolResult: rec => upd(x => ({ ...x, tools: x.tools.map(tl => (tl.pending && tl.name === rec.name ? { ...rec, pending: false } : tl)) })),
-      });
-      upd(x => ({ ...x, streaming: false, result: r }));
-    } catch (e) {
-      const msg = await redact(e?.message || String(e));
-      setTurns(t => t.map((x, i) => (i === idx ? { ...x, streaming: false, error: e.name === 'AbortError' || e.code === 'aborted' ? 'Stopped.' : msg } : x)));
-    } finally { setBusy(false); }
-  };
-  const suggestions = ['Who are the brokers between departments, and how sure can we be?', 'Is clustering here higher than in random networks with the same degrees?', 'How did activity change over time?'];
-  return html`<div class="chat">
-    ${!turns.length && html`<div class="prose small"><p>Ask about structure, positions, groups, change over time or content. The analyst answers only from computed results, cites each with a marker like [T2], and says when a measure does not apply to this data.</p>
-      <p class="label" style="margin-top:1rem">Try</p>
-      <ul class="ask-try">${suggestions.map(s => html`<li><button type="button" class="tlink tlink--quiet" onClick=${() => ask(s)}>${s}</button></li>`)}</ul></div>`}
-    ${turns.map((t, i) => (t.role === 'user'
-      ? html`<div class="msg msg--user" key=${i}><div class="msg__who">You</div><div class="msg__text">${t.text}</div></div>`
-      : html`<${Answer} key=${i} turn=${t} ds=${codes ? ds : null} />`))}
-    <${ErrorLine} error=${err} />
-    <form class="stack" onSubmit=${e => { e.preventDefault(); ask(q); }}>
-      <label class="field"><span>Question</span><textarea id="ask-q" class="input" rows="3" value=${q} onInput=${e => setQ(e.currentTarget.value)} onKeyDown=${e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask(q); } }} placeholder="For example: which teams are most cut off from each other?"></textarea></label>
-      <div class="row">
-        <button class="btn btn--primary" type="submit" disabled=${busy || !q.trim()}>Ask</button>
-        ${busy && html`<button class="tlink tlink--quiet" type="button" onClick=${() => ctrl.current?.abort()}>Stop</button>`}
-        ${turns.length > 0 && !busy && html`<button class="tlink tlink--quiet" type="button" onClick=${() => { session.current?.reset?.(); session.current = null; setTurns([]); store.actions.focus('#ask-q'); }}>New conversation</button>`}
-        <span class="meta grow" style="text-align:right">${est?.usd != null ? `About ${fmtUSD(est.usd)} to ${fmtUSD(est.usdHigh)} per question` : ''}</span>
-      </div>
-      ${est?.note && html`<p class="basis">${est.note}</p>`}
-    </form>
-  </div>`;
+  return html`<${ChatThread} provider=${provider} ds=${ds} />`;
 }
 
 // Download and confirm (D17).
@@ -221,35 +162,6 @@ function saveFile(text, filename, mime) {
 }
 
 function fmtUSD(x) { if (x == null) return 'unknown'; if (x < 0.01) return 'under $0.01'; return `$${x.toFixed(x < 1 ? 3 : 2)}`; }
-
-// ds is set when names were sent as codes: the answer is decoded for display.
-function Answer({ turn, ds }) {
-  const [open, setOpen] = useState(null);
-  const r = turn.result;
-  const results = r?.toolResults || [];
-  const dec = t => (ds ? decodeNames(t, ds) : t);
-  const text = dec(r ? markUnverified(r.text, r.unverifiedNumbers) : turn.text);
-  const onCite = (id) => setOpen(o => (o === id ? null : id));
-  const sel = results.find(x => x.id === open);
-  return html`<div class="msg">
-    <div class="msg__who">Analyst${turn.streaming ? html` <span class="spinner" aria-hidden="true"></span>` : ''}</div>
-    ${turn.tools?.length > 0 && turn.streaming && html`<p class="meta" style="margin-bottom:.4rem">${turn.tools.map(t => `${t.pending ? 'calling' : 'called'} ${t.name}`).join(' · ')}</p>`}
-    <div aria-live="polite">${r ? renderMarkdown(text, { onCite }) : html`<div class="msg__text">${text}</div>`}</div>
-    ${sel && html`<div style="margin-top:.6rem"><p class="label">${sel.id}: ${sel.name}(${JSON.stringify(sel.args || {})})</p><pre class="code">${prettyJSON(sel.content)}</pre></div>`}
-    ${turn.error && html`<${ErrorLine} error=${turn.error} />`}
-    ${r && html`
-      ${r.unverifiedNumbers?.length > 0 ? html`<p class="small" style="margin-top:.6rem;color:var(--warn)"><${Flag} level="caution" /> ${r.unverifiedNumbers.length} number${r.unverifiedNumbers.length > 1 ? 's' : ''} in this answer (underlined) did not come from a computed result. Do not rely on ${r.unverifiedNumbers.length > 1 ? 'them' : 'it'}.</p>`
-        : html`<p class="basis">Every number in this answer matches a computed result.</p>`}
-      ${r.refused && html`<p class="small text2"><${Flag} level="info" /> The model declined part of this request.</p>`}
-      ${results.length > 0 && html`<details class="disclose"><summary>Computed values used (${results.length}), as sent</summary>
-        ${results.map(x => html`<div style="margin:.4rem 0"><p class="label" style="margin:0">${x.id} · ${x.name}(${JSON.stringify(x.args || {})})${x.error ? ' · error' : ''}</p><pre class="code">${prettyJSON(x.content)}</pre></div>`)}
-      </details>`}`}
-  </div>`;
-}
-
-function prettyJSON(s) {
-  try { return JSON.stringify(typeof s === 'string' ? JSON.parse(s) : s, null, 2); } catch { return String(s); }
-}
 
 // ---- reports ----------------------------------------------------------------------------
 

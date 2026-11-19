@@ -673,3 +673,25 @@ pre.code{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);fon
 .learn-about__list{margin:.4rem 0 0;padding-left:1.1rem}
 .learn-about__list li{margin-bottom:.4rem}
 .learn-about__group{margin-top:1rem}
+
+/* ---- Docked Ask panel (docs/ux/ask-panel.md) ---------------------------- */
+:root{--askp-w:27rem}
+.askp{position:fixed;top:var(--header-h);right:0;bottom:var(--status-h,0px);width:var(--askp-w);z-index:60;background:var(--bg-deep);border-left:1px solid var(--rule-strong);display:flex;flex-direction:column}
+.askp__head{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.7rem 1rem;border-bottom:1px solid var(--rule)}
+.askp__body{flex:1;overflow-y:auto;padding:.8rem 1rem 1.2rem;overscroll-behavior:contain}
+.askp-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);writing-mode:vertical-rl;z-index:60;background:var(--panel);color:var(--text);border:1px solid var(--rule-strong);border-right:0;border-radius:6px 0 0 6px;padding:1rem .5rem;font:inherit;font-size:var(--fs-small);letter-spacing:.08em;cursor:pointer}
+.askp-tab:hover,.askp-tab:focus-visible{color:var(--accent)}
+.chat--compact .msg{padding-block:.6rem}
+.chat--compact pre.code{max-height:15rem;overflow:auto;font-size:.78em}
+.ask-ctx{margin:.35rem 0 .2rem}
+.ask-divider{border-top:1px solid var(--rule);padding-top:.6rem;margin:1rem 0;color:var(--text-2)}
+.ask-about{margin:.1rem 0 .6rem}
+@media (min-width:1061px){
+  html[data-askpanel="open"] main{padding-right:var(--askp-w)}
+  html[data-askpanel="open"] .notices{right:calc(var(--askp-w) + var(--pad-app))}
+}
+@media (max-width:1060px){
+  .askp{top:auto;left:0;width:auto;height:min(72vh,40rem);border-left:0;border-top:1px solid var(--rule-strong);box-shadow:0 -8px 24px rgba(0,0,0,.35)}
+  .askp-tab{top:auto;transform:none;bottom:calc(var(--status-h,0px) + 6rem)}
+}
+@media print{.askp,.askp-tab{display:none!important}}

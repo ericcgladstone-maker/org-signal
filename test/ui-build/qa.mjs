@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP = path.resolve(HERE, '../..');
-const PUPPETEER = '/Users/ericgladstone/My Drive (eric.c.gladstone@gmail.com)/Projects/Website Graystone Industries/site/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js';
+const PUPPETEER = '/Users/ericgladstone/My Drive (eric.c.gladstone@gmail.com)/Projects/Graystone Industries/site/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js';
 const CHROME = path.join(process.env.HOME, 'Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing');
 const OUT = process.env.QA_OUT || '/private/tmp/claude-501/-Users-ericgladstone-My-Drive--eric-c-gladstone-gmail-com--Projects-Software-Org-Signal/28c7544b-bf65-4ca4-99cc-4f4f74736ee5/scratchpad/qa';
 
