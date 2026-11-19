@@ -1,6 +1,6 @@
 // A small Markdown renderer to Preact nodes (never innerHTML), enough for the
 // methods appendix, LLM reports and analyst answers: headings, paragraphs,
-// bullet and numbered lists, bold, italics, inline code, links, and two
+// bullet and numbered lists, pipe tables, bold, italics, inline code, links, and two
 // app-specific inline marks:
 //   [T12]            citation of a tool result -> onCite(id) button
 //   \u0001...\u0002  a span to highlight as an unverified number
@@ -34,6 +34,22 @@ function inline(text, opts) {
   return out;
 }
 
+// Pipe tables ("| a | b |" rows, the second a "|---|---|" divider). Models
+// write them unprompted; unrendered, the divider is one unbreakable string
+// that pushed the Ask panel wider than the screen.
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
+const TABLE_DIVIDER = /^\s*\|?(\s*:?-{2,}:?\s*\|)+\s*(:?-{2,}:?\s*)?\|?\s*$/;
+function cellsOf(row) {
+  return row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+}
+// -> { head: [cells] | null, body: [[cells]] } or null when the rows are not a table.
+export function parseTable(rows) {
+  if (rows.length < 2 || !TABLE_DIVIDER.test(rows[1])) return null;
+  const head = cellsOf(rows[0]);
+  const body = rows.slice(2).filter(r => !TABLE_DIVIDER.test(r)).map(cellsOf).map(r => head.map((_, i) => r[i] ?? ''));
+  return { head, body };
+}
+
 export function renderMarkdown(src, opts = {}) {
   const lines = String(src || '').replace(/\r\n?/g, '\n').split('\n');
   const blocks = [];
@@ -41,8 +57,20 @@ export function renderMarkdown(src, opts = {}) {
   let list = null;
   const flushPara = () => { if (para.length) { blocks.push(html`<p>${inline(para.join(' '), opts)}</p>`); para = []; } };
   const flushList = () => { if (list) { const items = list.items.map(it => html`<li>${inline(it, opts)}</li>`); blocks.push(list.ordered ? html`<ol>${items}</ol>` : html`<ul>${items}</ul>`); list = null; } };
+  let rows = [];
+  const flushTable = () => {
+    if (!rows.length) return;
+    const t = parseTable(rows);
+    if (t) blocks.push(html`<div class="md-table-wrap"><table class="md-table">
+      <thead><tr>${t.head.map(c => html`<th scope="col">${inline(c, opts)}</th>`)}</tr></thead>
+      <tbody>${t.body.map(r => html`<tr>${r.map(c => html`<td>${inline(c, opts)}</td>`)}</tr>`)}</tbody></table></div>`);
+    else para.push(...rows.map(r => r.trim()));
+    rows = [];
+  };
   for (const raw of lines) {
     const line = raw.trimEnd();
+    if (TABLE_ROW.test(line)) { flushPara(); flushList(); rows.push(line); continue; }
+    flushTable();
     const h = line.match(/^(#{1,4})\s+(.*)$/);
     const li = line.match(/^\s*[-*]\s+(.*)$/);
     const oli = line.match(/^\s*\d+[.)]\s+(.*)$/);
@@ -60,7 +88,7 @@ export function renderMarkdown(src, opts = {}) {
     flushList();
     para.push(line.trim());
   }
-  flushPara(); flushList();
+  flushTable(); flushPara(); flushList();
   return html`<div class="md">${blocks}</div>`;
 }
 
@@ -85,18 +113,28 @@ export function markdownToHTMLDocument(md, title = 'Org Signal report') {
   const flush = () => { if (list) { out.push(`<${list.t}>${list.items.map(i => `<li>${inl(i)}</li>`).join('')}</${list.t}>`); list = null; } };
   let para = [];
   const flushP = () => { if (para.length) { out.push(`<p>${inl(para.join(' '))}</p>`); para = []; } };
+  let rows = [];
+  const flushT = () => {
+    if (!rows.length) return;
+    const t = parseTable(rows);
+    if (t) out.push(`<table><thead><tr>${t.head.map(c => `<th>${inl(c)}</th>`).join('')}</tr></thead><tbody>${t.body.map(r => `<tr>${r.map(c => `<td>${inl(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
+    else para.push(...rows.map(r => r.trim()));
+    rows = [];
+  };
   for (const line of String(md).split('\n')) {
+    if (TABLE_ROW.test(line)) { flushP(); flush(); rows.push(line); continue; }
+    flushT();
     const h = line.match(/^(#{1,4})\s+(.*)$/), li = line.match(/^\s*[-*]\s+(.*)$/), ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
     if (h) { flushP(); flush(); out.push(`<h${h[1].length}>${inl(h[2])}</h${h[1].length}>`); }
     else if (li || ol) { flushP(); const t = ol ? 'ol' : 'ul'; if (list && list.t !== t) flush(); list ||= { t, items: [] }; list.items.push((li || ol)[1]); }
     else if (!line.trim()) { flushP(); flush(); }
     else { flush(); para.push(line.trim()); }
   }
-  flushP(); flush();
+  flushT(); flushP(); flush();
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title>
 <style>body{font-family:'Geist',system-ui,-apple-system,sans-serif;max-width:46rem;margin:2.5rem auto;padding:0 1.25rem;color:#0b1620;line-height:1.6;font-size:15px}
 h1{font-weight:500;font-size:1.8rem;letter-spacing:-.02em;margin:0 0 1rem}h2{font-size:1.15rem;margin:2rem 0 .6rem;padding-top:.8rem;border-top:1px solid #d5dde3}h3{font-size:1rem;margin:1.2rem 0 .4rem}
-code{font-family:ui-monospace,Menlo,monospace;font-size:.85em}a{color:#0b6b57}ul,ol{padding-left:1.25rem}.foot{margin-top:3rem;font-size:.8rem;color:#5a6b78;border-top:1px solid #d5dde3;padding-top:.6rem}
+code{font-family:ui-monospace,Menlo,monospace;font-size:.85em}a{color:#0b6b57}ul,ol{padding-left:1.25rem}table{border-collapse:collapse;margin:1rem 0;font-size:.9em}th,td{border-bottom:1px solid #d5dde3;padding:.35rem .6rem;text-align:left;vertical-align:top}th{font-weight:600}.foot{margin-top:3rem;font-size:.8rem;color:#5a6b78;border-top:1px solid #d5dde3;padding-top:.6rem}
 @media print{body{margin:0;max-width:none}h2{break-after:avoid}}</style></head><body>
 ${out.join('\n')}
 <p class="foot">Generated by Org Signal on ${new Date().toISOString().slice(0, 10)}. Computed locally.</p>

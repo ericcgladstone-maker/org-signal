@@ -699,3 +699,17 @@ html[data-askpanel="closed"] .notices{bottom:calc(max(var(--status-h),var(--noti
   .askp{top:auto;left:0;width:auto;height:min(78vh,42rem);border-left:0;border-top:1px solid var(--rule-strong);box-shadow:0 -8px 24px rgba(0,0,0,.35)}
 }
 @media print{.askp,.askp-fab{display:none!important}}
+
+/* Pipe tables in model answers and reports (lib/markdown.js). The wrapper
+   scrolls sideways on its own, so a wide table never widens the page or the
+   Ask panel; long unbroken strings wrap instead of pushing the column. */
+.md-table-wrap{max-width:100%;overflow-x:auto;margin:.7rem 0 1rem}
+.md-table{border-collapse:collapse;font-size:var(--fs-small);line-height:1.45;min-width:100%}
+.md-table th,.md-table td{text-align:left;vertical-align:top;padding:.4rem .6rem;border-bottom:1px solid var(--rule)}
+.md-table th{font-family:var(--mono);font-size:var(--fs-mono-th);letter-spacing:var(--ls-mono-th);text-transform:uppercase;color:var(--text-2);font-weight:500;border-bottom-color:var(--rule-strong)}
+.md-table td:first-child{color:var(--text)}
+.askp__body,.askp__body .chat,.askp__body .msg{min-width:0;max-width:100%}
+.askp__body{overflow-x:hidden}
+.askp__body .md p,.askp__body .md li,.askp__body .msg__text{overflow-wrap:anywhere}
+.chat--compact .md-table{font-size:.82rem}
+.chat--compact .md-table th,.chat--compact .md-table td{padding:.35rem .45rem}
